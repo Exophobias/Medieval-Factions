@@ -25,7 +25,7 @@ repositories {
     maven { url 'https://hub.spigotmc.org/nexus/content/repositories/public/' }
     maven { url 'https://oss.sonatype.org/content/groups/public/' }
     maven { url 'https://repo.mikeprimm.com/' }
-    maven { url 'https://repo.extendedclip.com/content/repositories/placeholderapi/' }
+    maven { url 'https://repo.helpch.at/releases/' }
     maven { url 'https://jitpack.io' }
     maven { url 'https://repo.maven.apache.org/maven2/' }
     maven { url 'https://repo.rpkit.com/repository/maven-public/' }
@@ -37,7 +37,7 @@ configurations {
 
 dependencies {
     implementation 'me.clip:placeholderapi:2.11.6'
-    implementation 'org.spigotmc:spigot-api:1.21.11-R0.1-SNAPSHOT'
+    implementation 'org.spigotmc:spigot-api:26.1.2-R0.1-SNAPSHOT'
     implementation 'us.dynmap:dynmap-api:2.2'
     implementation 'org.bstats:bstats-bukkit:3.0.0'
     implementation platform("dev.forkhandles:forkhandles-bom:2.2.0.0")
