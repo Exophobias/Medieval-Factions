@@ -238,6 +238,13 @@ class MedievalFactions : JavaPlugin() {
         )
         setupRpkLockService()
 
+        server.servicesManager.register(
+            com.dansplugins.factionsystem.api.MedievalFactionsApi::class.java,
+            com.dansplugins.factionsystem.api.impl.DefaultMedievalFactionsApi(this),
+            this,
+            org.bukkit.plugin.ServicePriority.Normal
+        )
+
         val metrics = Metrics(this, 8929)
         metrics.addCustomChart(
             SimplePie("language_used") {
@@ -337,6 +344,7 @@ class MedievalFactions : JavaPlugin() {
         }
 
         listOf(
+            com.dansplugins.factionsystem.api.impl.ApiRelationshipListener(this),
             AreaEffectCloudApplyListener(this),
             AsyncPlayerChatListener(this),
             AsyncPlayerPreLoginListener(this),
