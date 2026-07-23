@@ -344,6 +344,7 @@ class MedievalFactions : JavaPlugin() {
         }
 
         listOf(
+            com.dansplugins.factionsystem.api.impl.ApiFactionLifecycleListener(this),
             com.dansplugins.factionsystem.api.impl.ApiRelationshipListener(this),
             AreaEffectCloudApplyListener(this),
             AsyncPlayerChatListener(this),
