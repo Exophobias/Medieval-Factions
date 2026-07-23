@@ -2,6 +2,7 @@ package com.dansplugins.factionsystem.gate
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfBlockPosition
+import com.dansplugins.factionsystem.area.MfCuboidArea
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.failure.ServiceFailure
@@ -11,6 +12,7 @@ import dev.forkhandles.result4k.mapFailure
 import dev.forkhandles.result4k.onFailure
 import dev.forkhandles.result4k.resultFrom
 import org.bukkit.Material
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Level.SEVERE
 
@@ -20,7 +22,16 @@ class MfGateService(
     private val gateCreationContextRepo: MfGateCreationContextRepository
 ) {
 
+    private data class GateChunkKey(val worldId: UUID, val chunkX: Int, val chunkZ: Int)
+
     private val gatesById: MutableMap<MfGateId, MfGate> = ConcurrentHashMap()
+
+    // Spatial indexes maintained alongside gatesById so location lookups don't scan every gate.
+    // triggerIndex: exact trigger block position -> gate ids (O(1) getGatesByTrigger).
+    // areaChunkIndex: chunk key -> ids of gates whose area overlaps that chunk (O(gates in the chunk) getGatesAt).
+    private val triggerIndex: MutableMap<MfBlockPosition, MutableSet<MfGateId>> = ConcurrentHashMap()
+    private val areaChunkIndex: MutableMap<GateChunkKey, MutableSet<MfGateId>> = ConcurrentHashMap()
+
     val gates: List<MfGate>
         get() = gatesById.values.toList()
 
@@ -31,6 +42,7 @@ class MfGateService(
         plugin.logger.info("Loading gates...")
         val startTime = System.currentTimeMillis()
         gatesById.putAll(gateRepo.getGates().associateBy { it.id })
+        gatesById.values.forEach(::indexGate)
         plugin.logger.info("${gatesById.size} gates loaded (${System.currentTimeMillis() - startTime}ms)")
 
         restrictedBlockMaterials = loadRestrictedBlocksFromConfig()
@@ -48,8 +60,13 @@ class MfGateService(
         )
     }
 
-    fun getGatesByTrigger(trigger: MfBlockPosition) = gatesById.values.filter { it.trigger == trigger }
-    fun getGatesAt(block: MfBlockPosition) = gatesById.values.filter { it.area.contains(block) }
+    fun getGatesByTrigger(trigger: MfBlockPosition): List<MfGate> =
+        triggerIndex[trigger]?.mapNotNull(gatesById::get) ?: emptyList()
+
+    fun getGatesAt(block: MfBlockPosition): List<MfGate> {
+        val candidates = areaChunkIndex[GateChunkKey(block.worldId, block.x shr 4, block.z shr 4)] ?: return emptyList()
+        return candidates.mapNotNull(gatesById::get).filter { it.area.contains(block) }
+    }
 
     @JvmName("getGatesByFactionId")
     fun getGatesByFaction(factionId: MfFactionId) = gatesById.values.filter { it.factionId == factionId }
@@ -75,7 +92,8 @@ class MfGateService(
         repeat(maxRetries) { attempt ->
             try {
                 val result = gateRepo.upsert(currentGate)
-                gatesById[result.id] = result
+                val previousGate = gatesById.put(result.id, result)
+                reindexGate(previousGate, result)
                 return@resultFrom result
             } catch (e: OptimisticLockingFailureException) {
                 lastException = e
@@ -98,7 +116,10 @@ class MfGateService(
     @JvmName("deleteGateByGateId")
     fun delete(gateId: MfGateId) = resultFrom {
         val result = gateRepo.delete(gateId)
-        gatesById.remove(gateId)
+        val removedGate = gatesById.remove(gateId)
+        if (removedGate != null) {
+            unindexGate(removedGate)
+        }
         return@resultFrom result
     }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
@@ -109,7 +130,9 @@ class MfGateService(
         val result = gateRepo.deleteAll(factionId)
         val gatesToDelete = gatesById.filterValues { it.factionId == factionId }
         gatesToDelete.forEach { (key, value) ->
-            gatesById.remove(key, value)
+            if (gatesById.remove(key, value)) {
+                unindexGate(value)
+            }
         }
         return@resultFrom result
     }.mapFailure { exception ->
@@ -134,6 +157,48 @@ class MfGateService(
         gateCreationContextRepo.delete(playerId)
     }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+    }
+
+    private fun indexGate(gate: MfGate) {
+        triggerIndex.computeIfAbsent(gate.trigger) { ConcurrentHashMap.newKeySet() }.add(gate.id)
+        areaChunkKeys(gate.area).forEach { chunkKey ->
+            areaChunkIndex.computeIfAbsent(chunkKey) { ConcurrentHashMap.newKeySet() }.add(gate.id)
+        }
+    }
+
+    private fun unindexGate(gate: MfGate) {
+        triggerIndex.computeIfPresent(gate.trigger) { _, ids ->
+            ids.remove(gate.id)
+            if (ids.isEmpty()) null else ids
+        }
+        areaChunkKeys(gate.area).forEach { chunkKey ->
+            areaChunkIndex.computeIfPresent(chunkKey) { _, ids ->
+                ids.remove(gate.id)
+                if (ids.isEmpty()) null else ids
+            }
+        }
+    }
+
+    // Re-index only when a gate's spatial anchors actually change. Gate saves are dominated by
+    // status-only updates during open/close animations, which leave trigger/area untouched.
+    private fun reindexGate(previous: MfGate?, current: MfGate) {
+        if (previous != null && previous.trigger == current.trigger && previous.area == current.area) return
+        if (previous != null) {
+            unindexGate(previous)
+        }
+        indexGate(current)
+    }
+
+    private fun areaChunkKeys(area: MfCuboidArea): List<GateChunkKey> {
+        val min = area.minPosition
+        val max = area.maxPosition
+        val keys = ArrayList<GateChunkKey>()
+        for (chunkX in (min.x shr 4)..(max.x shr 4)) {
+            for (chunkZ in (min.z shr 4)..(max.z shr 4)) {
+                keys.add(GateChunkKey(min.worldId, chunkX, chunkZ))
+            }
+        }
+        return keys
     }
 
     private fun Exception.toServiceFailureType(): ServiceFailureType {

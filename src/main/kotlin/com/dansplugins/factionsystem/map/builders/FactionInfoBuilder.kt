@@ -84,8 +84,8 @@ class FactionInfoBuilder(private val plugin: MedievalFactions) {
             }
             if (plugin.config.getBoolean("dynmap.showDemesne")) {
                 append("<h2>Demesne</h2>")
-                val claims = claimService.getClaims(faction.id)
-                append("${claims.size}/${floor(faction.power).roundToInt()}")
+                val claimCount = claimService.getClaimCount(faction.id)
+                append("$claimCount/${floor(faction.power).roundToInt()}")
             }
         }
     }

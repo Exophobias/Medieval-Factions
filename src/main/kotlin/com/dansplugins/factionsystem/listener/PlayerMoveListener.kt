@@ -47,7 +47,7 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
                         if (claimService.isClaimingBlockedInWorld(to.world!!)) {
                             return@Runnable
                         }
-                        if (plugin.config.getBoolean("factions.limitLand") && claimService.getClaims(playerFaction.id).size + 1 > playerFaction.power) {
+                        if (plugin.config.getBoolean("factions.limitLand") && claimService.getClaimCount(playerFaction.id) + 1 > playerFaction.power) {
                             event.player.sendMessage("$RED${plugin.language["AutoclaimPowerLimitReached"]}")
                             val updatedFaction = factionService.save(playerFaction.copy(autoclaim = false)).onFailure {
                                 plugin.logger.log(SEVERE, "Failed to save faction: ${it.reason.message}", it.reason.cause)
@@ -61,7 +61,7 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
                         }
                         if (plugin.config.getBoolean("factions.contiguousClaims") &&
                             !claimService.isClaimAdjacent(playerFaction.id, *listOfNotNull(to.world?.let { MfChunkPosition(it.uid, to.chunk.x, to.chunk.z) }).toTypedArray()) &&
-                            claimService.getClaims(playerFaction.id).isNotEmpty()
+                            claimService.hasClaims(playerFaction.id)
                         ) {
                             event.player.sendMessage("$RED${plugin.language["CommandFactionClaimNotContiguous"]}")
                             val updatedFaction = factionService.save(playerFaction.copy(autoclaim = false)).onFailure {

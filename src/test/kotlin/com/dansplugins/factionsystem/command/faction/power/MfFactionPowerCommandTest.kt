@@ -3,7 +3,6 @@ package com.dansplugins.factionsystem.command.faction.power
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.TestUtils
 import com.dansplugins.factionsystem.claim.MfClaimService
-import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionService
 import com.dansplugins.factionsystem.faction.flag.MfFlag
@@ -100,9 +99,7 @@ class MfFactionPowerCommandTest {
         `when`(factionService.getFaction(mfPlayer.id)).thenReturn(faction)
         stubFactionPower(faction, power = 5.0)
         `when`(config.getBoolean("factions.limitLand")).thenReturn(true)
-        `when`(claimService.getClaims(faction.id)).thenReturn(
-            listOf(mock(MfClaimedChunk::class.java), mock(MfClaimedChunk::class.java), mock(MfClaimedChunk::class.java))
-        )
+        `when`(claimService.getClaimCount(faction.id)).thenReturn(3)
         `when`(language["CommandFactionPowerFactionClaims", "3", "5"]).thenReturn("Faction claims: 3/5")
 
         // execute
@@ -126,9 +123,7 @@ class MfFactionPowerCommandTest {
         `when`(factionService.getFaction(mfPlayer.id)).thenReturn(faction)
         stubFactionPower(faction, power = 5.0)
         `when`(config.getBoolean("factions.limitLand")).thenReturn(false)
-        `when`(claimService.getClaims(faction.id)).thenReturn(
-            listOf(mock(MfClaimedChunk::class.java), mock(MfClaimedChunk::class.java))
-        )
+        `when`(claimService.getClaimCount(faction.id)).thenReturn(2)
         `when`(language["CommandFactionPowerFactionClaimsUnlimited", "2"]).thenReturn("Faction claims: 2")
 
         // execute

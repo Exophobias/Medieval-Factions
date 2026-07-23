@@ -253,7 +253,7 @@ class MedievalFactions : JavaPlugin() {
             SimplePie("average_claims") {
                 factionService.factions
                     .map {
-                        claimService.getClaims(it.id).size
+                        claimService.getClaimCount(it.id)
                     }
                     .average().roundToInt().toString()
             }
@@ -261,7 +261,7 @@ class MedievalFactions : JavaPlugin() {
         metrics.addCustomChart(
             SimplePie("total_claims") {
                 factionService.factions.sumOf {
-                    claimService.getClaims(it.id).size
+                    claimService.getClaimCount(it.id)
                 }.toString()
             }
         )

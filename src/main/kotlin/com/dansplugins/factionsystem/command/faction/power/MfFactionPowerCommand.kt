@@ -122,7 +122,7 @@ class MfFactionPowerCommand(private val plugin: MedievalFactions) : CommandExecu
                             }"
                         )
                         val claimService = plugin.services.claimService
-                        val claimCount = claimService.getClaims(faction.id).size
+                        val claimCount = claimService.getClaimCount(faction.id)
                         if (plugin.config.getBoolean("factions.limitLand")) {
                             sender.sendMessage(
                                 "$GRAY${

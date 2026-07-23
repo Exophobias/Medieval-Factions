@@ -98,7 +98,7 @@ class MfFactionClaimFillCommand(private val plugin: MedievalFactions) : CommandE
                                 val relationships = relationshipService.getRelationships(faction.id, claimFactionId)
                                 val reverseRelationships = relationshipService.getRelationships(claimFactionId, faction.id)
                                 return@filter (relationships + reverseRelationships).any { it.type == AT_WAR } &&
-                                    claimFaction.power < claimService.getClaims(claimFactionId).size - claims.size
+                                    claimFaction.power < claimService.getClaimCount(claimFactionId) - claims.size
                             }
                             .flatMap { it.value.map { (chunk, _) -> chunk } }
                         val claimableChunks = unclaimedChunks + contestedChunks
@@ -106,7 +106,7 @@ class MfFactionClaimFillCommand(private val plugin: MedievalFactions) : CommandE
                             sender.sendMessage("$RED${plugin.language["CommandFactionClaimFillNoClaimableChunks"]}")
                             return@saveChunks
                         }
-                        if (plugin.config.getBoolean("factions.limitLand") && claimableChunks.size + claimService.getClaims(faction.id).size > faction.power) {
+                        if (plugin.config.getBoolean("factions.limitLand") && claimableChunks.size + claimService.getClaimCount(faction.id) > faction.power) {
                             sender.sendMessage("$RED${plugin.language["CommandFactionClaimFillReachedDemesneLimit", decimalFormat.format(floor(faction.power))]}")
                             return@saveChunks
                         }
@@ -144,7 +144,7 @@ class MfFactionClaimFillCommand(private val plugin: MedievalFactions) : CommandE
         if (claim?.factionId == faction.id) return chunksToFill
         if (chunksToFill.contains(MfChunkPosition(worldId, startChunkX, startChunkZ))) return chunksToFill
         val newChunks = mutableSetOf(*chunksToFill.toTypedArray(), MfChunkPosition(worldId, startChunkX, startChunkZ))
-        if (newChunks.size + claimService.getClaims(faction.id).size > faction.power) return null
+        if (newChunks.size + claimService.getClaimCount(faction.id) > faction.power) return null
         if (claimFillMaxChunks > 0 && newChunks.size > claimFillMaxChunks) {
             throw ClaimFillLimitReachedException()
         }

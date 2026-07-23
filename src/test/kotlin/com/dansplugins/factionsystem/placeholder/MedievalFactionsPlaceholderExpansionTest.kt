@@ -2,7 +2,6 @@ package com.dansplugins.factionsystem.placeholder
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.claim.MfClaimService
-import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionMember
 import com.dansplugins.factionsystem.faction.MfFactionService
@@ -88,7 +87,7 @@ class MedievalFactionsPlaceholderExpansionTest {
         val mfPlayer = fixture.mfPlayer
         `when`(playerService.getPlayer(player)).thenReturn(mfPlayer)
         `when`(factionService.getFaction(mfPlayer.id)).thenReturn(faction)
-        `when`(claimService.getClaims(faction.id)).thenReturn(listOf())
+        `when`(claimService.getClaimCount(faction.id)).thenReturn(0)
 
         val result = uut.onRequest(player, "faction_total_claimed_chunks")
         assertEquals("0", result)
@@ -101,7 +100,7 @@ class MedievalFactionsPlaceholderExpansionTest {
         val mfPlayer = fixture.mfPlayer
         `when`(playerService.getPlayer(player)).thenReturn(mfPlayer)
         `when`(factionService.getFaction(mfPlayer.id)).thenReturn(faction)
-        `when`(claimService.getClaims(faction.id)).thenReturn(listOf(mock(MfClaimedChunk::class.java)))
+        `when`(claimService.getClaimCount(faction.id)).thenReturn(1)
 
         val result = uut.onRequest(player, "faction_total_claimed_chunks")
         assertEquals("1", result)

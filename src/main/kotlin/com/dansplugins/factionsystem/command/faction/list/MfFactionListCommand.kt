@@ -83,7 +83,7 @@ class MfFactionListCommand(private val plugin: MedievalFactions) : CommandExecut
                                         TextComponent(
                                             "  " + plugin.language[
                                                 "CommandFactionListLand",
-                                                claimService.getClaims(faction.id).size.toString()
+                                                claimService.getClaimCount(faction.id).toString()
                                             ]
                                         ).apply {
                                             color = SpigotChatColor.GRAY

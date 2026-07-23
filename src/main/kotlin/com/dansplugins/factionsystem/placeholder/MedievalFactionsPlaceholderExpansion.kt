@@ -106,7 +106,7 @@ class MedievalFactionsPlaceholderExpansion(private val plugin: MedievalFactions)
         val faction = getPlayerFaction(player)
             ?: return (plugin.config.getString("factions.factionlessFactionName") ?: "Factionless")
         val claimService = plugin.services.claimService
-        return claimService.getClaims(faction.id).size.toString()
+        return claimService.getClaimCount(faction.id).toString()
     }
 
     private fun getFactionPower(player: OfflinePlayer): String {

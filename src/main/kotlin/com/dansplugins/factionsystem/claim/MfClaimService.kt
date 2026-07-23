@@ -30,13 +30,17 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
     }
 
     private val claimsByKey: MutableMap<ClaimKey, MfClaimedChunk> = ConcurrentHashMap()
-    private val claims: List<MfClaimedChunk>
-        get() = claimsByKey.values.toList()
+
+    // Secondary index: faction id -> the set of that faction's claim keys. Maintained alongside
+    // claimsByKey at every mutation point (init/save/delete/deleteAll) so that per-faction reads
+    // (count/existence/list) cost O(claims owned by the faction) instead of O(all claims on the server).
+    private val claimKeysByFaction: MutableMap<MfFactionId, MutableSet<ClaimKey>> = ConcurrentHashMap()
 
     init {
         plugin.logger.info("Loading claims...")
         val startTime = System.currentTimeMillis()
         claimsByKey.putAll(repository.getClaims().associateBy { ClaimKey(it.worldId, it.x, it.z) })
+        claimsByKey.values.forEach(::indexClaim)
         plugin.logger.info("${claimsByKey.size} claims loaded (${System.currentTimeMillis() - startTime}ms)")
     }
 
@@ -55,7 +59,14 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
     }
 
     @JvmName("getClaimsByFactionId")
-    fun getClaims(factionId: MfFactionId): List<MfClaimedChunk> = claims.filter { it.factionId == factionId }
+    fun getClaims(factionId: MfFactionId): List<MfClaimedChunk> =
+        claimKeysByFaction[factionId]?.mapNotNull(claimsByKey::get) ?: emptyList()
+
+    /** O(1) count of the chunks a faction has claimed. Prefer this over `getClaims(factionId).size`. */
+    fun getClaimCount(factionId: MfFactionId): Int = claimKeysByFaction[factionId]?.size ?: 0
+
+    /** O(1) check for whether a faction has any claims. Prefer this over `getClaims(factionId).isNotEmpty()`. */
+    fun hasClaims(factionId: MfFactionId): Boolean = !claimKeysByFaction[factionId].isNullOrEmpty()
 
     @JvmName("isInteractionAllowedForPlayerInChunk")
     fun isInteractionAllowed(playerId: MfPlayerId, claim: MfClaimedChunk): Boolean {
@@ -162,7 +173,13 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         plugin.server.pluginManager.callEvent(event)
         if (event.isCancelled) throw EventCancelledException("Event cancelled")
         val result = repository.upsert(event.claim)
-        claimsByKey[ClaimKey(result)] = result
+        val previousClaim = claimsByKey.put(ClaimKey(result), result)
+        if (previousClaim == null) {
+            indexClaim(result)
+        } else if (previousClaim.factionId != result.factionId) {
+            unindexClaim(previousClaim)
+            indexClaim(result)
+        }
         plugin.server.scheduler.runTask(
             plugin,
             Runnable {
@@ -215,7 +232,10 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         plugin.server.pluginManager.callEvent(event)
         if (event.isCancelled) throw EventCancelledException("Event cancelled")
         val result = repository.delete(event.claim.worldId, event.claim.x, event.claim.z)
-        claimsByKey.remove(ClaimKey(event.claim))
+        val removedClaim = claimsByKey.remove(ClaimKey(event.claim))
+        if (removedClaim != null) {
+            unindexClaim(removedClaim)
+        }
         plugin.server.scheduler.runTask(
             plugin,
             Runnable {
@@ -269,11 +289,24 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         val result = repository.deleteAll(factionId)
         val claimsToDelete = claimsByKey.filterValues { it.factionId == factionId }
         claimsToDelete.forEach { (key, value) ->
-            claimsByKey.remove(key, value)
+            if (claimsByKey.remove(key, value)) {
+                unindexClaim(value)
+            }
         }
         return@resultFrom result
     }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+    }
+
+    private fun indexClaim(claim: MfClaimedChunk) {
+        claimKeysByFaction.computeIfAbsent(claim.factionId) { ConcurrentHashMap.newKeySet() }.add(ClaimKey(claim))
+    }
+
+    private fun unindexClaim(claim: MfClaimedChunk) {
+        claimKeysByFaction.computeIfPresent(claim.factionId) { _, keys ->
+            keys.remove(ClaimKey(claim))
+            if (keys.isEmpty()) null else keys
+        }
     }
 
     private fun Exception.toServiceFailureType(): ServiceFailureType {
