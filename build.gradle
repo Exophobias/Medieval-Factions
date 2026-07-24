@@ -128,7 +128,12 @@ processResources {
 }
 
 shadowJar {
-    archiveClassifier.set('all')
+    // Deploy jar filename: Medieval-Factions-<version>.jar (nicer than the default
+    // medieval-factions-<version>-all.jar). The Maven publication below overrides the classifier
+    // back to 'all' so the PUBLISHED coordinate stays com.dansplugins:medieval-factions:<v>:all —
+    // which is what PatriamMFAddon compiles against, so this rename is cosmetic only.
+    archiveBaseName.set('Medieval-Factions')
+    archiveClassifier.set('')
     mergeServiceFiles()
     dependencies {
         include(dependency('org.jetbrains.kotlin:kotlin-stdlib-jdk8'))
@@ -200,7 +205,11 @@ publishing {
             artifactId = project.name
             version = project.version
 
-            artifact(shadowJar)
+            // Keep the published classifier 'all' even though the shadowJar file is no longer
+            // named "-all", so consumers depending on medieval-factions:<v>:all still resolve.
+            artifact(shadowJar) {
+                classifier = 'all'
+            }
         }
     }
 }
