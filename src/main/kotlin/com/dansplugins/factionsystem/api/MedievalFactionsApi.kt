@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.api
 import org.bukkit.Bukkit
 import org.bukkit.Chunk
 import org.bukkit.Location
+import org.bukkit.World
 import java.util.UUID
 
 /**
@@ -31,6 +32,19 @@ interface MedievalFactionsApi {
 
     /** The claim covering the given chunk, or null if it is unclaimed. */
     fun getClaimAt(chunk: Chunk): ClaimView?
+
+    /**
+     * Whether the chunk at the given chunk coordinates is claimed, **without loading the chunk**.
+     *
+     * [getFactionAt] and [getClaimAt] take a [Chunk], and obtaining one from a [Location] goes through
+     * `Location.getChunk()`, which loads (and if necessary generates) the chunk. That is fine for the
+     * occasional lookup but ruinous for callers that test many block positions per tick — territory
+     * protection in a disaster/explosion plugin being the motivating case.
+     *
+     * This overload answers the only question such callers actually have, straight off the in-memory
+     * claim index, so it costs one map lookup and never touches world state.
+     */
+    fun isClaimed(world: World, chunkX: Int, chunkZ: Int): Boolean
 
     // --- Mutations ---
 

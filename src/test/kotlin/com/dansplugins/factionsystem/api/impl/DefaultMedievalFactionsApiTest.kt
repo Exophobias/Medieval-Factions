@@ -10,7 +10,9 @@ import com.dansplugins.factionsystem.faction.MfFactionService
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
 import com.dansplugins.factionsystem.service.Services
 import org.bukkit.Chunk
+import org.bukkit.World
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -18,6 +20,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import java.util.UUID
 
@@ -92,6 +96,32 @@ class DefaultMedievalFactionsApiTest {
         val chunk = mock(Chunk::class.java)
         `when`(claimService.getClaim(chunk)).thenReturn(null)
         assertNull(api.getFactionAt(chunk))
+    }
+
+    @Test
+    fun isClaimedReportsClaimedAndUnclaimedChunkCoordinates() {
+        val world = mock(World::class.java)
+        `when`(claimService.getClaim(world, 3, 7)).thenReturn(MfClaimedChunk(UUID.randomUUID(), 3, 7, MfFactionId("f1")))
+        `when`(claimService.getClaim(world, 4, 7)).thenReturn(null)
+
+        assertTrue(api.isClaimed(world, 3, 7))
+        assertFalse(api.isClaimed(world, 4, 7))
+    }
+
+    // The reason this overload exists at all. Routing it through the Chunk-taking lookup would drag
+    // Location.getChunk() back in and load the chunk, which is exactly what callers testing many
+    // block positions per tick cannot afford. Asserting the coordinate lookup is the ONLY call made
+    // pins that down without argument matchers, which cannot express "any Chunk" here anyway: the
+    // parameter is non-null Kotlin, so a null-returning matcher blows up at the call site.
+    @Test
+    fun isClaimedNeverResolvesAChunk() {
+        val world = mock(World::class.java)
+        `when`(claimService.getClaim(world, 0, 0)).thenReturn(null)
+
+        api.isClaimed(world, 0, 0)
+
+        verify(claimService).getClaim(world, 0, 0)
+        verifyNoMoreInteractions(claimService)
     }
 
     @Test

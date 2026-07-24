@@ -18,6 +18,7 @@ import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.Success
 import org.bukkit.Chunk
 import org.bukkit.Location
+import org.bukkit.World
 import java.util.UUID
 
 /**
@@ -43,6 +44,12 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
 
     override fun getClaimAt(chunk: Chunk): ClaimView? =
         plugin.services.claimService.getClaim(chunk)?.let(::ClaimViewAdapter)
+
+    // Deliberately does NOT go through getClaimAt: the whole point of this overload is to skip the
+    // Chunk, and therefore the chunk load that obtaining one from a Location implies. MfClaimService
+    // keys its in-memory index on (worldId, x, z), so this is a single map lookup.
+    override fun isClaimed(world: World, chunkX: Int, chunkZ: Int): Boolean =
+        plugin.services.claimService.getClaim(world, chunkX, chunkZ) != null
 
     override fun setHome(faction: FactionId, location: Location): ApiResult {
         if (location.world == null) return ApiResult.failure("Location has no world")
