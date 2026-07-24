@@ -49,9 +49,7 @@ import com.dansplugins.factionsystem.command.faction.unclaim.MfFactionUnclaimCom
 import com.dansplugins.factionsystem.command.faction.unclaimall.MfFactionUnclaimAllCommand
 import com.dansplugins.factionsystem.command.faction.vassalize.MfFactionVassalizeCommand
 import com.dansplugins.factionsystem.command.faction.who.MfFactionWhoCommand
-import org.bukkit.ChatColor.AQUA
-import org.bukkit.ChatColor.GRAY
-import org.bukkit.ChatColor.YELLOW
+import org.bukkit.ChatColor
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
@@ -257,11 +255,26 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in denyAliases -> factionDenyCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in pendingActionsAliases -> factionPendingActionsCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             else -> {
-                sender.sendMessage("$AQUA${plugin.language["MedievalFactionsTitle", plugin.description.version]}")
-                sender.sendMessage("$GRAY${plugin.language["DeveloperList", plugin.description.authors.joinToString()]}")
-                sender.sendMessage("$GRAY${plugin.language["WikiLink"]}")
-                sender.sendMessage("$GRAY${plugin.language["CurrentLanguage", plugin.config.getString("language") ?: "en_US"]}")
-                sender.sendMessage("$YELLOW${plugin.language["CommandFactionUsage"]}")
+                // Patriam fork: styled "about" screen. Built here rather than from the language
+                // files because the Language class does not translate '&' codes and has no
+                // cross-locale key fallback, so keeping the layout in code renders identically in
+                // every language and in one place.
+                val version = plugin.description.version
+                val developers = plugin.description.authors.joinToString()
+                val currentLanguage = plugin.config.getString("language") ?: "en_US"
+                val border = "&8&m" + " ".repeat(50)
+                listOf(
+                    border,
+                    "&b&lMedieval Factions &7v$version",
+                    "&7Modified by &egerber11 &7for Patriam use",
+                    "&7Developers: &f$developers",
+                    "&7Wiki: &fhttps://github.com/dmccoystephenson/Medieval-Factions/wiki",
+                    "&7Language: &f$currentLanguage",
+                    "&7A list of commands: &6/f help",
+                    border
+                ).forEach { line ->
+                    sender.sendMessage(ChatColor.translateAlternateColorCodes('&', line))
+                }
                 true
             }
         }
