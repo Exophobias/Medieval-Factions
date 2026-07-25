@@ -7,6 +7,9 @@ import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
+import com.dansplugins.factionsystem.player.MfPlayer
+import com.dansplugins.factionsystem.player.MfPlayerId
+import com.dansplugins.factionsystem.player.MfPlayerService
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
 import com.dansplugins.factionsystem.service.Services
 import org.bukkit.Chunk
@@ -33,6 +36,7 @@ class DefaultMedievalFactionsApiTest {
     private lateinit var factionService: MfFactionService
     private lateinit var claimService: MfClaimService
     private lateinit var relationshipService: MfFactionRelationshipService
+    private lateinit var playerService: MfPlayerService
     private lateinit var api: DefaultMedievalFactionsApi
 
     @BeforeEach
@@ -46,6 +50,8 @@ class DefaultMedievalFactionsApiTest {
         `when`(services.claimService).thenReturn(claimService)
         relationshipService = mock(MfFactionRelationshipService::class.java)
         `when`(services.factionRelationshipService).thenReturn(relationshipService)
+        playerService = mock(MfPlayerService::class.java)
+        `when`(services.playerService).thenReturn(playerService)
         api = DefaultMedievalFactionsApi(plugin)
     }
 
@@ -122,6 +128,38 @@ class DefaultMedievalFactionsApiTest {
 
         verify(claimService).getClaim(world, 0, 0)
         verifyNoMoreInteractions(claimService)
+    }
+
+    @Test
+    fun getPowerReturnsThePlayersPower() {
+        val playerId = UUID.randomUUID()
+        val player = mock(MfPlayer::class.java)
+        `when`(player.power).thenReturn(12.5)
+        `when`(playerService.getPlayer(MfPlayerId(playerId.toString()))).thenReturn(player)
+
+        assertEquals(12.5, api.getPower(playerId))
+    }
+
+    // 0.0 rather than an exception or null: consumers sum power across a member list, and a player MF
+    // has never seen contributes nothing rather than forcing null handling at every call site.
+    @Test
+    fun getPowerReturnsZeroForUnknownPlayer() {
+        assertEquals(0.0, api.getPower(UUID.randomUUID()))
+    }
+
+    @Test
+    fun getFactionByNameLooksUpByName() {
+        val faction = mock(MfFaction::class.java)
+        `when`(factionService.getFaction("Foo")).thenReturn(faction)
+        `when`(faction.name).thenReturn("Foo")
+        `when`(faction.description).thenReturn("desc")
+        `when`(faction.home).thenReturn(null)
+        `when`(faction.members).thenReturn(emptyList())
+        `when`(claimService.getClaimCount(faction.id)).thenReturn(0)
+        `when`(relationshipService.getFactionsAtWarWith(faction.id)).thenReturn(emptyList())
+
+        assertEquals("Foo", api.getFactionByName("Foo")?.name)
+        assertNull(api.getFactionByName("no-such-faction"))
     }
 
     @Test

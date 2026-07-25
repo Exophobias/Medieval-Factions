@@ -31,7 +31,7 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     override fun getFaction(id: FactionId): FactionView? =
         plugin.services.factionService.getFaction(MfFactionId(id.value))?.let(::toView)
 
-    override fun getFaction(name: String): FactionView? =
+    override fun getFactionByName(name: String): FactionView? =
         plugin.services.factionService.getFaction(name)?.let(::toView)
 
     override fun getFactionByPlayer(playerId: UUID): FactionView? =
@@ -50,6 +50,11 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     // keys its in-memory index on (worldId, x, z), so this is a single map lookup.
     override fun isClaimed(world: World, chunkX: Int, chunkZ: Int): Boolean =
         plugin.services.claimService.getClaim(world, chunkX, chunkZ) != null
+
+    // 0.0 for an unknown player mirrors how MF's own power callers treat a missing record, so a
+    // consumer summing power over a member list needs no null handling.
+    override fun getPower(playerId: UUID): Double =
+        plugin.services.playerService.getPlayer(MfPlayerId(playerId.toString()))?.power ?: 0.0
 
     override fun setHome(faction: FactionId, location: Location): ApiResult {
         if (location.world == null) return ApiResult.failure("Location has no world")
