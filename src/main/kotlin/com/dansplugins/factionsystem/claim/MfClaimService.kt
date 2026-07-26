@@ -1,6 +1,8 @@
 package com.dansplugins.factionsystem.claim
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
+import com.dansplugins.factionsystem.api.ClaimOverrideProvider
 import com.dansplugins.factionsystem.area.MfChunkPosition
 import com.dansplugins.factionsystem.event.faction.FactionClaimEvent
 import com.dansplugins.factionsystem.event.faction.FactionUnclaimEvent
@@ -67,6 +69,55 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
 
     /** O(1) check for whether a faction has any claims. Prefer this over `getClaims(factionId).isNotEmpty()`. */
     fun hasClaims(factionId: MfFactionId): Boolean = !claimKeysByFaction[factionId].isNullOrEmpty()
+
+    /** Third-party exceptions to territory protection. See [ClaimOverrideRegistry]. */
+    val claimOverrides = ClaimOverrideRegistry(plugin.logger)
+
+    /**
+     * Whether a registered [ClaimOverrideProvider] grants [playerId] an exception at this exact
+     * block for this exact [action].
+     *
+     * ## Why this is a separate call rather than an argument to [isInteractionAllowed]
+     *
+     * The obvious design is a wider overload of the protection check itself. It was tried and
+     * rejected, for two reasons that only became visible once the existing suite ran against it.
+     *
+     * First, **it silently weakened the tests.** MF's listener tests mock `MfClaimService`, so
+     * every stub of `isInteractionAllowed` stops intercepting the moment listeners call a different
+     * overload. Mockito then returns `false` for the unstubbed one — which happens to be what most
+     * of those stubs already said, so the majority of the suite kept passing while no longer
+     * exercising anything. Only the handful of `thenReturn(true)` cases failed. A change that leaves
+     * a protection suite green for the wrong reason is worse than one that breaks it loudly.
+     *
+     * Second, it hid the additive property. Written as a separate condition at each call site, the
+     * shape is `denied by MF && not overridden`, and it is obvious by inspection that an override
+     * can only widen permission and never narrow it. Buried inside the check, that guarantee
+     * depends on reading the implementation.
+     *
+     * ## Ordering does not matter here, and that is the point
+     *
+     * Because this is consulted only when MF has already decided to deny, it does not matter that
+     * MF's own logic returns early for a factionless player on its third line. The exception is
+     * evaluated independently, so a factionless priest hosted on another group's land is reached —
+     * which a provider loop appended inside the existing method would never have managed.
+     *
+     * @return true only when some provider affirmatively permits it
+     */
+    fun isOverridden(
+        playerId: MfPlayerId,
+        world: World,
+        x: Int,
+        y: Int,
+        z: Int,
+        action: ClaimAction
+    ): Boolean {
+        // The common server registers no providers at all; this keeps the hot path free.
+        if (claimOverrides.isEmpty()) {
+            return false
+        }
+        val playerUuid = runCatching { UUID.fromString(playerId.value) }.getOrNull() ?: return false
+        return claimOverrides.allows(playerUuid, world, x, y, z, action)
+    }
 
     @JvmName("isInteractionAllowedForPlayerInChunk")
     fun isInteractionAllowed(playerId: MfPlayerId, claim: MfClaimedChunk): Boolean {

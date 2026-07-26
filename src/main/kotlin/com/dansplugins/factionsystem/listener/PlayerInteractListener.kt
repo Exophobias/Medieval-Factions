@@ -1,5 +1,6 @@
 package com.dansplugins.factionsystem.listener
 
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.area.MfCuboidArea
@@ -199,7 +200,17 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         }
 
         // Check if player is allowed to interact based on faction relationships
-        if (!claimService.isInteractionAllowed(mfPlayer.id, claim)) {
+        val overrideAction = if (clickedBlock.blockData is org.bukkit.block.data.Openable) {
+            ClaimAction.DOOR
+        } else {
+            ClaimAction.INTERACT
+        }
+        if (!claimService.isInteractionAllowed(mfPlayer.id, claim) &&
+            !claimService.isOverridden(
+                mfPlayer.id, clickedBlock.world,
+                clickedBlock.x, clickedBlock.y, clickedBlock.z, overrideAction
+            )
+        ) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
                 event.player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
             } else {

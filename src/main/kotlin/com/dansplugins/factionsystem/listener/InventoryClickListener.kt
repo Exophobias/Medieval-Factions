@@ -1,5 +1,6 @@
 package com.dansplugins.factionsystem.listener
 
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
@@ -63,7 +64,13 @@ class InventoryClickListener(private val plugin: MedievalFactions) : Listener {
         val factionService = plugin.services.factionService
         val claimFaction = factionService.getFaction(claim.factionId) ?: return
 
-        if (!claimService.isInteractionAllowed(mfPlayer.id, claim)) {
+        if (!claimService.isInteractionAllowed(mfPlayer.id, claim) &&
+            !claimService.isOverridden(
+                mfPlayer.id, player.world,
+                player.location.blockX, player.location.blockY, player.location.blockZ,
+                ClaimAction.CONTAINER
+            )
+        ) {
             if (mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass")) {
                 player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
             } else {

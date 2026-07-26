@@ -54,6 +54,20 @@ interface MedievalFactionsApi {
     fun isClaimed(world: World, chunkX: Int, chunkZ: Int): Boolean
 
     /**
+     * The claim covering the given chunk coordinates, **without loading the chunk**.
+     *
+     * The positional counterpart to [getClaimAt] for the same reason [isClaimed] exists: the
+     * [Chunk]-typed overload forces a caller holding a [org.bukkit.Location] through
+     * `Location.getChunk()`, which loads and if necessary generates the chunk.
+     *
+     * [isClaimed] answers only "is this claimed at all". Callers that need to know *whose* land it
+     * is — to detect a change of owner, or to ask that faction for consent — had no cheap way to
+     * find out. This closes that gap: it reads the same in-memory claim index, so it costs one map
+     * lookup and never touches world state.
+     */
+    fun getClaimAt(world: World, chunkX: Int, chunkZ: Int): ClaimView?
+
+    /**
      * The power level of the given player, or `0.0` if MedievalFactions has no record of them.
      *
      * Power is MF's per-player score that, summed across members, bounds how much land a group may
@@ -76,6 +90,23 @@ interface MedievalFactionsApi {
 
     /** Ends any war between the two factions by removing the war relationship in both directions. */
     fun forcePeace(faction: FactionId, otherFaction: FactionId): ApiResult
+
+    // --- Territory protection exceptions ---
+
+    /**
+     * Register a [ClaimOverrideProvider], letting this plugin grant narrow exceptions to territory
+     * protection.
+     *
+     * Providers are **additive only** — they can turn one of MF's denials into a permission, never
+     * the reverse. Read [ClaimOverrideProvider] before implementing one; in particular, refuse
+     * [ClaimAction.CONTAINER] unless you genuinely intend to hand over every chest on the land.
+     *
+     * Registering the same instance twice is a no-op. Plugins should unregister on disable.
+     */
+    fun registerClaimOverrideProvider(provider: ClaimOverrideProvider)
+
+    /** Remove a previously registered provider. Unknown providers are ignored. */
+    fun unregisterClaimOverrideProvider(provider: ClaimOverrideProvider)
 
     companion object {
         /**

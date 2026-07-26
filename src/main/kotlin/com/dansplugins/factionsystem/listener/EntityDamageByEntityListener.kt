@@ -1,5 +1,6 @@
 package com.dansplugins.factionsystem.listener
 
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
@@ -35,6 +36,14 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
                 if (!damagedFaction.flags[plugin.flags.enableMobProtection]) return
                 if (MfHostileMobChecker.isHostileMob(damaged)) return
                 if (claimService.isInteractionAllowed(damagerMfPlayer.id, claim)) return
+                if (claimService.isOverridden(
+                        damagerMfPlayer.id, damaged.world,
+                        damaged.location.blockX, damaged.location.blockY,
+                        damaged.location.blockZ, ClaimAction.DAMAGE
+                    )
+                ) {
+                    return
+                }
                 if (damagerMfPlayer.isBypassEnabled && damagerPlayer.hasPermission("mf.bypass")) {
                     damagerPlayer.sendMessage("${ChatColor.RED}${plugin.language["FactionTerritoryProtectionBypassed"]}")
                     return

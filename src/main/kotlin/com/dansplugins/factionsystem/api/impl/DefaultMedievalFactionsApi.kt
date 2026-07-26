@@ -2,6 +2,7 @@ package com.dansplugins.factionsystem.api.impl
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ApiResult
+import com.dansplugins.factionsystem.api.ClaimOverrideProvider
 import com.dansplugins.factionsystem.api.ClaimView
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.FactionView
@@ -50,6 +51,17 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     // keys its in-memory index on (worldId, x, z), so this is a single map lookup.
     override fun isClaimed(world: World, chunkX: Int, chunkZ: Int): Boolean =
         plugin.services.claimService.getClaim(world, chunkX, chunkZ) != null
+
+    override fun getClaimAt(world: World, chunkX: Int, chunkZ: Int): ClaimView? =
+        plugin.services.claimService.getClaim(world.uid, chunkX, chunkZ)?.let(::ClaimViewAdapter)
+
+    override fun registerClaimOverrideProvider(provider: ClaimOverrideProvider) {
+        plugin.services.claimService.claimOverrides.register(provider)
+    }
+
+    override fun unregisterClaimOverrideProvider(provider: ClaimOverrideProvider) {
+        plugin.services.claimService.claimOverrides.unregister(provider)
+    }
 
     // 0.0 for an unknown player mirrors how MF's own power callers treat a missing record, so a
     // consumer summing power over a member list needs no null handling.
