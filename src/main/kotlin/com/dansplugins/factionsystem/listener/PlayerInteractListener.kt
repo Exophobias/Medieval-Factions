@@ -30,6 +30,7 @@ import org.bukkit.block.Chest
 import org.bukkit.block.DoubleChest
 import org.bukkit.block.data.Bisected
 import org.bukkit.block.data.Bisected.Half.BOTTOM
+import org.bukkit.block.data.Openable
 import org.bukkit.block.data.type.Door
 import org.bukkit.block.data.type.TrapDoor
 import org.bukkit.entity.Player
@@ -38,6 +39,7 @@ import org.bukkit.event.Listener
 import org.bukkit.event.block.Action.PHYSICAL
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot.HAND
+import org.bukkit.inventory.InventoryHolder
 import java.util.logging.Level.SEVERE
 import org.bukkit.block.data.type.Gate as FenceGateData
 
@@ -199,16 +201,13 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
             return
         }
 
-        // Check if player is allowed to interact based on faction relationships
-        val overrideAction = if (clickedBlock.blockData is org.bukkit.block.data.Openable) {
-            ClaimAction.DOOR
-        } else {
-            ClaimAction.INTERACT
-        }
+        // Check if player is allowed to interact based on faction relationships.
+        // overrideActionFor is evaluated only when MF has already denied, so its BlockState
+        // snapshot never costs anything on the allowed path.
         if (!claimService.isInteractionAllowed(mfPlayer.id, claim) &&
             !claimService.isOverridden(
                 mfPlayer.id, clickedBlock.world,
-                clickedBlock.x, clickedBlock.y, clickedBlock.z, overrideAction
+                clickedBlock.x, clickedBlock.y, clickedBlock.z, overrideActionFor(clickedBlock)
             )
         ) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
@@ -700,5 +699,23 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
                 }
             }
         )
+    }
+
+    /**
+     * Classify a right-clicked block for the claim-override SPI.
+     *
+     * CONTAINER is tested FIRST, and by inventory rather than by [Openable], because a chest is
+     * both things at once: it opens, and it holds items. Classifying it as DOOR or INTERACT hands
+     * any provider that grants ordinary interaction the ability to empty it, and
+     * InventoryClickListener is not a reliable backstop for a double chest. That combination was a
+     * live hole: a religion carve-out granting INTERACT could open the landholder's storage.
+     *
+     * Anything carrying an inventory counts. Over-classifying costs a provider a lectern;
+     * under-classifying costs a landholder their chests, so this deliberately errs closed.
+     */
+    private fun overrideActionFor(block: Block): ClaimAction = when {
+        block.state is InventoryHolder -> ClaimAction.CONTAINER
+        block.blockData is Openable -> ClaimAction.DOOR
+        else -> ClaimAction.INTERACT
     }
 }

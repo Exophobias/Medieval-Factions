@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.TestUtils
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
@@ -20,6 +21,7 @@ import org.bukkit.Material
 import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
+import org.bukkit.block.BlockState
 import org.bukkit.block.data.BlockData
 import org.bukkit.block.data.type.Door
 import org.bukkit.block.data.type.TrapDoor
@@ -973,6 +975,113 @@ class PlayerInteractListenerTest {
     }
 
     // Helper functions
+
+    // ---- claim-override classification -----------------------------------
+
+    /**
+     * A container must be offered to the override SPI as CONTAINER, not as INTERACT.
+     *
+     * This was a live hole. The classification was `Openable ? DOOR : INTERACT`, so a chest -- which
+     * is not Openable block-data -- arrived as INTERACT, and any provider granting ordinary
+     * interaction (the PatriamReligion carve-out does exactly that) could open the landholder's
+     * storage. The provider's deliberate refusal of CONTAINER was never consulted, because the
+     * question was never asked.
+     */
+    @Test
+    fun onPlayerInteract_ProviderGrantingInteractOnly_ShouldNotOpenAChest() {
+        // Arrange
+        mockBlockData<BlockData>()
+        mockBlockStateAsContainer()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player, bypassEnabled = false)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+
+        `when`(claimService.isInteractionAllowed(playerId, claim)).thenReturn(false)
+        `when`(fixture.player.hasPermission("mf.bypass")).thenReturn(false)
+
+        // A carve-out granting everything EXCEPT containers -- the religion provider's whitelist.
+        grantOverride(playerId, ClaimAction.INTERACT)
+        grantOverride(playerId, ClaimAction.DOOR)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert - the chest stays shut, because CONTAINER is what gets asked
+        verifyEventCancelled()
+    }
+
+    /**
+     * The other half of the same property: a provider that DOES grant CONTAINER opens the chest.
+     *
+     * Paired with the test above, this pins the classification exactly. Were a chest ever
+     * classified as INTERACT again, the previous test would open it and this one would not.
+     *
+     * What it pins is the *classification*, not a reachable grant. ClaimOverrideRegistry hard-excludes
+     * CONTAINER before any provider is consulted, so in production no provider can answer the way
+     * this stub does. It stays because the classification is the thing that can regress, and mocking
+     * MfClaimService is the only way to observe which action the listener asks about.
+     */
+    @Test
+    fun onPlayerInteract_ProviderGrantingContainer_ShouldOpenAChest() {
+        // Arrange
+        mockBlockData<BlockData>()
+        mockBlockStateAsContainer()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player, bypassEnabled = false)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+
+        `when`(claimService.isInteractionAllowed(playerId, claim)).thenReturn(false)
+        `when`(fixture.player.hasPermission("mf.bypass")).thenReturn(false)
+
+        grantOverride(playerId, ClaimAction.CONTAINER)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+    }
+
+    /** A door is still a door: the container check must not swallow the DOOR classification. */
+    @Test
+    fun onPlayerInteract_OpenableWithoutInventory_ShouldStillBeClassifiedAsDoor() {
+        // Arrange
+        mockBlockData<Door>()
+        `when`(fixture.block.state).thenReturn(mock(BlockState::class.java))
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player, bypassEnabled = false)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+
+        `when`(claimService.isInteractionAllowed(playerId, claim)).thenReturn(false)
+        `when`(fixture.player.hasPermission("mf.bypass")).thenReturn(false)
+
+        grantOverride(playerId, ClaimAction.DOOR)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+    }
+
+    /**
+     * A chest's BlockState implements InventoryHolder, which is what the classification keys on.
+     * Uses the real Chest type, which is both a BlockState and an InventoryHolder exactly as it is
+     * at runtime.
+     */
+    private fun mockBlockStateAsContainer() {
+        `when`(fixture.block.state).thenReturn(mock(org.bukkit.block.Chest::class.java))
+    }
+
+    /**
+     * Stub the override SPI to grant one action at the fixture block's position.
+     *
+     * Concrete arguments rather than Mockito matchers: [MfPlayerId] is a Kotlin value class, so a
+     * matcher returning null cannot bind to it. The fixture block sits at 0,0,0 in fixture.world.
+     */
+    private fun grantOverride(playerId: MfPlayerId, action: ClaimAction) {
+        `when`(claimService.isOverridden(playerId, fixture.world, 0, 0, 0, action)).thenReturn(true)
+    }
 
     private inline fun <reified T> mockBlockData() {
         val blockData = mock(T::class.java)
