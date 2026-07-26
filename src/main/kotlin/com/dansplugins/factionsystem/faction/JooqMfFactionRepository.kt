@@ -56,6 +56,7 @@ class JooqMfFactionRepository(
                     ).type
                 ).map(MfFactionRole.Companion::deserialize)
                 val members = dsl.selectFrom(MF_FACTION_MEMBER).where(MF_FACTION_MEMBER.FACTION_ID.eq(factionRecord.id))
+                    .orderBy(MF_FACTION_MEMBER.JOINED_AT, MF_FACTION_MEMBER.PLAYER_ID)
                     .fetch().map { it.toDomain(roles) }
                 val invites = dsl.selectFrom(MF_FACTION_INVITE).where(MF_FACTION_INVITE.FACTION_ID.eq(factionRecord.id))
                     .fetch().map { it.toDomain() }
@@ -83,7 +84,9 @@ class JooqMfFactionRepository(
                 ).type
             ).type
         ).map(MfFactionRole.Companion::deserialize)
+        // Oldest first, so the member list itself reflects standing rather than primary-key order.
         val members = dsl.selectFrom(MF_FACTION_MEMBER).where(MF_FACTION_MEMBER.FACTION_ID.eq(factionRecord.id))
+            .orderBy(MF_FACTION_MEMBER.JOINED_AT, MF_FACTION_MEMBER.PLAYER_ID)
             .fetch().map { it.toDomain(roles) }
         val invites = dsl.selectFrom(MF_FACTION_INVITE).where(MF_FACTION_INVITE.FACTION_ID.eq(factionRecord.id))
             .fetch().map { it.toDomain() }
@@ -146,6 +149,8 @@ class JooqMfFactionRepository(
                     gson.toJson(faction.defaultPermissions.mapKeys { it.key.name })
                 )
             )
+            .set(MF_FACTION.PRIMARY_OWNER_ID, faction.primaryOwnerId?.value)
+            .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
             .onConflict(MF_FACTION.ID).doUpdate()
             .set(MF_FACTION.NAME, faction.name)
             .set(MF_FACTION.DESCRIPTION, faction.description)
@@ -167,6 +172,8 @@ class JooqMfFactionRepository(
                     gson.toJson(faction.defaultPermissions.mapKeys { it.key.name })
                 )
             )
+            .set(MF_FACTION.PRIMARY_OWNER_ID, faction.primaryOwnerId?.value)
+            .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
             .set(MF_FACTION.VERSION, faction.version + 1)
             .where(MF_FACTION.ID.eq(faction.id.value))
             .and(MF_FACTION.VERSION.eq(faction.version))
@@ -190,8 +197,12 @@ class JooqMfFactionRepository(
             .set(MF_FACTION_MEMBER.FACTION_ID, factionId.value)
             .set(MF_FACTION_MEMBER.PLAYER_ID, member.playerId.value)
             .set(MF_FACTION_MEMBER.ROLE_ID, member.role.id.value)
+            .set(MF_FACTION_MEMBER.JOINED_AT, member.joinedAt)
             .onConflict(MF_FACTION_MEMBER.FACTION_ID, MF_FACTION_MEMBER.PLAYER_ID).doUpdate()
             .set(MF_FACTION_MEMBER.ROLE_ID, member.role.id.value)
+            // Written from the domain object, never from the clock: upsert deletes and reinserts the
+            // whole member list on every save, so taking "now" here would reset everyone's standing.
+            .set(MF_FACTION_MEMBER.JOINED_AT, member.joinedAt)
             .where(MF_FACTION_MEMBER.FACTION_ID.eq(factionId.value))
             .and(MF_FACTION_MEMBER.PLAYER_ID.eq(member.playerId.value))
             .execute()
@@ -305,13 +316,16 @@ class JooqMfFactionRepository(
                     Boolean::class.javaObjectType
                 ).type
             ),
-            applications = applications
+            applications = applications,
+            primaryOwnerId = primaryOwnerId?.let(::MfPlayerId),
+            heirId = heirId?.let(::MfPlayerId)
         )
     }
 
     private fun MfFactionMemberRecord.toDomain(roles: List<MfFactionRole>): MfFactionMember = MfFactionMember(
         playerId.let(::MfPlayerId),
-        roles.single { it.id.value == roleId }
+        roles.single { it.id.value == roleId },
+        joinedAt
     )
 
     private fun MfFactionInviteRecord.toDomain() =

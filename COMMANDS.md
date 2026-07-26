@@ -91,6 +91,20 @@ The main faction command can be accessed using any of the following aliases:
 **Description:** Kicks a player from your faction.  
 **Usage:** `/f kick PlayerName`
 
+### `/faction transfer [player]` or `/f transfer [player]`
+**Permission:** `mf.transfer` (default: true)  
+**Description:** Hands your faction to another member, making them its primary owner. Only the current primary owner may do this, and the target must already be a member. Running it without confirming prints a Confirm button; nothing changes until you confirm.  
+**Usage:** `/f transfer PlayerName`
+
+**Notes:** The new primary owner is also given the faction's top role. You keep whatever role you had, and any nominated heir is cleared.
+
+### `/faction heir [player]` or `/f heir [player]`
+**Permission:** `mf.heir` (default: true)  
+**Description:** Nominates the member who inherits your faction if you leave it or are kicked. Only the current primary owner may do this. Use `/f heir none` to withdraw the nomination.  
+**Usage:** `/f heir PlayerName`
+
+**Notes:** A nomination changes nothing until you actually depart, and is forgotten if the nominee leaves first. Without one, the faction passes to its longest-standing member holding the right to disband, and failing that to its longest-standing member with the most authoritative role.
+
 ### `/faction set [name|description|prefix] [value]` or `/f set [name|description|prefix] [value]`
 **Permissions:** 
 - `mf.rename` (default: true) - for name

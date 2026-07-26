@@ -248,6 +248,12 @@ permissions:
   mf.leave:
     description: Allows you to leave your faction
     default: true
+  mf.transfer:
+    description: Allows you to hand your faction to another member, if you are its primary owner
+    default: true
+  mf.heir:
+    description: Allows you to nominate who inherits your faction, if you are its primary owner
+    default: true
   mf.rename:
     description: Allows you to rename your faction
     default: true

@@ -15,6 +15,24 @@ data class MfFactionRoles(
     val default: MfFactionRole
         get() = getRole(defaultRoleId)!!
 
+    /**
+     * The role carrying the faction's terminal authority, or null if no role has been given it.
+     *
+     * Used wherever MF needs "the top role" - handing the founder their role at creation, and handing
+     * an appointed leader theirs. It used to be found by matching the name "Owner", which a faction
+     * can change at will with /f role rename, and which threw outright when the match was not exactly
+     * one role.
+     *
+     * The right to dissolve the faction is the sound substitute: nothing outranks it, it is denied by
+     * default, and it can only be obtained by explicit grant from someone already holding the right to
+     * grant it. Only an explicit grant on the role counts, not a faction-wide default, so a faction
+     * that hands DISBAND to everyone by default does not thereby make every role the top one.
+     */
+    val leaderRole: MfFactionRole?
+        get() = roles.firstOrNull { role ->
+            role.getPermissionValue(role.plugin.factionPermissions.disband) == true
+        }
+
     companion object {
         fun defaults(plugin: MedievalFactions, factionId: MfFactionId): MfFactionRoles {
             val member = MfFactionRole(plugin, name = "Member")

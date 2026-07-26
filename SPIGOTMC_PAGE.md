@@ -18,7 +18,7 @@ Medieval Factions is a comprehensive system of mechanics that allows for the sim
 - Faction laws and governance systems
 - Full Dynmap integration for territory visualization
 - PlaceholderAPI support for custom displays
-- Multi-language support (English, Spanish, Russian, Portuguese, German, Dutch)
+- Fully translatable messages via an external language file
 
 The development of the fifth major version of MF was led by [alyphen](https://github.com/renbinden) (creator of [RPKit](https://github.com/RP-Kit/RPKit/wiki)). Huge thanks to her!
 
@@ -228,17 +228,12 @@ Medieval Factions is perfect for:
 
 ---
 
-## 🌐 Multi-Language Support
+## 🌐 Language
 
-Medieval Factions is available in multiple languages:
-- English (en-US)
-- Spanish (es-ES)
-- Russian (ru-RU)
-- Brazilian Portuguese (pt-BR)
-- German (de-DE)
-- Dutch (nl-NL)
+Medieval Factions ships with English (en-US) only. Additional locales can be supplied by dropping
+your own `lang_xx_XX.properties` file into the plugin's `lang/` folder.
 
-Change the language in `config.yml`:
+Set the language in `config.yml`:
 ```yaml
 language: en-US
 ```
@@ -302,7 +297,7 @@ You are free to use, modify, and distribute this software, provided that:
 - **Excellent Documentation:** Extensive guides and API documentation
 - **Community Support:** Active Discord community and developer support
 - **Open Source:** GPL-3.0 licensed with public GitHub repository
-- **Multi-Language:** Supports 6+ languages
+- **Language:** English, with every message externalised for translation
 - **Integration Ready:** Works with Dynmap, PlaceholderAPI, and more
 - **Proven Track Record:** Used on hundreds of servers since 2020
 

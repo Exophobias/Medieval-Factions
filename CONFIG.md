@@ -26,8 +26,8 @@ This document provides detailed information about all configuration options avai
 ### `language`
 **Type:** String  
 **Default:** `en-US`  
-**Description:** Sets the default language for the plugin. Available languages depend on installed language files.  
-**Available Values:** `en-US`, `es-ES`, `ru-RU`, `pt-BR`, `de-DE`, `nl-NL`, etc.
+**Description:** Sets the default language for the plugin. This build ships English only.  
+**Available Values:** `en-US`
 
 ## Database Configuration
 

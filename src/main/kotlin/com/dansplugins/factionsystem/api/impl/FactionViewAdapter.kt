@@ -30,10 +30,19 @@ class FactionViewAdapter(
         plugin.services.factionRelationshipService.getFactionsAtWarWith(faction.id)
             .any { it.value == other.value }
 
+    override val primaryOwnerId: UUID?
+        get() = faction.primaryOwnerId?.let { UUID.fromString(it.value) }
+
     override fun roleOf(playerId: UUID): FactionRoleView? =
         faction.getRole(MfPlayerId(playerId.toString()))?.let { role ->
-            object : FactionRoleView {
-                override val name: String = role.name
-            }
+            FactionRoleViewAdapter(plugin, faction, role)
         }
+
+    // Overridden rather than inherited from FactionView's default, which would wrap a role view per
+    // member and re-scan the member list for each. One pass over the members MF already holds in
+    // memory answers the same question.
+    override val leaderIds: List<UUID>
+        get() = faction.members
+            .filter { it.role.hasPermission(faction, plugin.factionPermissions.disband) }
+            .map { UUID.fromString(it.playerId.value) }
 }

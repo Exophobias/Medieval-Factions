@@ -205,7 +205,10 @@ class MfLegacyDataMigrator(private val plugin: MedievalFactions) {
                     },
                     bonusPower,
                     false,
-                    roles
+                    roles,
+                    // MF4 stored the owner as a uuid rather than a role name, so an import is the one
+                    // place a real head of House can be recovered without trusting a role name.
+                    primaryOwnerId = ownerUuid?.let(::MfPlayerId)
                 )
             ).onFailure {
                 plugin.logger.log(SEVERE, "Failed to save faction \"${legacyFaction.name}\": ${it.reason.message}")

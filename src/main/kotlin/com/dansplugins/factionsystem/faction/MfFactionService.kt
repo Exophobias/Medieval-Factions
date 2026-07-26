@@ -121,7 +121,10 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                 }
             }
         }
-        val result = repository.upsert(factionToSave)
+        // Every member-list change in MF funnels through here, so this is the one place that has to
+        // notice a departed head of House and hand the faction on. See
+        // MfFaction.withPrimaryOwnerSuccession.
+        val result = repository.upsert(factionToSave.withPrimaryOwnerSuccession())
         factionsById[result.id] = result
         val mapService = plugin.services.mapService
         if (mapService != null && !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {

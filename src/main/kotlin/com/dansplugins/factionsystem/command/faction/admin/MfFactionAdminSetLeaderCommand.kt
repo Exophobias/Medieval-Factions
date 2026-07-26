@@ -65,18 +65,23 @@ class MfFactionAdminSetLeaderCommand(private val plugin: MedievalFactions) : Com
                     return@Runnable
                 }
 
-                // Find the Owner role
-                val ownerRole = targetFaction.roles.roles.find { it.name == "Owner" }
+                // Find the top role. Selected by the authority it carries, not by the name "Owner",
+                // which the faction itself can rename: a faction that renamed its top role used to
+                // land here and be told it had none, and one that renamed a junior role to "Owner"
+                // could have had the appointed leader handed that junior role instead.
+                val ownerRole = targetFaction.roles.leaderRole
                 if (ownerRole == null) {
                     sender.sendMessage("$RED${plugin.language["CommandFactionAdminSetLeaderNoOwnerRole"]}")
                     return@Runnable
                 }
 
-                // Add player as the owner
+                // Add player as the owner. This is the one command that reassigns the recorded head
+                // of a faction; nothing a faction can do to itself moves it.
                 val updatedFaction = factionService.save(
                     targetFaction.copy(
                         members = targetFaction.members + MfFactionMember(targetMfPlayer.id, ownerRole),
-                        invites = targetFaction.invites.filter { it.playerId != targetMfPlayer.id }
+                        invites = targetFaction.invites.filter { it.playerId != targetMfPlayer.id },
+                        primaryOwnerId = targetMfPlayer.id
                     )
                 ).onFailure {
                     sender.sendMessage("$RED${plugin.language["CommandFactionAdminSetLeaderFailedToSaveFaction"]}")

@@ -64,8 +64,8 @@ class MfFactionDevGenerateCommand(private val plugin: MedievalFactions) : Comman
                         }
                     val factionId = MfFactionId.generate()
                     val roles = MfFactionRoles.defaults(plugin, factionId)
-                    val owner = roles.single { it.name == "Owner" }
-                    val faction = MfFaction(plugin, id = factionId, name = "${adjectives.random()} ${adjectives.random()} ${nouns.random()}", roles = roles, members = listOf(mfPlayer.withRole(owner)))
+                    val owner = roles.leaderRole ?: roles.default
+                    val faction = MfFaction(plugin, id = factionId, name = "${adjectives.random()} ${adjectives.random()} ${nouns.random()}", roles = roles, members = listOf(mfPlayer.withRole(owner)), primaryOwnerId = mfPlayer.id)
                     val createdFaction = factionService.save(faction).onFailure {
                         sender.sendMessage("${RED}Failed to save faction while generating data")
                         plugin.logger.log(SEVERE, "Failed to save faction: ${it.reason.message}", it.reason.cause)

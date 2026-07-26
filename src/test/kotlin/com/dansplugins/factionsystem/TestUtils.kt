@@ -12,6 +12,8 @@ import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockPlaceEvent
+import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.time.Instant
@@ -199,3 +201,16 @@ class TestUtils {
         val sender: CommandSender
     )
 }
+
+/**
+ * Mockito's matchers and captors return null, and Kotlin rejects null where a Kotlin function
+ * declares a non-null parameter, so stubbing or capturing one throws before Mockito is ever reached.
+ * Routing the value through an unbounded type parameter drops the intrinsic check. Only needed for
+ * Kotlin methods; Java ones such as Bukkit's carry no check.
+ *
+ * Declare the captor's type explicitly - `val c: ArgumentCaptor<MfFaction> = ArgumentCaptor.forClass(...)`
+ * - or the type parameter binds to a platform type and the check reappears at the call site.
+ */
+fun <T> anyArg(): T = ArgumentMatchers.any()
+
+fun <T> ArgumentCaptor<T>.captureArg(): T = capture()

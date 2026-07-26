@@ -58,8 +58,19 @@ class MfFactionCreateCommand(private val plugin: MedievalFactions) : CommandExec
                 }
                 val factionId = MfFactionId.generate()
                 val roles = MfFactionRoles.defaults(plugin, factionId)
-                val owner = roles.single { it.name == "Owner" }
-                val faction = MfFaction(plugin, id = factionId, name = factionName, roles = roles, members = listOf(mfPlayer.withRole(owner)))
+                // roles.default rather than a throw: these are freshly generated defaults, so a null
+                // here means MF's own default role set has lost its top role, and refusing to create
+                // the faction at all would be a worse answer than creating one whose founder is
+                // recorded as its head regardless. The old roles.single { it.name == "Owner" } threw.
+                val owner = roles.leaderRole ?: roles.default
+                val faction = MfFaction(
+                    plugin,
+                    id = factionId,
+                    name = factionName,
+                    roles = roles,
+                    members = listOf(mfPlayer.withRole(owner)),
+                    primaryOwnerId = mfPlayer.id
+                )
                 val createdFaction = factionService.save(faction).onFailure { failure ->
                     sender.sendMessage("$RED${plugin.language["CommandFactionCreateFactionFailedToSave"]}")
                     plugin.logger.log(SEVERE, "Failed to save faction: ${failure.reason.message}", failure.reason.cause)

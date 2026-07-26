@@ -26,6 +26,17 @@ data class MfFactionRole(
 
     fun getPermissionValue(permission: MfFactionPermission) = permissions[permission]
 
+    /**
+     * How many permissions this role is explicitly granted.
+     *
+     * A rough stand-in for seniority, used only as succession's last tier. MF has no rank and no
+     * ordering over roles, so there is nothing better to compare; what makes this usable at all is
+     * that it counts grants rather than reading a name, and a grant has to come from someone who
+     * already held the right to hand it out.
+     */
+    val grantedPermissionCount: Int
+        get() = permissionsByName.count { (_, granted) -> granted == true }
+
     override fun serialize() = mapOf(
         "id" to id.value,
         "name" to name,
