@@ -175,6 +175,35 @@ shadowJar {
     relocate 'org.reactivestreams', 'com.dansplugins.factionsystem.shadow.org.reactivestreams'
 }
 
+// The stable API, on its own, as com.dansplugins:medieval-factions-api.
+//
+// Consumers previously had to compile against the full shaded jar just to reach
+// com.dansplugins.factionsystem.api.*, which drags in jOOQ, Flyway, H2, MariaDB, Gson and -- the
+// part that actually bites -- MF's own SLF4J provider, registered via META-INF/services. On a test
+// classpath, ServiceLoader finds MfSlf4jServiceProvider and initialises it without MF running, which
+// throws and takes MockBukkit's ServerMock down with it. PatriamMFAddon works around that by
+// excluding the whole MF dependency from its test classpath, which only works because none of its
+// tests touch MF types. A consumer that wants to FAKE the API in tests cannot do that.
+//
+// This jar carries the api package only -- interfaces, view types, events -- and deliberately NOT
+// api.impl, which is the adapter over MF's internals and belongs in the plugin. The public API
+// surface imports nothing from MF outside itself, so the seam is clean.
+//
+// Nothing is relocated here: these classes are compile-time-only for consumers, and at runtime the
+// real (shaded) plugin classes are the ones that load. Consumers that EXECUTE api classes in tests
+// (constructing a FactionId, implementing MedievalFactionsApi) need a plain kotlin-stdlib on the
+// test classpath, because these are unrelocated Kotlin classes.
+tasks.register('apiJar', Jar) {
+    archiveBaseName.set('medieval-factions-api')
+    archiveClassifier.set('')
+    from(sourceSets.main.output) {
+        include 'com/dansplugins/factionsystem/api/**'
+        exclude 'com/dansplugins/factionsystem/api/impl/**'
+    }
+}
+
+tasks.named('assemble') { dependsOn 'apiJar' }
+
 artifacts {
     archives shadowJar
 }
@@ -209,6 +238,24 @@ publishing {
             // named "-all", so consumers depending on medieval-factions:<v>:all still resolve.
             artifact(shadowJar) {
                 classifier = 'all'
+            }
+        }
+
+        // Published alongside as com.dansplugins:medieval-factions-api:<version>. Declares
+        // kotlin-stdlib so a consumer that instantiates api types in tests gets it transitively
+        // rather than having to know why it is needed.
+        api(MavenPublication) {
+            groupId = project.group
+            artifactId = 'medieval-factions-api'
+            version = project.version
+            artifact(tasks.named('apiJar'))
+            pom.withXml {
+                def deps = asNode().appendNode('dependencies')
+                def dep = deps.appendNode('dependency')
+                dep.appendNode('groupId', 'org.jetbrains.kotlin')
+                dep.appendNode('artifactId', 'kotlin-stdlib')
+                dep.appendNode('version', '1.7.0')
+                dep.appendNode('scope', 'compile')
             }
         }
     }
