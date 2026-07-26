@@ -17,7 +17,7 @@ class Language(plugin: MedievalFactions, private val language: String) {
             languageFolder.mkdirs()
         }
 
-        val filenames = listOf("lang_en_US", "lang_en_GB", "lang_fr_FR", "lang_de_DE")
+        val filenames = listOf("lang_en_US")
 
         filenames.forEach { filename ->
             val filepath = "lang/$filename.properties"
