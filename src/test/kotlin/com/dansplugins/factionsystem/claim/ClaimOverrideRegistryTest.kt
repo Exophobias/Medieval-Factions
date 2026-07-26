@@ -75,7 +75,12 @@ class ClaimOverrideRegistryTest {
         assertFalse(consulted, "a provider must not even be asked about an unscoped action")
     }
 
-    /** Providers see the action, which is what lets them refuse container access specifically. */
+    /**
+     * Providers see the action, which is what lets them scope a grant to what was actually asked.
+     *
+     * CONTAINER is still refused, but no longer by the provider: it never reaches one, so only BREAK
+     * is recorded as seen. The provider's own refusal is now belt and braces on the same attack.
+     */
     @Test
     fun `the action is passed through to the provider`() {
         val seen = mutableListOf<ClaimAction>()
@@ -85,7 +90,40 @@ class ClaimOverrideRegistryTest {
         }
         assertTrue(ask(ClaimAction.BREAK))
         assertFalse(ask(ClaimAction.CONTAINER), "a provider must be able to refuse chest access")
-        assertEquals(listOf(ClaimAction.BREAK, ClaimAction.CONTAINER), seen)
+        assertEquals(listOf(ClaimAction.BREAK), seen)
+    }
+
+    /**
+     * Section 7.3 invariant 2: CONTAINER, DAMAGE and EXPLODE are hard-excluded inside MF, before the
+     * registry consults anyone, so the guarantee is structural rather than conventional.
+     *
+     * A provider refusing them itself is not enough. That is a convention a third-party plugin can
+     * fail to follow, and a whitelist in a first-party one can be widened by mistake. Chest access,
+     * PvP inside somebody else's claim, and blowing up somebody else's walls are all grants far
+     * larger than any land exception intends, so no answer a provider gives can produce them.
+     */
+    @Test
+    fun `container damage and explode never reach a provider`() {
+        val seen = mutableListOf<ClaimAction>()
+        registry.register { _, _, _, _, _, action ->
+            seen.add(action)
+            true
+        }
+        assertFalse(ask(ClaimAction.CONTAINER))
+        assertFalse(ask(ClaimAction.DAMAGE))
+        assertFalse(ask(ClaimAction.EXPLODE))
+        assertEquals(emptyList(), seen, "a provider must not even be asked to open a chest")
+    }
+
+    /** The exclusion is exactly three actions wide; it must not quietly disable the whole SPI. */
+    @Test
+    fun `the actions an exception is for still reach a provider`() {
+        registry.register { _, _, _, _, _, _ -> true }
+        assertTrue(ask(ClaimAction.BUILD))
+        assertTrue(ask(ClaimAction.BREAK))
+        assertTrue(ask(ClaimAction.INTERACT))
+        assertTrue(ask(ClaimAction.DOOR))
+        assertTrue(ask(ClaimAction.BUCKET))
     }
 
     /** The position is passed through, so an exception can be a few blocks rather than a chunk. */
@@ -121,6 +159,28 @@ class ClaimOverrideRegistryTest {
         assertFalse(ask())
         assertFalse(ask())
         assertEquals(1, calls, "a broken provider should be asked once, then skipped")
+    }
+
+    /**
+     * The same containment for an [Error], which is the failure that actually happens in the field.
+     *
+     * A provider compiled against a class the installed jar no longer has throws
+     * NoClassDefFoundError, which is an Error and not an Exception. Caught only as Exception it
+     * walks out of allows, out of isOverridden, out of the listener's `if`, and the listener's
+     * cancel never runs -- territory protection fails OPEN for every player on that path. Note that
+     * reintroducing the defect fails this test by THROWING rather than by asserting, which is the
+     * shape the live defect had.
+     */
+    @Test
+    fun `a provider throwing an Error is contained`() {
+        var calls = 0
+        registry.register { _, _, _, _, _, _ ->
+            calls++
+            throw NoClassDefFoundError("a class this provider was built against is gone")
+        }
+        assertFalse(ask(), "an Error must read as no opinion, not as permission")
+        assertFalse(ask(), "and must keep reading that way once the provider is poisoned")
+        assertEquals(1, calls, "a provider that threw an Error should be asked once, then skipped")
     }
 
     /** A broken provider must not stop a working one from being heard. */

@@ -33,20 +33,32 @@ enum class ClaimAction {
     /**
      * Opening a chest, barrel, hopper, furnace or any other inventory holder.
      *
-     * Kept deliberately distinct from [INTERACT]. Consumers implementing a provider are strongly
-     * advised to refuse this unconditionally: it is the action that turns a limited land exception
-     * into unrestricted access to everything the landholder owns, and no plausible use case for a
-     * third-party override needs it.
+     * Kept deliberately distinct from [INTERACT]. **Providers are never consulted for this action:
+     * the registry refuses it before asking anyone.** It is the action that turns a limited land
+     * exception into unrestricted access to everything the landholder owns, and no plausible use
+     * case for a third-party override needs it.
      */
     CONTAINER,
 
-    /** Damaging another player or an entity inside the claim. */
+    /**
+     * Damaging another player or an entity inside the claim.
+     *
+     * **Providers are never consulted for this action: the registry refuses it before asking
+     * anyone.** Granting it would turn a land exception into a rentable forward base, with the
+     * attacker able to fight inside a claim whose holder cannot fight back.
+     */
     DAMAGE,
 
     /** Filling or emptying a bucket. */
     BUCKET,
 
-    /** An explosion destroying blocks in the claim. */
+    /**
+     * An explosion destroying blocks in the claim.
+     *
+     * **Providers are never consulted for this action: the registry refuses it before asking
+     * anyone.** An exception is a permission to be present, not a permission to level someone
+     * else's claim.
+     */
     EXPLODE,
 
     /**
