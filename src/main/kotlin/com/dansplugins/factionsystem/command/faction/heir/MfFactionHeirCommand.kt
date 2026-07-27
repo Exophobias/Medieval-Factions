@@ -1,7 +1,9 @@
 package com.dansplugins.factionsystem.command.faction.heir
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.player.MfPlayer
+import com.dansplugins.factionsystem.player.MfPlayerId
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor.GREEN
 import org.bukkit.ChatColor.RED
@@ -21,6 +23,12 @@ import java.util.logging.Level.SEVERE
  *
  * Only the recorded head may nominate, for the same reason only they may transfer: this is their
  * succession to decide, not that of anyone who happens to hold the right to disband.
+ *
+ * The nominee is normally a member. It may instead be the head of a faction that has sworn fealty to
+ * this one, which is the only case where the succession reaches outside the faction. A player belongs
+ * to exactly one faction, so such an heir takes the greater realm by leaving their own, and that
+ * departure fires their own faction's succession in turn. Naming one is deliberately no harder than
+ * naming a member; what makes it a decision is what it does when it lands.
  */
 class MfFactionHeirCommand(private val plugin: MedievalFactions) : CommandExecutor, TabCompleter {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
@@ -58,18 +66,27 @@ class MfFactionHeirCommand(private val plugin: MedievalFactions) : CommandExecut
                     sender.sendMessage("$RED${plugin.language["CommandFactionHeirNotPrimaryOwner"]}")
                     return@Runnable
                 }
+                var vassalName: String? = null
                 val heirId = if (clearing) {
                     null
                 } else {
                     val target = plugin.server.offlinePlayers.firstOrNull { it.name.equals(targetName, ignoreCase = true) }
                     val targetMfPlayer = target?.let(playerService::getPlayer)
-                    if (targetMfPlayer == null || faction.members.none { it.playerId == targetMfPlayer.id }) {
-                        sender.sendMessage("$RED${plugin.language["CommandFactionHeirTargetNotAMember", targetName]}")
+                    if (targetMfPlayer == null) {
+                        sender.sendMessage("$RED${plugin.language["CommandFactionHeirTargetNotEligible", targetName]}")
                         return@Runnable
                     }
                     if (targetMfPlayer.id == mfPlayer.id) {
                         sender.sendMessage("$RED${plugin.language["CommandFactionHeirCannotNominateSelf"]}")
                         return@Runnable
+                    }
+                    if (!faction.isMember(targetMfPlayer.id)) {
+                        val vassal = vassalLedBy(targetMfPlayer.id, faction)
+                        if (vassal == null) {
+                            sender.sendMessage("$RED${plugin.language["CommandFactionHeirTargetNotEligible", targetName]}")
+                            return@Runnable
+                        }
+                        vassalName = vassal.name
                     }
                     targetMfPlayer.id
                 }
@@ -78,14 +95,30 @@ class MfFactionHeirCommand(private val plugin: MedievalFactions) : CommandExecut
                     plugin.logger.log(SEVERE, "Failed to save faction: ${it.reason.message}", it.reason.cause)
                     return@Runnable
                 }
-                if (heirId == null) {
-                    sender.sendMessage("$GREEN${plugin.language["CommandFactionHeirCleared"]}")
-                } else {
-                    sender.sendMessage("$GREEN${plugin.language["CommandFactionHeirSuccess", targetName]}")
+                val vassal = vassalName
+                when {
+                    heirId == null -> sender.sendMessage("$GREEN${plugin.language["CommandFactionHeirCleared"]}")
+                    vassal != null -> sender.sendMessage("$GREEN${plugin.language["CommandFactionHeirSuccessVassalLeader", targetName, vassal]}")
+                    else -> sender.sendMessage("$GREEN${plugin.language["CommandFactionHeirSuccess", targetName]}")
                 }
             }
         )
         return true
+    }
+
+    /**
+     * The faction the given player heads, if it has sworn fealty to [liege]; null otherwise.
+     *
+     * Checked here so a nomination that could never take effect is refused at the point it is made
+     * rather than silently ignored years later. It is checked again at the succession itself, because
+     * a vassal can declare independence or replace its own head in between and neither of those tells
+     * this command anything.
+     */
+    private fun vassalLedBy(playerId: MfPlayerId, liege: MfFaction): MfFaction? {
+        val ledFaction = plugin.services.factionService.getFaction(playerId) ?: return null
+        if (ledFaction.primaryOwnerId != playerId) return null
+        if (plugin.services.factionRelationshipService.getLiege(ledFaction.id) != liege.id) return null
+        return ledFaction
     }
 
     override fun onTabComplete(
@@ -99,7 +132,10 @@ class MfFactionHeirCommand(private val plugin: MedievalFactions) : CommandExecut
         val faction = playerService.getPlayer(sender)?.let { plugin.services.factionService.getFaction(it.id) }
             ?: return emptyList()
         val prefix = args.lastOrNull()?.lowercase() ?: ""
-        return (faction.members.mapNotNull { playerService.getPlayer(it.playerId)?.name } + "none")
+        val vassalLeaders = plugin.services.factionRelationshipService.getVassals(faction.id)
+            .mapNotNull { plugin.services.factionService.getFaction(it)?.primaryOwnerId }
+            .mapNotNull { playerService.getPlayer(it)?.name }
+        return (faction.members.mapNotNull { playerService.getPlayer(it.playerId)?.name } + vassalLeaders + "none")
             .filter { it.lowercase().startsWith(prefix) }
     }
 }

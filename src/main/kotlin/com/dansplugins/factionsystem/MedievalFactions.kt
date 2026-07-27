@@ -121,6 +121,19 @@ class MedievalFactions : JavaPlugin() {
     lateinit var flags: MfFlags
     lateinit var factionPermissions: MfFactionPermissions
     lateinit var services: Services
+
+    /**
+     * [services] if it has been wired up yet, otherwise null.
+     *
+     * The services are constructed one at a time and only then collected into [services], so anything
+     * a service does in its own constructor runs before that property exists - MfFactionService, for
+     * one, reconciles every faction's neutrality flag from its init block, and that goes through
+     * save. Code reachable from there must ask here instead of reading [services], which is lateinit
+     * but not early enough.
+     */
+    val servicesOrNull: Services?
+        get() = if (::services.isInitialized) services else null
+
     lateinit var language: Language
 
     override fun onEnable() {

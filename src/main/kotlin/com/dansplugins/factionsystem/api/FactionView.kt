@@ -89,4 +89,24 @@ interface FactionView {
      */
     val leaderIds: List<UUID>
         get() = memberIds.filter { isLeader(it) }
+
+    /**
+     * Where this faction sits in the liege/vassal hierarchy.
+     *
+     * Vassalage is the one piece of faction state that is neither owned by nor stored on the faction:
+     * it lives in relationships between factions, and every question worth asking about it - who does
+     * this faction answer to, who answers to it, how far down does it sit - needs several of those
+     * walked together. [FactionHierarchyView] carries the answers as one snapshot so a consumer never
+     * has to walk anything, and so the walking stays MF's problem.
+     *
+     * The intended use is deriving something a faction is not told and does not store: a rank, a
+     * style of address, a display tier. Those are properties of a position rather than of a faction,
+     * they change the moment the structure around the faction changes, and they must therefore be
+     * recomputed rather than recorded. Read [FactionHierarchyView] for what each field means and what
+     * asking costs; it is cheap enough to ask per message, and it is not a live object.
+     *
+     * Defaults to [FactionHierarchyView.INDEPENDENT] so that adding this member stays additive.
+     */
+    val hierarchy: FactionHierarchyView
+        get() = FactionHierarchyView.INDEPENDENT
 }

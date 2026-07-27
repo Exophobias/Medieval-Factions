@@ -45,11 +45,15 @@ data class MfFaction(
      */
     val primaryOwnerId: MfPlayerId? = null,
     /**
-     * The member the head of this faction has nominated to inherit it, or null if none is nominated.
+     * The player the head of this faction has nominated to inherit it, or null if none is nominated.
      *
-     * A nomination, not an office: the heir holds no authority until they actually inherit. It is
-     * cleared as soon as it is used, and as soon as the nominee stops being a member, so it can never
-     * name someone who has left. Only the head may set it, via /f heir.
+     * A nomination, not an office: the heir holds no authority until they actually inherit, and it is
+     * cleared as soon as it is used. Only the head may set it, via /f heir.
+     *
+     * Normally a member. It may instead be the recorded head of a faction that has sworn fealty to
+     * this one, which is the one case where an heir is not one of your own people - see
+     * [heirsVassalFaction]. Either way the nomination is dropped the moment it stops being true, so it
+     * can never name somebody who has left or a vassal that has walked away.
      */
     val heirId: MfPlayerId? = null
 ) {
@@ -90,6 +94,72 @@ data class MfFaction(
     /** Members oldest first, which is what "longest-standing" means for succession. */
     private val membersByStanding: List<MfFactionMember>
         get() = members.sortedWith(compareBy({ it.joinedAt }, { it.playerId.value }))
+
+    @JvmName("isMember")
+    fun isMember(playerId: MfPlayerId): Boolean = members.any { it.playerId == playerId }
+
+    /** Whether the record still names a head who is no longer on the member list. */
+    private val primaryOwnerHasDeparted: Boolean
+        get() = primaryOwnerId != null && !isMember(primaryOwnerId)
+
+    /**
+     * The faction sworn to this one whose recorded head is this faction's nominated heir, or null if
+     * the nomination is not of that kind or no longer holds.
+     *
+     * A ruler may name the head of one of their vassals as successor. It is the only way an heir can
+     * be somebody who is not already a member, and it is deliberate: it makes swearing fealty worth
+     * something to the vassal rather than being purely a burden, and it produces a real succession
+     * crisis rather than a field update, because a player belongs to exactly one faction and taking
+     * the greater one means leaving their own.
+     *
+     * Every condition is rechecked here rather than trusted from the moment of nomination, because
+     * every one of them can be undone by somebody else in the meantime: the vassal can declare
+     * independence, the liege can grant it, and the vassal can replace its own head. A nomination that
+     * has gone stale simply stops being an answer, so succession falls through to the ordinary order
+     * rather than failing.
+     *
+     * Null while the plugin is still wiring its services up, which is the only time the lookups this
+     * needs are unavailable. Nothing on that path is a succession - see MedievalFactions.servicesOrNull.
+     */
+    val heirsVassalFaction: MfFactionId?
+        get() {
+            val heir = heirId ?: return null
+            if (isMember(heir)) return null
+            val services = plugin.servicesOrNull ?: return null
+            val heirsFaction = services.factionService.getFaction(heir) ?: return null
+            if (heirsFaction.primaryOwnerId != heir) return null
+            if (services.factionRelationshipService.getLiege(heirsFaction.id) != id) return null
+            return heirsFaction.id
+        }
+
+    /**
+     * The vassal faction whose head is about to leave it to take this one, or null if no such
+     * succession is due.
+     *
+     * True only when this faction's seat has actually fallen vacant AND the standing nomination is of
+     * a vassal's head that still checks out. Everything else - a nomination that is merely present, a
+     * head who is still here - answers null.
+     */
+    val vassalHeirAscensionDue: MfFactionId?
+        get() = if (primaryOwnerHasDeparted) heirsVassalFaction else null
+
+    /**
+     * This faction with a nominated heir who is not yet a member admitted as one, holding the top
+     * role.
+     *
+     * The top role for the same reason /f transfer grants it: a head who cannot act is not a head.
+     * Admitting them turns the cross-faction case back into the ordinary one, so [successorToPrimaryOwner]
+     * needs no special tier for it and the rule stays a single ladder.
+     *
+     * Says nothing about whether the ascension is warranted - see [vassalHeirAscensionDue] - and it
+     * cannot complete one on its own, since the heir must also be released from the faction they are
+     * leaving and only the service can do that.
+     */
+    fun withVassalHeirAdmitted(): MfFaction {
+        val heir = heirId ?: return this
+        if (isMember(heir)) return this
+        return copy(members = members + MfFactionMember(heir, roles.leaderRole ?: roles.default))
+    }
 
     /**
      * Who would inherit this faction if the head departed right now, or null if nobody could.
@@ -133,9 +203,14 @@ data class MfFaction(
      * member remains to inherit. Whether that is allowed is MF's own call, so it is read from
      * factions.allowLeaderlessFactions. With leaderless factions forbidden there is no valid state to
      * fall back to, so the save is refused rather than quietly producing one.
+     *
+     * A nomination survives only while it is still true. That is one test for an ordinary heir - are
+     * they still a member - and a second for a vassal's head, who is not one; see [heirsVassalFaction]
+     * for what can silently invalidate the latter. Either way a nomination that no longer holds is
+     * forgotten rather than honoured, so the ladder below it applies.
      */
     fun withPrimaryOwnerSuccession(): MfFaction {
-        val survivingHeir = heirId?.takeIf { heir -> members.any { it.playerId == heir } }
+        val survivingHeir = heirId?.takeIf { heir -> isMember(heir) || heirsVassalFaction != null }
         val owner = primaryOwnerId
         if (owner == null || members.any { it.playerId == owner }) {
             return if (survivingHeir == heirId) this else copy(heirId = survivingHeir)

@@ -1,14 +1,19 @@
 package com.dansplugins.factionsystem.api.impl
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.FactionHierarchyView
+import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.FactionPermission
 import com.dansplugins.factionsystem.faction.MfFaction
+import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionMember
 import com.dansplugins.factionsystem.faction.permission.MfFactionPermission
 import com.dansplugins.factionsystem.faction.permission.MfFactionPermissions
 import com.dansplugins.factionsystem.faction.role.MfFactionRole
 import com.dansplugins.factionsystem.faction.role.MfFactionRoleId
 import com.dansplugins.factionsystem.player.MfPlayerId
+import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
+import com.dansplugins.factionsystem.service.Services
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -16,6 +21,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.util.UUID
 
@@ -204,5 +211,65 @@ class FactionViewAdapterTest {
         membership(commonerId to commonerRole())
 
         assertTrue(view().roleOf(commonerId)!!.hasPermission(FactionPermission.KICK))
+    }
+
+    // --- hierarchy ---
+
+    private val factionId = MfFactionId.generate()
+    private val liegeId = MfFactionId.generate()
+    private val vassalA = MfFactionId.generate()
+    private val vassalB = MfFactionId.generate()
+
+    /** Wires the faction's position into the relationship service the adapter reads it from. */
+    private fun hierarchy(
+        liege: MfFactionId? = null,
+        vassals: List<MfFactionId> = emptyList(),
+        depth: Int = 0,
+        crownedVassals: List<MfFactionId> = emptyList()
+    ) {
+        `when`(faction.id).thenReturn(factionId)
+        val services = mock(Services::class.java)
+        `when`(plugin.services).thenReturn(services)
+        val relationshipService = mock(MfFactionRelationshipService::class.java)
+        `when`(services.factionRelationshipService).thenReturn(relationshipService)
+        `when`(relationshipService.getLiege(factionId)).thenReturn(liege)
+        `when`(relationshipService.getVassals(factionId)).thenReturn(vassals)
+        `when`(relationshipService.getDepthBelowSovereign(factionId)).thenReturn(depth)
+        `when`(relationshipService.getVassalsHoldingVassals(factionId)).thenReturn(crownedVassals)
+    }
+
+    @Test
+    fun aFactionInNoHierarchyReportsItselfIndependent() {
+        hierarchy()
+
+        assertEquals(FactionHierarchyView.INDEPENDENT, view().hierarchy)
+    }
+
+    @Test
+    fun theViewCarriesTheFactionsPositionAcross() {
+        hierarchy(liege = liegeId, vassals = listOf(vassalA, vassalB), depth = 2, crownedVassals = listOf(vassalA))
+
+        val hierarchy = view().hierarchy
+
+        assertEquals(FactionId(liegeId.value), hierarchy.liege)
+        assertEquals(listOf(FactionId(vassalA.value), FactionId(vassalB.value)), hierarchy.vassals)
+        assertEquals(2, hierarchy.depthBelowSovereign)
+        assertEquals(1, hierarchy.vassalsHoldingVassals)
+        assertTrue(hierarchy.hasLiege)
+        assertTrue(hierarchy.hasVassals)
+    }
+
+    /**
+     * The adapter must not answer this from the vassal tree, which grows with the whole realm. Two
+     * levels is all the emperor question needs and all it is allowed to cost.
+     */
+    @Test
+    fun theHierarchyIsBuiltWithoutWalkingTheVassalTree() {
+        hierarchy(vassals = listOf(vassalA, vassalB), crownedVassals = listOf(vassalA, vassalB))
+
+        assertEquals(2, view().hierarchy.vassalsHoldingVassals)
+        val relationshipService = plugin.services.factionRelationshipService
+        verify(relationshipService, never()).getVassalTree(factionId)
+        verify(relationshipService, never()).getLiegeChain(factionId)
     }
 }

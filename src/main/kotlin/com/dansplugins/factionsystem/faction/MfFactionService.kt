@@ -70,6 +70,13 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
     fun save(faction: MfFaction): Result4k<MfFaction, ServiceFailure> = resultFrom {
         val previousState = getFaction(faction.id)
         var factionToSave = faction
+        // A ruler may name the head of one of their vassals as heir, and a player belongs to exactly
+        // one faction, so that heir has to leave their own to take this one. Resolved before the
+        // events below so the heir's arrival is announced like any other, and before the succession
+        // rule below so it needs no special case: by then the heir is simply a member.
+        if (previousState != null) {
+            factionToSave = withVassalHeirAscended(factionToSave)
+        }
         if (previousState == null) {
             val event = FactionCreateEvent(faction.id, faction, !plugin.server.isPrimaryThread)
             plugin.server.pluginManager.callEvent(event)
@@ -138,6 +145,52 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         return@resultFrom result
     }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+    }
+
+    /**
+     * Factions part-way through handing themselves to a vassal's head, so a cascade cannot re-enter
+     * one and recurse forever.
+     *
+     * Each step of a cascade moves strictly down the vassal chain, because the heir must lead a
+     * faction sworn to the one being inherited, so a loop needs an actual ring in the liege
+     * relationships. Those are two rows apiece and nothing in the schema forbids a ring, and a
+     * succession that overflowed the stack would do so having already written to other factions. The
+     * guard costs one set insertion and turns that into a nomination that simply does not apply.
+     */
+    private val ascendingHeirs: MutableSet<MfFactionId> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * The given faction with its nominated vassal's head released from their own faction and admitted
+     * to this one, or the faction untouched if no such succession is due or it cannot be carried out.
+     *
+     * Releasing the heir is an ordinary save of the faction they are leaving, which is the point: it
+     * fires that faction's own succession, which may in turn be a nomination of ITS vassal's head, and
+     * so a single departure cascades down the chain. Nothing here special-cases the cascade; it falls
+     * out of the rule applying at every level.
+     *
+     * Best effort by design. If the vassal cannot spare its head - it would be emptied and the server
+     * forbids leaderless factions, say - the nomination is treated exactly as a stale one and the
+     * ordinary succession order applies, rather than the greater faction's save failing and a player
+     * being unable to leave.
+     */
+    private fun withVassalHeirAscended(faction: MfFaction): MfFaction {
+        val vassalFactionId = faction.vassalHeirAscensionDue ?: return faction
+        val heirId = faction.heirId ?: return faction
+        if (!ascendingHeirs.add(faction.id)) return faction
+        try {
+            val vassalFaction = getFaction(vassalFactionId) ?: return faction
+            save(vassalFaction.copy(members = vassalFaction.members.filter { it.playerId != heirId }))
+                .onFailure {
+                    plugin.logger.warning(
+                        "Faction ${faction.id.value} could not take its heir from vassal ${vassalFactionId.value}, " +
+                            "so the nomination was passed over: ${it.reason.message}"
+                    )
+                    return faction
+                }
+            return faction.withVassalHeirAdmitted()
+        } finally {
+            ascendingHeirs.remove(faction.id)
+        }
     }
 
     @JvmName("deleteFactionByFactionId")

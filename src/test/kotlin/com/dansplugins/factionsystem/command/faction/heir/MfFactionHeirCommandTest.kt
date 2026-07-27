@@ -14,6 +14,7 @@ import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
+import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
 import com.dansplugins.factionsystem.service.Services
 import dev.forkhandles.result4k.Success
 import org.bukkit.OfflinePlayer
@@ -43,6 +44,7 @@ class MfFactionHeirCommandTest {
     private lateinit var plugin: MedievalFactions
     private lateinit var factionService: MfFactionService
     private lateinit var playerService: MfPlayerService
+    private lateinit var relationshipService: MfFactionRelationshipService
     private lateinit var scheduler: BukkitScheduler
     private lateinit var sender: Player
     private lateinit var command: Command
@@ -76,6 +78,8 @@ class MfFactionHeirCommandTest {
         `when`(services.factionService).thenReturn(factionService)
         playerService = mock(MfPlayerService::class.java)
         `when`(services.playerService).thenReturn(playerService)
+        relationshipService = mock(MfFactionRelationshipService::class.java)
+        `when`(services.factionRelationshipService).thenReturn(relationshipService)
         `when`(factionService.save(anyArg())).thenAnswer { Success(mock(MfFaction::class.java)) }
 
         val heir = mock(OfflinePlayer::class.java)
@@ -141,6 +145,54 @@ class MfFactionHeirCommandTest {
 
     @Test
     fun aNonMemberCannotBeNominated() {
+        run("Outsider")
+
+        verify(factionService, never()).save(anyArg())
+    }
+
+    /**
+     * Puts the Outsider at the head of another faction, optionally sworn to the sender's, and
+     * optionally with somebody else recorded as its head instead.
+     */
+    private fun outsiderLeads(sworn: Boolean, itsHead: MfPlayerId = outsiderId) {
+        val vassalId = MfFactionId.generate()
+        val roles = MfFactionRoles.defaults(plugin, vassalId)
+        val vassal = MfFaction(
+            plugin,
+            id = vassalId,
+            name = "Sworn Faction",
+            roles = roles,
+            members = listOf(MfFactionMember(outsiderId, roles.leaderRole!!, joinedAt = 1_000)),
+            primaryOwnerId = itsHead
+        )
+        `when`(factionService.getFaction(outsiderId)).thenReturn(vassal)
+        `when`(relationshipService.getLiege(vassalId)).thenReturn(if (sworn) faction.id else null)
+    }
+
+    /** The one case where an heir is not one of your own people. */
+    @Test
+    fun theHeadCanNominateTheLeaderOfASwornFaction() {
+        outsiderLeads(sworn = true)
+
+        run("Outsider")
+
+        assertEquals(outsiderId, savedFaction().heirId)
+    }
+
+    @Test
+    fun theLeaderOfAFactionSwornToNobodyCannotBeNominated() {
+        outsiderLeads(sworn = false)
+
+        run("Outsider")
+
+        verify(factionService, never()).save(anyArg())
+    }
+
+    /** Naming a vassal's leader is naming a person, and only the one actually in charge counts. */
+    @Test
+    fun anOrdinaryMemberOfASwornFactionCannotBeNominated() {
+        outsiderLeads(sworn = true, itsHead = MfPlayerId(UUID.randomUUID().toString()))
+
         run("Outsider")
 
         verify(factionService, never()).save(anyArg())

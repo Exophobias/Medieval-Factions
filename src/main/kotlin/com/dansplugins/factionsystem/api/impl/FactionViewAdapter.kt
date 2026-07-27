@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.api.impl
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.FactionHierarchyView
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.FactionRoleView
 import com.dansplugins.factionsystem.api.FactionView
@@ -45,4 +46,17 @@ class FactionViewAdapter(
         get() = faction.members
             .filter { it.role.hasPermission(faction, plugin.factionPermissions.disband) }
             .map { UUID.fromString(it.playerId.value) }
+
+    // Assembled from the relationship service's own indexed lookups rather than from getVassalTree,
+    // which materialises the whole subtree. See FactionHierarchyView for what this costs.
+    override val hierarchy: FactionHierarchyView
+        get() {
+            val relationshipService = plugin.services.factionRelationshipService
+            return FactionHierarchyView(
+                liege = relationshipService.getLiege(faction.id)?.let { FactionId(it.value) },
+                vassals = relationshipService.getVassals(faction.id).map { FactionId(it.value) },
+                depthBelowSovereign = relationshipService.getDepthBelowSovereign(faction.id),
+                vassalsHoldingVassals = relationshipService.getVassalsHoldingVassals(faction.id).size
+            )
+        }
 }
