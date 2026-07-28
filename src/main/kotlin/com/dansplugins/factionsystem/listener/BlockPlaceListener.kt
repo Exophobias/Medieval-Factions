@@ -1,7 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
-import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
@@ -58,9 +58,13 @@ class BlockPlaceListener(private val plugin: MedievalFactions) : Listener {
         val playerFaction = factionService.getFaction(mfPlayer.id)
         if (!claimService.isInteractionAllowed(mfPlayer.id, claim) &&
             !claimService.isOverridden(
-                mfPlayer.id, event.block.world,
-                event.block.x, event.block.y, event.block.z, ClaimAction.BUILD
-            )
+                    mfPlayer.id,
+                    event.block.world,
+                    event.block.x,
+                    event.block.y,
+                    event.block.z,
+                    ClaimAction.BUILD
+                )
         ) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
                 event.player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")

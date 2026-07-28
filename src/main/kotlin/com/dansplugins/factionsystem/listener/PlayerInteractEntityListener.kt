@@ -1,7 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
-import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor
@@ -44,10 +44,13 @@ class PlayerInteractEntityListener(private val plugin: MedievalFactions) : Liste
             if (protectVillagerFlagValue &&
                 !claimService.isInteractionAllowed(mfPlayer.id, claim) &&
                 !claimService.isOverridden(
-                    mfPlayer.id, clickedEntity.world,
-                    clickedEntity.location.blockX, clickedEntity.location.blockY,
-                    clickedEntity.location.blockZ, ClaimAction.INTERACT
-                )
+                        mfPlayer.id,
+                        clickedEntity.world,
+                        clickedEntity.location.blockX,
+                        clickedEntity.location.blockY,
+                        clickedEntity.location.blockZ,
+                        ClaimAction.INTERACT
+                    )
             ) {
                 if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
                     event.player.sendMessage("${ChatColor.RED}${plugin.language["FactionTerritoryProtectionBypassed"]}")

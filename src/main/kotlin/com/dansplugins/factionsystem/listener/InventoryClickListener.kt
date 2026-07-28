@@ -1,7 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
-import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor.RED
@@ -81,10 +81,13 @@ class InventoryClickListener(private val plugin: MedievalFactions) : Listener {
             // that never consented to it.
             if (!claimService.isInteractionAllowed(mfPlayer.id, claim) &&
                 !claimService.isOverridden(
-                    mfPlayer.id, block.world,
-                    block.x, block.y, block.z,
-                    ClaimAction.CONTAINER
-                )
+                        mfPlayer.id,
+                        block.world,
+                        block.x,
+                        block.y,
+                        block.z,
+                        ClaimAction.CONTAINER
+                    )
             ) {
                 if (mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass")) {
                     player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")

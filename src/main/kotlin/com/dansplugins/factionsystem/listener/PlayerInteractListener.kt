@@ -1,7 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
-import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.area.MfCuboidArea
 import com.dansplugins.factionsystem.gate.MfGate
@@ -206,9 +206,13 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         // snapshot never costs anything on the allowed path.
         if (!claimService.isInteractionAllowed(mfPlayer.id, claim) &&
             !claimService.isOverridden(
-                mfPlayer.id, clickedBlock.world,
-                clickedBlock.x, clickedBlock.y, clickedBlock.z, overrideActionFor(clickedBlock)
-            )
+                    mfPlayer.id,
+                    clickedBlock.world,
+                    clickedBlock.x,
+                    clickedBlock.y,
+                    clickedBlock.z,
+                    overrideActionFor(clickedBlock)
+                )
         ) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
                 event.player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")

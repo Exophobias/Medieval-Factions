@@ -1,6 +1,6 @@
 package com.dansplugins.factionsystem.listener
-import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
@@ -46,9 +46,13 @@ class PlayerBucketListener(private val plugin: MedievalFactions) : Listener {
 
         if (!claimService.isInteractionAllowed(mfPlayer.id, claim) &&
             !claimService.isOverridden(
-                mfPlayer.id, event.block.world,
-                event.block.x, event.block.y, event.block.z, ClaimAction.BUCKET
-            )
+                    mfPlayer.id,
+                    event.block.world,
+                    event.block.x,
+                    event.block.y,
+                    event.block.z,
+                    ClaimAction.BUCKET
+                )
         ) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
                 event.player.sendMessage("${ChatColor.RED}${plugin.language["FactionTerritoryProtectionBypassed"]}")

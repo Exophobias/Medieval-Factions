@@ -1,7 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
-import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.utils.MfServerVersion
 import org.bukkit.entity.Player
@@ -39,7 +39,12 @@ class EntityExplodeListener(private val plugin: MedievalFactions) : Listener {
             val claim = claimService.getClaim(block.chunk) ?: return@filter false
             !claimService.isInteractionAllowed(mfPlayer.id, claim) &&
                 !claimService.isOverridden(
-                    mfPlayer.id, block.world, block.x, block.y, block.z, ClaimAction.EXPLODE
+                    mfPlayer.id,
+                    block.world,
+                    block.x,
+                    block.y,
+                    block.z,
+                    ClaimAction.EXPLODE
                 )
         }
         event.blockList().removeAll(protectedBlocks)

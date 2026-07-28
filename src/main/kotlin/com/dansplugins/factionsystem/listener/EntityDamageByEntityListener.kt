@@ -1,7 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
-import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
 import com.dansplugins.factionsystem.utils.MfHostileMobChecker
@@ -37,9 +37,12 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
                 if (MfHostileMobChecker.isHostileMob(damaged)) return
                 if (claimService.isInteractionAllowed(damagerMfPlayer.id, claim)) return
                 if (claimService.isOverridden(
-                        damagerMfPlayer.id, damaged.world,
-                        damaged.location.blockX, damaged.location.blockY,
-                        damaged.location.blockZ, ClaimAction.DAMAGE
+                        damagerMfPlayer.id,
+                        damaged.world,
+                        damaged.location.blockX,
+                        damaged.location.blockY,
+                        damaged.location.blockZ,
+                        ClaimAction.DAMAGE
                     )
                 ) {
                     return
