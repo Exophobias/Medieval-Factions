@@ -70,6 +70,30 @@ class MfFactionPermissions(private val plugin: MedievalFactions) {
                 wrapSimplePermission("SET_DEFAULT_ROLE", plugin.language["FactionPermissionSetDefaultRole"], false),
                 wrapSimplePermission("APPROVE_APP", plugin.language["FactionPermissionApproveApp"], false),
                 wrapSimplePermission("DENY_APP", plugin.language["FactionPermissionDenyApp"], false),
+                // MANAGE_SHOPS is not used by MedievalFactions. It is registered here purely so a
+                // faction can delegate its trade the same way it delegates war or land, and so the
+                // stable API can expose it as FactionPermission.MANAGE_SHOPS for PatriamEconomy to
+                // read. Nothing in MF gates on it.
+                //
+                // DO NOT REMOVE IT ON THE GROUNDS THAT MF DOES NOT USE IT. Re-adding it later is a
+                // database migration, not a one-line edit, because a faction that already exists can
+                // never be granted it:
+                //
+                //  - MfFactionRoles.defaults builds the Owner role's grant list once, at creation,
+                //    and puts a SET_ROLE_PERMISSION(x) entry in it for every permission registered in
+                //    this list at that moment. A faction created before this line existed has an
+                //    Owner with no SET_ROLE_PERMISSION(MANAGE_SHOPS).
+                //  - MfFaction.defaultPermissionsByName is the same kind of snapshot, persisted to the
+                //    faction's default_permissions JSON column, so it has no MANAGE_SHOPS key either.
+                //
+                // MfFactionRole.hasPermission resolves role grant, then faction default, then the
+                // permission's own default. All three miss and the default here is false, so
+                // /f role setpermission refuses the grant, and that command has no operator bypass.
+                //
+                // This shipped before MedievalFactions was first deployed on Patriam, so no faction
+                // existed to be stranded and the whole problem cost nothing. That window is closed
+                // now; treat this line as load-bearing.
+                wrapSimplePermission("MANAGE_SHOPS", plugin.language["FactionPermissionManageShops"], false),
                 SetRolePermission(plugin)
             )
         )
@@ -123,6 +147,9 @@ class MfFactionPermissions(private val plugin: MedievalFactions) {
     val setDefaultRole = parse("SET_DEFAULT_ROLE")!!
     val approveApp = parse("APPROVE_APP")!!
     val denyApp = parse("DENY_APP")!!
+
+    /** See the registration comment above: MF never reads this, PatriamEconomy does. */
+    val manageShops = parse("MANAGE_SHOPS")!!
     fun setRolePermission(permission: MfFactionPermission) = parse("SET_ROLE_PERMISSION(${permission.name})")!!
 
     fun permissionsFor(factionId: MfFactionId, roles: MfFactionRoles): List<MfFactionPermission> = permissionsFor(factionId, roles.map { it.id })

@@ -130,6 +130,13 @@ data class MfFactionRoles(
                     put(plugin.factionPermissions.setDefaultRole.name, true)
                     put(plugin.factionPermissions.approveApp.name, true)
                     put(plugin.factionPermissions.denyApp.name, true)
+                    // Granted to the founding Owner for the same reason CLAIM and SET_HOME are: a
+                    // brand new faction should be able to trade without first having to discover a
+                    // permission it did not know it needed. MF reads MANAGE_SHOPS nowhere; see the
+                    // registration comment in MfFactionPermissions for why it is registered at all.
+                    // The putAll below then hands Owner SET_ROLE_PERMISSION(MANAGE_SHOPS) as well,
+                    // so the grant is delegable from day one.
+                    put(plugin.factionPermissions.manageShops.name, true)
                     putAll(
                         plugin.factionPermissions.permissionsFor(factionId, listOf(member.id, officer.id, ownerId))
                             .map { permission -> plugin.factionPermissions.setRolePermission(permission).name to true }

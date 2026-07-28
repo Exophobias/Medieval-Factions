@@ -51,4 +51,5 @@ private fun FactionPermission.toInternal(permissions: MfFactionPermissions): MfF
         FactionPermission.DENY_APP -> permissions.denyApp
         FactionPermission.DECLARE_WAR -> permissions.declareWar
         FactionPermission.MAKE_PEACE -> permissions.makePeace
+        FactionPermission.MANAGE_SHOPS -> permissions.manageShops
     }
