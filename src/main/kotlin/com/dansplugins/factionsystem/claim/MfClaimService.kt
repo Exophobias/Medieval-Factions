@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.claim
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.api.ClaimOverrideProvider
+import com.dansplugins.factionsystem.api.impl.ApiClaimEventBridge
 import com.dansplugins.factionsystem.area.MfChunkPosition
 import com.dansplugins.factionsystem.event.faction.FactionClaimEvent
 import com.dansplugins.factionsystem.event.faction.FactionUnclaimEvent
@@ -231,6 +232,11 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             unindexClaim(previousClaim)
             indexClaim(result)
         }
+        // The one place in MF where the outgoing and incoming owners of a chunk are both known, and
+        // the write has already succeeded. The stable API's ClaimOwnerChangedEvent needs both, and
+        // MF's own FactionClaimEvent above carries neither the old owner nor a guarantee that the
+        // upsert happened. The bridge is silent when the owner has not actually changed.
+        ApiClaimEventBridge.ownerChanged(plugin, result.worldId, result.x, result.z, previousClaim?.factionId, result.factionId)
         plugin.server.scheduler.runTask(
             plugin,
             Runnable {
@@ -287,6 +293,11 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         if (removedClaim != null) {
             unindexClaim(removedClaim)
         }
+        // Land returning to wilderness is an ownership change like any other, so the API reports it
+        // here too. FactionUnclaimedChunkEvent already covers "faction X gave up a chunk"; this
+        // covers the same moment in the shape a consumer tracking tenancy wants, with a null new
+        // owner. A chunk that was not in the cache yields previous == new == null and fires nothing.
+        ApiClaimEventBridge.ownerChanged(plugin, event.claim.worldId, event.claim.x, event.claim.z, removedClaim?.factionId, null)
         plugin.server.scheduler.runTask(
             plugin,
             Runnable {
@@ -335,6 +346,12 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
     }
 
+    // Deliberately fires nothing, neither MF's own FactionUnclaimEvent nor the API's
+    // ClaimOwnerChangedEvent. This is the disband and /f unclaimall path, and a large faction can put
+    // thousands of chunks through it at once; scheduling a Bukkit event per chunk would stall a tick.
+    // The API documents the gap on ClaimOwnerChangedEvent and tells consumers to run a periodic
+    // reconciliation sweep as a backstop. Do not "fix" this by adding a per-claim event without
+    // measuring what it does to a disband of a realm-sized faction.
     @JvmName("deleteAllClaimsByFactionId")
     fun deleteAllClaims(factionId: MfFactionId) = resultFrom {
         val result = repository.deleteAll(factionId)
