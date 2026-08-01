@@ -10,6 +10,21 @@ import java.util.UUID
  * consumers.
  */
 interface FactionView {
+
+    /*
+     * A NOTE ON THE DEFAULTED MEMBERS BELOW, because their KDoc used to overstate what they buy.
+     *
+     * Several members here have a default getter, and adding one is source-compatible for a KOTLIN
+     * implementation. It is NOT source-compatible for a JAVA one: this module does not set
+     * -Xjvm-default, so Kotlin compiles a defaulted interface member to an abstract method plus a
+     * DefaultImpls class, and javac sees only the abstract method. Every Java implementation - which
+     * in practice means consumers' test fakes - must therefore override each new member.
+     *
+     * That is a compile error in the consumer's own test tier, which is the cheap place to find out,
+     * so it has not been worth turning -Xjvm-default on for. But it is a real cost of adding a
+     * member here and the KDoc should not claim otherwise.
+     */
+
     val id: FactionId
     val name: String
     val description: String
@@ -51,8 +66,8 @@ interface FactionView {
      * MF allows a faction with no members at all when factions.allowLeaderlessFactions is on, and
      * factions imported or created before this field existed have no head until one is appointed.
      *
-     * Defaults to null so that adding this member stays additive - an existing implementation of this
-     * interface, typically a consumer's test fake, keeps compiling.
+     * Defaulted so a Kotlin implementation need not restate it. A Java one must override it;
+     * see the note at the top of this interface for why.
      */
     val primaryOwnerId: UUID?
         get() = null
@@ -76,8 +91,8 @@ interface FactionView {
      * successor, so a consumer must not treat a null here as "this faction has nobody to inherit
      * it". Register a [SuccessionPolicy] if you need to know, or decide, what actually happens.
      *
-     * Defaults to null so that adding this member stays additive — an existing implementation of
-     * this interface, typically a consumer's test fake, keeps compiling.
+     * Defaulted so a Kotlin implementation need not restate it. A Java one must override it;
+     * see the note at the top of this interface for why.
      */
     val heirId: UUID?
         get() = null
@@ -130,7 +145,8 @@ interface FactionView {
      * recomputed rather than recorded. Read [FactionHierarchyView] for what each field means and what
      * asking costs; it is cheap enough to ask per message, and it is not a live object.
      *
-     * Defaults to [FactionHierarchyView.INDEPENDENT] so that adding this member stays additive.
+     * Defaulted to [FactionHierarchyView.INDEPENDENT] so a Kotlin implementation need not restate
+     * it. A Java one must override it; see the note at the top of this interface for why.
      */
     val hierarchy: FactionHierarchyView
         get() = FactionHierarchyView.INDEPENDENT
