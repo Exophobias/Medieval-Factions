@@ -58,6 +58,31 @@ interface FactionView {
         get() = null
 
     /**
+     * The player the head of this faction has nominated to inherit it, or null if none is nominated.
+     *
+     * A NOMINATION, not an office. The heir holds no authority whatsoever until they actually
+     * inherit: they are an ordinary member with whatever role they already had, and naming them
+     * changes nothing about what they may do. Do not gate anything on this. It answers only "who
+     * would this faction pass to", which is a question about the future.
+     *
+     * Cleared the moment it stops being true rather than at the moment it is used, so it can never
+     * name somebody who has left. Normally a member of this faction; it may instead be the recorded
+     * head of a faction sworn to this one, which is the single case where an heir is not one of your
+     * own people, and that nomination is dropped if the vassal declares independence or replaces its
+     * own head.
+     *
+     * A nomination is only ever the FIRST tier of succession, not the whole of it. An heir who is no
+     * longer eligible when the head departs is passed over silently and the faction still finds a
+     * successor, so a consumer must not treat a null here as "this faction has nobody to inherit
+     * it". Register a [SuccessionPolicy] if you need to know, or decide, what actually happens.
+     *
+     * Defaults to null so that adding this member stays additive — an existing implementation of
+     * this interface, typically a consumer's test fake, keeps compiling.
+     */
+    val heirId: UUID?
+        get() = null
+
+    /**
      * Whether this player may exercise the faction's highest authority.
      *
      * A CAPABILITY question - "may this player do the most powerful thing there is" - which any

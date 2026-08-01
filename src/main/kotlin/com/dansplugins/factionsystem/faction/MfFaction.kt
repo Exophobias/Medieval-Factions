@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.faction
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.impl.FactionViewAdapter
 import com.dansplugins.factionsystem.area.MfPosition
 import com.dansplugins.factionsystem.exception.NoSuccessorException
 import com.dansplugins.factionsystem.faction.flag.MfFlagValues
@@ -11,6 +12,7 @@ import com.dansplugins.factionsystem.faction.role.MfFactionRoles
 import com.dansplugins.factionsystem.notification.MfNotification
 import com.dansplugins.factionsystem.player.MfPlayerId
 import java.util.Collections.emptyList
+import java.util.UUID
 
 data class MfFaction(
     private val plugin: MedievalFactions,
@@ -167,9 +169,17 @@ data class MfFaction(
      * Three tiers, most deliberate first:
      *
      * 1. The head's own nominee, if they are still a member. An explicit choice outranks any rule.
-     * 2. The longest-standing member whose role is explicitly granted the right to disband. They
-     *    already hold the faction's terminal authority, so this hands the title to someone who could
-     *    already exercise it rather than promoting a stranger.
+     * 2. The longest-standing member whose role may disband the faction. They already hold the
+     *    faction's terminal authority, so this hands the title to someone who could already exercise
+     *    it rather than promoting a stranger.
+     *
+     *    "May disband" is the EFFECTIVE permission - the role's own grant, else the faction default,
+     *    else the permission's default - and not the role's explicit grant alone. The two differ for
+     *    a faction that has granted disband by default rather than role by role, and the effective
+     *    reading is the one FactionView.isLeader and FactionView.leaderIds already use. When this
+     *    tier read explicit grants only, a faction could contain members that MF's own API called
+     *    leaders and that this ladder passed over, which is the sort of disagreement nobody finds
+     *    until a succession goes to the wrong person.
      * 3. The longest-standing member holding the most authoritative role available, measured as the
      *    number of permissions the role is explicitly granted. Crude, but MF has no rank, no role
      *    ordering and no other comparison to offer, and a count of granted rights is at least
@@ -185,7 +195,7 @@ data class MfFaction(
             if (candidates.isEmpty()) return null
             heirId?.let { heir -> candidates.firstOrNull { it.playerId == heir } }
                 ?.let { return it.playerId }
-            candidates.firstOrNull { it.role.getPermissionValue(plugin.factionPermissions.disband) == true }
+            candidates.firstOrNull { it.role.hasPermission(this, plugin.factionPermissions.disband) }
                 ?.let { return it.playerId }
             val mostAuthority = candidates.maxOf { it.role.grantedPermissionCount }
             return candidates.first { it.role.grantedPermissionCount == mostAuthority }.playerId
@@ -209,13 +219,37 @@ data class MfFaction(
      * for what can silently invalidate the latter. Either way a nomination that no longer holds is
      * forgotten rather than honoured, so the ladder below it applies.
      */
+    /**
+     * Who a registered [com.dansplugins.factionsystem.api.SuccessionPolicy] says should inherit, or
+     * null if none is registered, none has an opinion, or the answer was not one MF may use.
+     *
+     * Consulted ahead of [successorToPrimaryOwner] rather than as a tier within it, because the two
+     * are different kinds of answer. The ladder is MF's rule about who is next in line. A policy is
+     * an external government's decision about who rules, and a decision that could be outranked by a
+     * default is not a decision. It is consulted AFTER the vassal heir has been admitted, so a
+     * policy sees the same member list the ladder would and needs no special case for the one heir
+     * who arrives from outside.
+     *
+     * Every way this can fail returns null, which means MF's own ladder applies. That includes the
+     * plugin still wiring its services up, which is the only time the lookup is unavailable and is
+     * never a real succession - see MedievalFactions.servicesOrNull.
+     */
+    private fun policySuccessor(departingHead: MfPlayerId): MfPlayerId? {
+        val services = plugin.servicesOrNull ?: return null
+        val policies = services.factionService.successionPolicies
+        if (policies.isEmpty()) return null
+        val departing = runCatching { UUID.fromString(departingHead.value) }.getOrNull() ?: return null
+        val chosen = policies.successorFor(FactionViewAdapter(plugin, this), departing) ?: return null
+        return MfPlayerId(chosen.toString())
+    }
+
     fun withPrimaryOwnerSuccession(): MfFaction {
         val survivingHeir = heirId?.takeIf { heir -> isMember(heir) || heirsVassalFaction != null }
         val owner = primaryOwnerId
         if (owner == null || members.any { it.playerId == owner }) {
             return if (survivingHeir == heirId) this else copy(heirId = survivingHeir)
         }
-        val successor = successorToPrimaryOwner
+        val successor = policySuccessor(owner) ?: successorToPrimaryOwner
         if (successor == null && !plugin.config.getBoolean("factions.allowLeaderlessFactions")) {
             throw NoSuccessorException(
                 "Faction ${id.value} lost its primary owner with nobody to inherit, " +

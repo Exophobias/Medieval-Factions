@@ -34,6 +34,9 @@ class FactionViewAdapter(
     override val primaryOwnerId: UUID?
         get() = faction.primaryOwnerId?.let { UUID.fromString(it.value) }
 
+    override val heirId: UUID?
+        get() = faction.heirId?.let { UUID.fromString(it.value) }
+
     override fun roleOf(playerId: UUID): FactionRoleView? =
         faction.getRole(MfPlayerId(playerId.toString()))?.let { role ->
             FactionRoleViewAdapter(plugin, faction, role)

@@ -18,7 +18,10 @@ import com.dansplugins.factionsystem.service.Services
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.Server
 import org.bukkit.configuration.file.FileConfiguration
+import org.bukkit.plugin.Plugin
 import org.bukkit.plugin.PluginManager
+import org.bukkit.scheduler.BukkitScheduler
+import org.bukkit.scheduler.BukkitTask
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -27,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.Timeout.ThreadMode.SEPARATE_THREAD
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.RETURNS_SMART_NULLS
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
@@ -115,6 +119,16 @@ class MfFactionVassalHeirSuccessionTest {
         `when`(plugin.server).thenReturn(server)
         `when`(server.pluginManager).thenReturn(mock(PluginManager::class.java))
         `when`(server.isPrimaryThread).thenReturn(false)
+        // Runs scheduled tasks inline, so FactionPrimaryOwnerChangedEvent is actually announced
+        // rather than queued and dropped. Without this the scheduler mock returns null and the
+        // announcement is swallowed by MfFactionService's own guard, which would leave every
+        // succession below passing for the wrong reason.
+        val scheduler = mock(BukkitScheduler::class.java)
+        `when`(server.scheduler).thenReturn(scheduler)
+        `when`(scheduler.runTask(any(Plugin::class.java), any(Runnable::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<Runnable>(1).run()
+            mock(BukkitTask::class.java)
+        }
 
         relationshipService = MfFactionRelationshipService(plugin, InMemoryRelationshipRepository())
         factionService = MfFactionService(plugin, InMemoryFactionRepository())

@@ -7,6 +7,7 @@ import com.dansplugins.factionsystem.api.ClaimView
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.FactionView
 import com.dansplugins.factionsystem.api.MedievalFactionsApi
+import com.dansplugins.factionsystem.api.SuccessionPolicy
 import com.dansplugins.factionsystem.area.MfPosition
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
@@ -102,6 +103,40 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
             }
         }
         return ApiResult.success()
+    }
+
+    // Identity only. Deliberately does NOT grant the top role, which is the one way this differs
+    // from /f transfer: that command is a player handing their own House on, so "a head who cannot
+    // act is not a head" applies. This is a government plugin recording who rules, and a regent
+    // seated for a fortnight should not silently acquire the right to disband the faction. The two
+    // questions are separate throughout MF - see FactionView.primaryOwnerId versus isLeader - and a
+    // caller that wants both should say so.
+    override fun setPrimaryOwner(faction: FactionId, playerId: UUID): ApiResult {
+        val mfFaction = plugin.services.factionService.getFaction(MfFactionId(faction.value))
+            ?: return ApiResult.failure("No faction with id ${faction.value}")
+        val newOwner = MfPlayerId(playerId.toString())
+        if (mfFaction.members.none { it.playerId == newOwner }) {
+            return ApiResult.failure("Player $playerId is not a member of faction ${faction.value}")
+        }
+        if (mfFaction.primaryOwnerId == newOwner) {
+            return ApiResult.success()
+        }
+        // A nomination is cleared as soon as it is used, which is the contract on MfFaction.heirId.
+        // Seating the standing heir IS using it, and leaving it in place would produce a faction
+        // that is its own heir. An unrelated nomination is left alone, because the outgoing head
+        // making one is not invalidated by somebody else being seated ahead of them.
+        val consumedHeir = mfFaction.heirId == newOwner
+        return plugin.services.factionService
+            .save(mfFaction.copy(primaryOwnerId = newOwner, heirId = if (consumedHeir) null else mfFaction.heirId))
+            .toApiResult()
+    }
+
+    override fun registerSuccessionPolicy(policy: SuccessionPolicy) {
+        plugin.services.factionService.successionPolicies.register(policy)
+    }
+
+    override fun unregisterSuccessionPolicy(policy: SuccessionPolicy) {
+        plugin.services.factionService.successionPolicies.unregister(policy)
     }
 
     private fun toView(faction: MfFaction): FactionView = FactionViewAdapter(plugin, faction)

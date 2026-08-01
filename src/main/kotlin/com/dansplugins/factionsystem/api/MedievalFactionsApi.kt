@@ -91,6 +91,33 @@ interface MedievalFactionsApi {
     /** Ends any war between the two factions by removing the war relationship in both directions. */
     fun forcePeace(faction: FactionId, otherFaction: FactionId): ApiResult
 
+    /**
+     * Record [playerId] as the head of [faction], as though the previous head had handed it on.
+     *
+     * The write that makes an external government possible. Until this existed,
+     * [FactionView.primaryOwnerId] was readable and movable only by MF itself — the founder at
+     * creation, `/f transfer`, `/f admin setleader`, and succession — so a plugin that had decided
+     * who should rule had no way to say so, and would have had to reach past this API into MF's
+     * internal `MfFactionService` with an internal `MfFaction` to do it.
+     *
+     * Fails, changing nothing, if the faction does not exist or if [playerId] is not one of its
+     * members. The membership requirement is not a convenience check: the head is the identity of a
+     * House, several things key off it, and a head who is not in the faction would be reconciled
+     * away by succession on the very next save anyway. Admit the player first if that is what you
+     * mean.
+     *
+     * Succeeds silently when [playerId] is already the head, so a caller reconciling its own state
+     * against MF's need not compare first.
+     *
+     * Fires [com.dansplugins.factionsystem.api.event.FactionPrimaryOwnerChangedEvent] on success,
+     * like any other change of head, so a caller must not assume it is the only observer.
+     *
+     * There is deliberately no counterpart that clears the seat. Whether a faction may exist without
+     * a head is `factions.allowLeaderlessFactions`, which is the server owner's setting, and this
+     * API does not offer a way around it.
+     */
+    fun setPrimaryOwner(faction: FactionId, playerId: UUID): ApiResult
+
     // --- Territory protection exceptions ---
 
     /**
@@ -107,6 +134,25 @@ interface MedievalFactionsApi {
 
     /** Remove a previously registered provider. Unknown providers are ignored. */
     fun unregisterClaimOverrideProvider(provider: ClaimOverrideProvider)
+
+    // --- Succession ---
+
+    /**
+     * Register a [SuccessionPolicy], letting this plugin decide who inherits a faction whose head
+     * has departed, in place of MedievalFactions' own order.
+     *
+     * Read [SuccessionPolicy] before implementing one; in particular it is consulted from inside a
+     * save, so it must answer from memory and must not save anything itself.
+     *
+     * Registering the same instance twice is a no-op. Plugins should unregister on disable — a
+     * policy left registered by a plugin that is no longer functioning will throw on the next
+     * departure, and while that is contained, every faction it governs then falls back to MF's
+     * order without anyone having decided that.
+     */
+    fun registerSuccessionPolicy(policy: SuccessionPolicy)
+
+    /** Remove a previously registered policy. Unknown policies are ignored. */
+    fun unregisterSuccessionPolicy(policy: SuccessionPolicy)
 
     companion object {
         /**

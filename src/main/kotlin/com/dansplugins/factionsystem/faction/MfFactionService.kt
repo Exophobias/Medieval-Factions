@@ -1,6 +1,8 @@
 package com.dansplugins.factionsystem.faction
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.FactionId
+import com.dansplugins.factionsystem.api.event.FactionPrimaryOwnerChangedEvent
 import com.dansplugins.factionsystem.area.MfPosition
 import com.dansplugins.factionsystem.event.faction.FactionCreateEvent
 import com.dansplugins.factionsystem.event.faction.FactionDescriptionChangeEvent
@@ -24,8 +26,18 @@ import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.mapFailure
 import dev.forkhandles.result4k.onFailure
 import dev.forkhandles.result4k.resultFrom
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+
+/**
+ * An [MfPlayerId] as a Bukkit UUID, or null if it does not parse as one.
+ *
+ * Null rather than throwing because a malformed id is a data problem in one row, and the callers
+ * here are reporting a change that has already been persisted. Failing the report is strictly worse
+ * than omitting it, since throwing from a save would roll an ordinary /f leave back.
+ */
+private fun MfPlayerId.toUuidOrNull(): UUID? = runCatching { UUID.fromString(value) }.getOrNull()
 
 class MfFactionService(private val plugin: MedievalFactions, private val repository: MfFactionRepository) {
 
@@ -36,6 +48,15 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
     private val _fields: MutableList<MfFactionField> = CopyOnWriteArrayList()
     val fields: List<MfFactionField>
         get() = _fields
+
+    /**
+     * Third-party rules for who inherits a faction whose head has departed.
+     *
+     * Lives on the service rather than on the plugin for the same reason `claimOverrides` lives on
+     * MfClaimService: it belongs to the thing whose decision it modifies, and succession is decided
+     * inside [save]. See [SuccessionPolicyRegistry] for what a policy may and may not answer.
+     */
+    val successionPolicies = SuccessionPolicyRegistry(plugin.logger)
 
     init {
         plugin.logger.info("Loading factions...")
@@ -133,6 +154,22 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         // MfFaction.withPrimaryOwnerSuccession.
         val result = repository.upsert(factionToSave.withPrimaryOwnerSuccession())
         factionsById[result.id] = result
+        // Announced here rather than bridged from an internal event, because there is no internal
+        // event to bridge and adding one would be misleading: MF's internal faction events are
+        // cancellable gates fired BEFORE the write, and by this line the head has already changed
+        // and cannot be vetoed. A consumer that wants to decide the outcome registers a
+        // SuccessionPolicy instead, which is consulted a few lines above.
+        //
+        // Fired for existing factions only. A new faction's head going from nobody to the founder is
+        // reported by FactionCreateEvent, and firing both would make every consumer disambiguate.
+        if (previousState != null && previousState.primaryOwnerId != result.primaryOwnerId) {
+            val event = FactionPrimaryOwnerChangedEvent(
+                FactionId(result.id.value),
+                previousState.primaryOwnerId?.toUuidOrNull(),
+                result.primaryOwnerId?.toUuidOrNull()
+            )
+            fireOnMainThread(event)
+        }
         val mapService = plugin.services.mapService
         if (mapService != null && !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
             plugin.server.scheduler.runTask(
@@ -145,6 +182,34 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         return@resultFrom result
     }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+    }
+
+    /**
+     * Announces a stable-API event on the next tick, and never lets that failing disturb the save
+     * that produced it.
+     *
+     * Next tick rather than inline because [save] is reached from command handlers that may be
+     * running asynchronously, and an API consumer must not have to ask which thread it is on before
+     * touching the world.
+     *
+     * The scheduler is not always willing to take the task. It refuses outright once the plugin is
+     * disabling, and MF saves factions during shutdown. That refusal would otherwise propagate out
+     * of [save], be wrapped as a ServiceFailure, and turn a successful, already-persisted write into
+     * an error the caller reports to a player - so an ordinary /f leave would appear to fail having
+     * actually succeeded. The event is a past-tense notification; losing one is a smaller problem
+     * than that by a wide margin, so it is logged and dropped.
+     */
+    private fun fireOnMainThread(event: org.bukkit.event.Event) {
+        runCatching {
+            plugin.server.scheduler.runTask(plugin, Runnable { plugin.server.pluginManager.callEvent(event) })
+        }.onFailure { throwable ->
+            plugin.logger.log(
+                java.util.logging.Level.WARNING,
+                "Could not announce ${event.javaClass.simpleName}; the change was saved but no " +
+                    "listener will hear about it.",
+                throwable
+            )
+        }
     }
 
     /**
