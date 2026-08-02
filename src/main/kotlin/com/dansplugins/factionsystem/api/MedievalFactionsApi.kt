@@ -187,6 +187,124 @@ interface MedievalFactionsApi {
      */
     fun setPrimaryOwner(faction: FactionId, playerId: UUID): ApiResult
 
+    // --- Founding, dissolution, and moving people and land between factions ---
+    //
+    // The four calls below exist so that a plugin modelling a political event -- a secession, a
+    // rebellion, a fief being raised into a realm of its own -- can carry it out without reaching
+    // into MF's internal services. Each is a BLOCKING write like everything else in this section,
+    // and each is heavier than the ones above it; read the individual notes.
+
+    /**
+     * Found a faction with [founderId] as its head, and return its new id.
+     *
+     * The same thing `/f create` does, minus the chat: the founder is admitted with the top default
+     * role and recorded as [FactionView.primaryOwnerId], and the faction starts with no land, no
+     * relationships and MF's default flags.
+     *
+     * Fails, creating nothing, if a faction of that name already exists, if the name is longer than
+     * `factions.maxNameLength`, if the name is blank, or if [founderId] is already in a faction. That
+     * last one is not a convenience check: MF finds a player's faction by scanning for the single
+     * faction containing them, so a player in two factions resolves to **neither** rather than to an
+     * error, and every membership question about them silently answers "none" from then on.
+     *
+     * A player record is created for [founderId] if MF has never seen them, exactly as `/f create`
+     * does for a first-time founder.
+     *
+     * [event.FactionCreateEvent] is fired, and it is cancellable, so this can fail because another
+     * plugin refused. Read the events note on this interface before writing a handler for it -- the
+     * faction does not exist yet inside that event.
+     */
+    fun createFaction(name: String, founderId: UUID): ApiOutcome<FactionId>
+
+    /**
+     * Dissolve a faction, as `/f disband` does.
+     *
+     * **Its land is destroyed, not released to anybody.** Every claim it holds returns to wilderness,
+     * and if you meant those chunks to end up somewhere else you must call [transferAllClaims] first;
+     * afterwards is too late. The same goes for its members, who are left factionless.
+     *
+     * **This fires no per-chunk event**, neither MF's own nor [event.ClaimOwnerChangedEvent], because
+     * a realm-sized faction can put thousands of chunks through it at once and scheduling an event
+     * for each would stall a tick. A consumer tracking tenancy must treat
+     * [event.FactionDisbandedEvent] as invalidating every chunk it believed that faction held.
+     */
+    fun disbandFaction(faction: FactionId): ApiResult
+
+    /**
+     * Move members from one faction to another, giving them the destination's default role.
+     *
+     * Every id in [playerIds] must currently be a member of [from], and both factions must exist;
+     * otherwise nothing moves at all. Duplicates and an empty collection are accepted and are no-ops.
+     *
+     * **Two writes, and a failure between them leaves the players factionless.** They are removed
+     * from [from] first and admitted to [to] second, deliberately in that order: the other order
+     * would put them in two factions at once during the window, and a player in two factions reads
+     * as being in *none* everywhere in MF, which is both wrong and invisible. Factionless is wrong
+     * too, but it is the state a player can be in legitimately, so it is the recoverable one. A
+     * caller doing something it cares about should re-read afterwards and retry the second half.
+     *
+     * **Roles do not survive the move**, including the top one. A faction's roles belong to that
+     * faction, and there is no general mapping between two factions' role sets; carrying a role
+     * across by name would let a member arrive holding whatever authority the destination happens to
+     * have given that name. If the arriving player is meant to lead, say so with [setPrimaryOwner]
+     * and grant the role explicitly.
+     *
+     * Moving a faction's recorded head out of it leaves that faction headless, and MF's succession
+     * runs on the next save. If you are moving everybody, disband instead.
+     */
+    fun transferMembers(from: FactionId, to: FactionId, playerIds: Collection<UUID>): ApiResult
+
+    /**
+     * Hand every chunk [from] holds to [to], and return how many moved.
+     *
+     * The land half of a conquest or a secession. Each chunk is re-owned individually, so
+     * [event.ClaimOwnerChangedEvent] fires once per chunk with both owners, MF's own
+     * `FactionClaimEvent` fires for each and **may cancel it**, and a partial transfer is therefore
+     * a real outcome: the count returned is what actually moved, and it can be less than the count
+     * [from] had. It is never a failure to move zero chunks from a faction that held none.
+     *
+     * **This is the most expensive call in this interface.** It costs two statements per chunk and
+     * schedules a Bukkit task per chunk, so a faction holding a thousand chunks costs two thousand
+     * statements -- on MySQL, two thousand network round trips. That is acceptable for a rebellion
+     * resolving once, and it is not acceptable on a timer. There is no bulk shortcut, because the
+     * per-chunk events are the entire reason a consumer can track tenancy at all.
+     *
+     * Stops at the first hard failure rather than continuing, so the count is a prefix of the work
+     * and not a sample of it.
+     */
+    fun transferAllClaims(from: FactionId, to: FactionId): ApiOutcome<Int>
+
+    /**
+     * Break a faction's oath to its liege, leaving it sworn to nobody.
+     *
+     * The write behind a war of independence. [FactionHierarchyView] made vassalage readable, so a
+     * plugin could see that a realm swore fealty and could derive a rank from it, but nothing could
+     * move it -- `/f declareindependence` and `/f grantindependence` were the only routes and both
+     * need the faction's own leader to type them. A government plugin that has just watched a vassal
+     * win a war had no way to record the result.
+     *
+     * Removes every relationship row between the two, in both directions, which is what MF's own
+     * command does. **It does not start a war**, deliberately: `/f declareindependence` couples the
+     * two and then makes the war conditional on neutrality flags, so a caller that wanted the oath
+     * broken got a war it may not have wanted and a caller that wanted the war got a silent no-op
+     * when either side was neutral. These are two acts here, and a caller that wants both calls
+     * [declareWar] as well.
+     *
+     * Fails, changing nothing, if the faction does not exist or swears to nobody.
+     */
+    fun renounceLiege(vassal: FactionId): ApiResult
+
+    /**
+     * Put two factions at war, as `/f declarewar` does, without asking either of them.
+     *
+     * The mirror of [forcePeace], and the reason it exists: a plugin that can end a war it did not
+     * start could not start one it intends to end. Fails if the two are already at war, if either
+     * does not exist, or if they are the same faction.
+     *
+     * Fires [event.FactionWarStartedEvent] once for the pair on success.
+     */
+    fun declareWar(faction: FactionId, otherFaction: FactionId): ApiResult
+
     // --- Territory protection exceptions ---
     //
     // Registration is in-memory. The PROVIDER is called back inline on MF's own thread, from

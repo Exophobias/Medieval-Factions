@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.api.impl
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ApiOutcome
 import com.dansplugins.factionsystem.api.ApiResult
 import com.dansplugins.factionsystem.api.ClaimOverrideProvider
 import com.dansplugins.factionsystem.api.ClaimView
@@ -12,9 +13,15 @@ import com.dansplugins.factionsystem.area.MfPosition
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
+import com.dansplugins.factionsystem.faction.MfFactionMember
+import com.dansplugins.factionsystem.faction.role.MfFactionRoles
+import com.dansplugins.factionsystem.faction.withRole
 import com.dansplugins.factionsystem.failure.ServiceFailure
+import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
+import com.dansplugins.factionsystem.relationship.MfFactionRelationship
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.AT_WAR
+import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.LIEGE
 import dev.forkhandles.result4k.Failure
 import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.Success
@@ -129,6 +136,167 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         return plugin.services.factionService
             .save(mfFaction.copy(primaryOwnerId = newOwner, heirId = if (consumedHeir) null else mfFaction.heirId))
             .toApiResult()
+    }
+
+    // Mirrors MfFactionCreateCommand rather than sharing code with it, because that command is a
+    // chain of chat messages with a save in the middle and there is nothing extractable without
+    // rewriting it. The checks below are the same checks in the same order; if one moves there, it
+    // has to move here.
+    override fun createFaction(name: String, founderId: UUID): ApiOutcome<FactionId> {
+        if (name.isBlank()) return ApiOutcome.failure("Faction name is blank")
+        val maxNameLength = plugin.config.getInt("factions.maxNameLength")
+        if (name.length > maxNameLength) {
+            return ApiOutcome.failure("Faction name is longer than $maxNameLength characters")
+        }
+        val factionService = plugin.services.factionService
+        if (factionService.getFaction(name) != null) {
+            return ApiOutcome.failure("A faction named $name already exists")
+        }
+        val playerService = plugin.services.playerService
+        val playerId = MfPlayerId(founderId.toString())
+        // Checked before the player record is created, so a refusal leaves nothing behind.
+        if (factionService.getFaction(playerId) != null) {
+            return ApiOutcome.failure("Player $founderId is already in a faction")
+        }
+        val mfPlayer = playerService.getPlayer(playerId)
+            ?: playerService.save(MfPlayer(plugin, plugin.server.getOfflinePlayer(founderId)))
+                .let { result ->
+                    when (result) {
+                        is Success -> result.value
+                        is Failure -> return ApiOutcome.failure("Failed to save player: ${result.reason.message}")
+                    }
+                }
+        val factionId = MfFactionId.generate()
+        val roles = MfFactionRoles.defaults(plugin, factionId)
+        // roles.default rather than a throw, for the reason MfFactionCreateCommand gives: these are
+        // freshly generated defaults, so a null leaderRole means MF's own default set has lost its
+        // top role, and refusing to found the faction is a worse answer than founding one whose
+        // founder holds the ordinary role and is still recorded as its head.
+        val ownerRole = roles.leaderRole ?: roles.default
+        val faction = MfFaction(
+            plugin,
+            id = factionId,
+            name = name,
+            roles = roles,
+            members = listOf(mfPlayer.withRole(ownerRole)),
+            primaryOwnerId = mfPlayer.id
+        )
+        return when (val result = factionService.save(faction)) {
+            is Success -> ApiOutcome.success(FactionId(result.value.id.value))
+            is Failure -> ApiOutcome.failure(result.reason.message)
+        }
+    }
+
+    override fun disbandFaction(faction: FactionId): ApiResult {
+        val id = MfFactionId(faction.value)
+        if (plugin.services.factionService.getFaction(id) == null) {
+            return ApiResult.failure("No faction with id ${faction.value}")
+        }
+        return plugin.services.factionService.delete(id).toApiResult()
+    }
+
+    override fun transferMembers(from: FactionId, to: FactionId, playerIds: Collection<UUID>): ApiResult {
+        if (from.value == to.value) return ApiResult.failure("Source and destination are the same faction")
+        val factionService = plugin.services.factionService
+        val source = factionService.getFaction(MfFactionId(from.value))
+            ?: return ApiResult.failure("No faction with id ${from.value}")
+        val destination = factionService.getFaction(MfFactionId(to.value))
+            ?: return ApiResult.failure("No faction with id ${to.value}")
+        // Distinct first: a duplicate would otherwise be admitted twice, and MfFaction.members is a
+        // plain list with no key, so the destination would hold two rows for one player.
+        val moving = playerIds.map { MfPlayerId(it.toString()) }.distinct()
+        if (moving.isEmpty()) return ApiResult.success()
+        val notMembers = moving.filter { id -> source.members.none { it.playerId == id } }
+        if (notMembers.isNotEmpty()) {
+            return ApiResult.failure("Not members of faction ${from.value}: ${notMembers.joinToString { it.value }}")
+        }
+        val movingSet = moving.toSet()
+        // Removed first. See the contract note on MedievalFactionsApi.transferMembers: the window
+        // between these two saves must leave a player factionless rather than in two factions, since
+        // MF resolves a player in two factions to neither.
+        val departed = factionService.save(source.copy(members = source.members.filterNot { it.playerId in movingSet }))
+        if (departed is Failure) return departed.toApiResult()
+        val role = destination.roles.default
+        val arrivals = moving.map { MfFactionMember(it, role) }
+        return factionService.save(destination.copy(members = destination.members + arrivals)).toApiResult()
+    }
+
+    override fun transferAllClaims(from: FactionId, to: FactionId): ApiOutcome<Int> {
+        if (from.value == to.value) return ApiOutcome.failure("Source and destination are the same faction")
+        val factionService = plugin.services.factionService
+        if (factionService.getFaction(MfFactionId(from.value)) == null) {
+            return ApiOutcome.failure("No faction with id ${from.value}")
+        }
+        val destinationId = MfFactionId(to.value)
+        if (factionService.getFaction(destinationId) == null) {
+            return ApiOutcome.failure("No faction with id ${to.value}")
+        }
+        val claimService = plugin.services.claimService
+        // Snapshotted before the loop. getClaims reads the live per-faction index, and every save
+        // below removes an entry from it, so iterating it directly would be a mutation during
+        // traversal of the very collection being emptied.
+        val claims = claimService.getClaims(MfFactionId(from.value)).toList()
+        var moved = 0
+        claims.forEach { claim ->
+            // A cancelled FactionClaimEvent surfaces as a GENERAL failure and is indistinguishable
+            // from a database error here, so both stop the run. Reporting a prefix is honest; carrying
+            // on past a database failure would report a number nobody could act on.
+            val result = claimService.save(claim.copy(factionId = destinationId))
+            if (result is Failure) {
+                return if (moved == 0) {
+                    ApiOutcome.failure(result.reason.message)
+                } else {
+                    ApiOutcome.success(moved)
+                }
+            }
+            moved++
+        }
+        return ApiOutcome.success(moved)
+    }
+
+    override fun renounceLiege(vassal: FactionId): ApiResult {
+        val vassalId = MfFactionId(vassal.value)
+        if (plugin.services.factionService.getFaction(vassalId) == null) {
+            return ApiResult.failure("No faction with id ${vassal.value}")
+        }
+        val relationshipService = plugin.services.factionRelationshipService
+        // firstOrNull rather than singleOrNull, matching MfFactionDeclareIndependenceCommand: a
+        // faction should never hold two liege rows, and if data corruption gives it one anyway,
+        // breaking the first oath is a better answer than refusing to break any.
+        val liegeRelationship = relationshipService.getRelationships(vassalId, LIEGE).firstOrNull()
+            ?: return ApiResult.failure("Faction ${vassal.value} has no liege")
+        val liegeId = liegeRelationship.targetId
+        // Every row between the two, both ways -- the vassal's LIEGE row and the liege's VASSAL row
+        // are separate records and leaving either behind would produce a half-broken oath that reads
+        // differently depending on which side is asked.
+        val rows = relationshipService.getRelationships(vassalId, liegeId) +
+            relationshipService.getRelationships(liegeId, vassalId)
+        rows.forEach { relationship ->
+            val result = relationshipService.delete(relationship.id)
+            if (result is Failure) {
+                return result.toApiResult()
+            }
+        }
+        return ApiResult.success()
+    }
+
+    override fun declareWar(faction: FactionId, otherFaction: FactionId): ApiResult {
+        if (faction.value == otherFaction.value) return ApiResult.failure("A faction cannot be at war with itself")
+        val a = MfFactionId(faction.value)
+        val b = MfFactionId(otherFaction.value)
+        val factionService = plugin.services.factionService
+        if (factionService.getFaction(a) == null) return ApiResult.failure("No faction with id ${faction.value}")
+        if (factionService.getFaction(b) == null) return ApiResult.failure("No faction with id ${otherFaction.value}")
+        val relationshipService = plugin.services.factionRelationshipService
+        val existing = relationshipService.getRelationships(a, b) + relationshipService.getRelationships(b, a)
+        if (existing.any { it.type == AT_WAR }) {
+            return ApiResult.failure("Factions are already at war")
+        }
+        // Both directions, as /f declarewar writes them. ApiRelationshipListener collapses the pair
+        // into one FactionWarStartedEvent, so a consumer sees a single declaration.
+        val declared = relationshipService.save(MfFactionRelationship(factionId = a, targetId = b, type = AT_WAR))
+        if (declared is Failure) return declared.toApiResult()
+        return relationshipService.save(MfFactionRelationship(factionId = b, targetId = a, type = AT_WAR)).toApiResult()
     }
 
     override fun registerSuccessionPolicy(policy: SuccessionPolicy) {
