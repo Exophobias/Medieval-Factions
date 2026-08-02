@@ -152,7 +152,27 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         // Every member-list change in MF funnels through here, so this is the one place that has to
         // notice a departed head of House and hand the faction on. See
         // MfFaction.withPrimaryOwnerSuccession.
-        val result = repository.upsert(factionToSave.withPrimaryOwnerSuccession())
+        val successor = factionToSave.withPrimaryOwnerSuccession()
+        // Stamp when the head came to the seat, here rather than at the five call sites that can move
+        // one (/f create, /f transfer, /f admin setleader, succession, and the API's
+        // setPrimaryOwner). One comparison in the write path cannot be forgotten by a sixth route
+        // added later; five scattered assignments can, and the failure would be silent -- a head
+        // whose recorded tenure dated from whenever the PREVIOUS one took over, which reads as a
+        // long-standing ruler and clears every gate that asks how long they have held it.
+        //
+        // AFTER withPrimaryOwnerSuccession and after the events, and both matter. Succession moves
+        // the head at this line, so a stamp taken earlier would miss the single most important case;
+        // and FactionCreateEvent assigns event.faction back over factionToSave, so anything set
+        // before it is discarded on the create path.
+        //
+        // Only when it actually changes. An ordinary save that leaves the head alone must not push
+        // the date forward, or every /f desc would reset the tenure of whoever is sitting there.
+        val stamped = if (successor.primaryOwnerId != previousState?.primaryOwnerId) {
+            successor.copy(primaryOwnerSince = System.currentTimeMillis())
+        } else {
+            successor
+        }
+        val result = repository.upsert(stamped)
         factionsById[result.id] = result
         // Announced here rather than bridged from an internal event, because there is no internal
         // event to bridge and adding one would be misleading: MF's internal faction events are

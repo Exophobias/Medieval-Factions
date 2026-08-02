@@ -98,6 +98,30 @@ interface FactionView {
         get() = null
 
     /**
+     * When [primaryOwnerId] came to the seat, as epoch milliseconds, or 0 if MF does not know.
+     *
+     * Published because "how long have you held this position" is a real gate and nothing could
+     * answer it. A tenure rule exists so that joining a group, being handed the top of it, and using
+     * that position against somebody cannot all happen on one day -- and without this a consumer
+     * could enforce that for a sub-group whose own plugin records a grant time, and not for the
+     * faction itself, so the same rule applied at one level of a hierarchy and silently did nothing
+     * at the other.
+     *
+     * **Zero means "not known", and a consumer should read it as long-held rather than as new.** It
+     * is the value every faction carried before MF started recording this, and those heads really
+     * have held their realms since before anybody was counting. Treating it as "took the seat at the
+     * epoch" is both the truthful reading and the one that does not freeze an entire server out of a
+     * rule on the day it ships.
+     *
+     * Meaningless when [primaryOwnerId] is null. Check that first.
+     *
+     * Defaulted so a Kotlin implementation need not restate it. A Java one must override it;
+     * see the note at the top of this interface for why.
+     */
+    val primaryOwnerSince: Long
+        get() = 0L
+
+    /**
      * Whether this player may exercise the faction's highest authority.
      *
      * A CAPABILITY question - "may this player do the most powerful thing there is" - which any

@@ -57,7 +57,24 @@ data class MfFaction(
      * [heirsVassalFaction]. Either way the nomination is dropped the moment it stops being true, so it
      * can never name somebody who has left or a vassal that has walked away.
      */
-    val heirId: MfPlayerId? = null
+    val heirId: MfPlayerId? = null,
+    /**
+     * When [primaryOwnerId] came to the seat, as epoch milliseconds, or 0 if it is not known.
+     *
+     * Stamped by [MfFactionService.save] whenever the head actually changes, rather than by the five
+     * call sites that can move one. A comparison in the write path cannot be forgotten by a sixth
+     * route added later; five scattered assignments can, and the failure would be a head whose tenure
+     * silently dated from whenever the PREVIOUS one took over.
+     *
+     * Zero reads as "held since the epoch" and so clears every tenure gate. That is the correct
+     * answer for a faction that predates this field: its head really has held it since before anybody
+     * was counting.
+     *
+     * Not a substitute for asking whether somebody is the head. It is meaningless when
+     * [primaryOwnerId] is null, and a caller that reads it without checking that first is asking how
+     * long nobody has held the seat.
+     */
+    val primaryOwnerSince: Long = 0L
 ) {
 
     val memberPower

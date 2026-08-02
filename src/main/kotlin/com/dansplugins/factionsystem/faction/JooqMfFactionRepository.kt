@@ -150,6 +150,7 @@ class JooqMfFactionRepository(
                 )
             )
             .set(MF_FACTION.PRIMARY_OWNER_ID, faction.primaryOwnerId?.value)
+            .set(MF_FACTION.PRIMARY_OWNER_SINCE, faction.primaryOwnerSince)
             .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
             .onConflict(MF_FACTION.ID).doUpdate()
             .set(MF_FACTION.NAME, faction.name)
@@ -173,6 +174,7 @@ class JooqMfFactionRepository(
                 )
             )
             .set(MF_FACTION.PRIMARY_OWNER_ID, faction.primaryOwnerId?.value)
+            .set(MF_FACTION.PRIMARY_OWNER_SINCE, faction.primaryOwnerSince)
             .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
             .set(MF_FACTION.VERSION, faction.version + 1)
             .where(MF_FACTION.ID.eq(faction.id.value))
@@ -318,7 +320,8 @@ class JooqMfFactionRepository(
             ),
             applications = applications,
             primaryOwnerId = primaryOwnerId?.let(::MfPlayerId),
-            heirId = heirId?.let(::MfPlayerId)
+            heirId = heirId?.let(::MfPlayerId),
+            primaryOwnerSince = primaryOwnerSince
         )
     }
 

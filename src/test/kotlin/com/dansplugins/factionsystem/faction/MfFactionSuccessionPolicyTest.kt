@@ -494,4 +494,41 @@ class MfFactionSuccessionPolicyTest {
 
         assertNull(api.getFaction(FactionId(faction.id.value))!!.heirId)
     }
+
+    @Test
+    @DisplayName("the tenure stamp moves when the head does, and only then")
+    fun theTenureStampFollowsTheSeat() {
+        // The gap this closes: MF recorded WHO the head was and not WHEN they became it, so a tenure
+        // rule could be enforced for a sub-group whose own plugin records a grant time and silently
+        // did nothing for the faction itself.
+        val faction = foundFaction("Kingdom", ruler, listOf(marshal, steward))
+        val founded = current(faction).primaryOwnerSince
+        assertTrue(founded > 0L, "founding a faction seats its founder, so the stamp is set")
+
+        // An ordinary save that leaves the head alone must NOT push the date forward, or every
+        // /f desc would reset the tenure of whoever is in the seat.
+        factionService.save(current(faction).copy(description = "A realm")).onFailure { throw it.reason.cause }
+        assertEquals(founded, current(faction).primaryOwnerSince)
+
+        // Moving the head restamps it, so the new ruler starts their tenure now rather than
+        // inheriting the old one's standing along with the seat.
+        factionService.save(current(faction).copy(primaryOwnerId = steward)).onFailure { throw it.reason.cause }
+        assertTrue(current(faction).primaryOwnerSince >= founded)
+        assertEquals(steward, current(faction).primaryOwnerId)
+    }
+
+    @Test
+    @DisplayName("the API publishes the tenure, and zero for a faction that predates it")
+    fun theTenureIsVisibleThroughTheApi() {
+        val faction = foundFaction("Kingdom", ruler, listOf(marshal))
+
+        val view = api.getFaction(FactionId(faction.id.value))!!
+        assertTrue(view.primaryOwnerSince > 0L)
+
+        // Zero is what every faction saved before this column existed carries, and a consumer must
+        // read it as long-held rather than as new -- otherwise the day this ships freezes every
+        // faction on the server out of a tenure rule for its first week.
+        factionService.save(current(faction).copy(primaryOwnerSince = 0L)).onFailure { throw it.reason.cause }
+        assertEquals(0L, api.getFaction(FactionId(faction.id.value))!!.primaryOwnerSince)
+    }
 }

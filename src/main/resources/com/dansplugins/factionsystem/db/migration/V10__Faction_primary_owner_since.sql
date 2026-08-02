@@ -1,0 +1,25 @@
+-- Records WHEN a faction's head came to the seat, which nothing knew.
+--
+-- V9 added primary_owner_id, so MF can finally say who the head of a House is without trusting a role
+-- name. It still could not say how long they had been it, and "how long have you held this position"
+-- is a real gate: a tenure rule exists so that joining a group, being handed the top of it, and using
+-- that position against somebody cannot all happen on one day. Without this column that rule can be
+-- enforced for a fief (whose plugin records its own grant time) and not for a faction, so the same
+-- rule applied at one level of the hierarchy and silently did nothing at the other.
+--
+-- Stamped inside MfFactionService.save by comparing the incoming head against the stored one, rather
+-- than at each of the five call sites that can move a head (/f create, /f transfer,
+-- /f admin setleader, succession, and the API's setPrimaryOwner). One comparison in the write path
+-- cannot be forgotten by a sixth route added later; five scattered assignments can, and the failure
+-- would be a head whose tenure silently dates from whenever the previous one took over.
+--
+-- Default 0 rather than the migration timestamp, and the difference matters on the day this ships.
+-- Zero reads as "held since the epoch", so every existing head clears every tenure gate immediately.
+-- That is the truthful reading: those players really have held their realms since before anybody was
+-- counting, and stamping the upgrade instead would freeze every faction on the server out of a rule
+-- for its first week, for no reason anybody could see from inside the game.
+--
+-- bigint epoch milliseconds, matching joined_at in V9, so the column behaves identically on MariaDB
+-- and H2. Not null with a default, so no read has to handle a null and no backfill is required.
+alter table `mf_faction`
+    add `primary_owner_since` bigint not null default 0;
