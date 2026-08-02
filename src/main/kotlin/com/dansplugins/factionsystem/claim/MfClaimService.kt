@@ -3,6 +3,8 @@ package com.dansplugins.factionsystem.claim
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.api.ClaimOverrideProvider
+import com.dansplugins.factionsystem.api.FactionId
+import com.dansplugins.factionsystem.api.event.FactionClaimAttemptEvent
 import com.dansplugins.factionsystem.api.impl.ApiClaimEventBridge
 import com.dansplugins.factionsystem.area.MfChunkPosition
 import com.dansplugins.factionsystem.event.faction.FactionClaimEvent
@@ -225,6 +227,21 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         val event = FactionClaimEvent(claim.factionId, claim, !plugin.server.isPrimaryThread)
         plugin.server.pluginManager.callEvent(event)
         if (event.isCancelled) throw EventCancelledException("Event cancelled")
+        // The stable-API counterpart, fired alongside MF's own and for the same reason: a consumer
+        // with a rule that has to FORBID a claim had nothing to bind to. ClaimOverrideProvider is
+        // additive only, and refusing the command misses autoclaim entirely -- which needs no
+        // command at all. Fired here so it sits underneath every route into a claim.
+        val previousOwner = claimsByKey[ClaimKey(event.claim)]?.factionId
+        val apiEvent = FactionClaimAttemptEvent(
+            FactionId(event.claim.factionId.value),
+            event.claim.worldId,
+            event.claim.x,
+            event.claim.z,
+            previousOwner?.let { FactionId(it.value) },
+            !plugin.server.isPrimaryThread
+        )
+        plugin.server.pluginManager.callEvent(apiEvent)
+        if (apiEvent.isCancelled) throw EventCancelledException("Claim refused by a plugin")
         val result = repository.upsert(event.claim)
         // The map write and the secondary index MUST move together, under the map's own per-key
         // lock, and a plain put() followed by the index calls does not do that.
