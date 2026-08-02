@@ -90,9 +90,9 @@ factions:
   # step:       how many chunks share a price before it rises again. Larger is gentler.
   # increment:  how much the per-chunk price rises at each step.
   #
-  # With the values below, 64 chunks cost 64 power as they always did; 128 cost about 145; 256 cost
-  # about 400; and 512 cost about 1,250. /f power shows the allowance rather than the raw power, so
-  # a realm can always see the figure that actually decides its next claim.
+  # With the values below, 64 chunks cost 64 power as they always did; 128 cost 152; 256 cost 424;
+  # and 512 cost 1,352. /f power shows the allowance rather than the raw power, so a realm can
+  # always see the figure that actually decides its next claim.
   demesneCurve:
     enabled: false
     freeChunks: 64
