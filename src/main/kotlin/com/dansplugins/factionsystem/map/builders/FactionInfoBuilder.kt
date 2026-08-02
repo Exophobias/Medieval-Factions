@@ -1,11 +1,11 @@
 package com.dansplugins.factionsystem.map.builders
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.claim.MfDemesne
 import com.dansplugins.factionsystem.faction.MfFaction
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import kotlin.math.floor
-import kotlin.math.roundToInt
 
 /**
  * A builder class for creating faction information in HTML format.
@@ -85,7 +85,11 @@ class FactionInfoBuilder(private val plugin: MedievalFactions) {
             if (plugin.config.getBoolean("dynmap.showDemesne")) {
                 append("<h2>Demesne</h2>")
                 val claimCount = claimService.getClaimCount(faction.id)
-                append("$claimCount/${floor(faction.power).roundToInt()}")
+                // The allowance, not raw power. This is a claims-against-limit readout, and showing
+                // power where the allowance decides the next refusal would read as a bug -- the same
+                // reasoning that converted /f power. On the flat rule the two are the same number.
+                val allowance = MfDemesne.maxChunks(faction.power, MfDemesne.Settings.from(plugin.config))
+                append("$claimCount/$allowance")
             }
         }
     }

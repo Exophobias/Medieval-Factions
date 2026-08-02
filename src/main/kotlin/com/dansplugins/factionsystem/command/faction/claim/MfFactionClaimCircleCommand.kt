@@ -97,8 +97,17 @@ class MfFactionClaimCircleCommand(private val plugin: MedievalFactions) : Comman
                                         val claimFaction = factionService.getFaction(claimFactionId) ?: return@filter true
                                         val relationships = relationshipService.getRelationships(faction.id, claimFactionId)
                                         val reverseRelationships = relationshipService.getRelationships(claimFactionId, faction.id)
+                                        // Whether the defender is OVER ITS ALLOWANCE, which is what
+                                        // makes its outlying land contestable in a war. Through
+                                        // MfDemesne, not raw power: those are the same figure only on
+                                        // the flat rule, and with a curve enabled a defender sitting
+                                        // between its allowance and its raw power kept land the curve
+                                        // says it cannot hold -- so turning the curve on made large
+                                        // realms HARDER to take from, which is the opposite of the
+                                        // point.
                                         return@filter (relationships + reverseRelationships).any { it.type == MfFactionRelationshipType.AT_WAR } &&
-                                            claimFaction.power <= claimService.getClaimCount(claimFactionId) - claims.size
+                                            MfDemesne.maxChunks(claimFaction.power, MfDemesne.Settings.from(plugin.config)) <=
+                                            claimService.getClaimCount(claimFactionId) - claims.size
                                     }
                                     .flatMap { it.value.map { (chunk, _) -> chunk } }
                                 val claimableChunks = unclaimedChunks + contestedChunks

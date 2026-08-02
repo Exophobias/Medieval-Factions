@@ -97,8 +97,12 @@ class MfFactionClaimFillCommand(private val plugin: MedievalFactions) : CommandE
                                 val claimFaction = factionService.getFaction(claimFactionId) ?: return@filter true
                                 val relationships = relationshipService.getRelationships(faction.id, claimFactionId)
                                 val reverseRelationships = relationshipService.getRelationships(claimFactionId, faction.id)
+                                // See MfFactionClaimCircleCommand: the defender's ALLOWANCE decides
+                                // whether its land is contestable, not its raw power. The two differ
+                                // the moment a demesne curve is enabled.
                                 return@filter (relationships + reverseRelationships).any { it.type == AT_WAR } &&
-                                    claimFaction.power < claimService.getClaimCount(claimFactionId) - claims.size
+                                    MfDemesne.maxChunks(claimFaction.power, MfDemesne.Settings.from(plugin.config)) <
+                                    claimService.getClaimCount(claimFactionId) - claims.size
                             }
                             .flatMap { it.value.map { (chunk, _) -> chunk } }
                         val claimableChunks = unclaimedChunks + contestedChunks
@@ -147,7 +151,19 @@ class MfFactionClaimFillCommand(private val plugin: MedievalFactions) : CommandE
         if (claim?.factionId == faction.id) return chunksToFill
         if (chunksToFill.contains(MfChunkPosition(worldId, startChunkX, startChunkZ))) return chunksToFill
         val newChunks = mutableSetOf(*chunksToFill.toTypedArray(), MfChunkPosition(worldId, startChunkX, startChunkZ))
-        if (newChunks.size + claimService.getClaimCount(faction.id) > faction.power) return null
+        // Bounded by the ALLOWANCE, not raw power. The gate above catches an over-claim either way,
+        // so this cannot let a faction take more than it may -- but bounding the search by a figure
+        // larger than it can ever hold explored a region it would then be refused, which is wasted
+        // recursion and, worse, the wrong refusal message when the depth limit fires first.
+        if (!MfDemesne.mayClaim(
+                claimService.getClaimCount(faction.id),
+                newChunks.size,
+                faction.power,
+                MfDemesne.Settings.from(plugin.config)
+            )
+        ) {
+            return null
+        }
         if (claimFillMaxChunks > 0 && newChunks.size > claimFillMaxChunks) {
             throw ClaimFillLimitReachedException()
         }

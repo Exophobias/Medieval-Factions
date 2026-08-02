@@ -215,7 +215,24 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
             primaryOwnerId = mfPlayer.id
         )
         return when (val result = factionService.save(faction)) {
-            is Success -> ApiOutcome.success(FactionId(result.value.id.value))
+            is Success -> {
+                // The same housekeeping /f create does after its own save. A founder holding live
+                // applications to other factions would be approved into one later and silently
+                // leave the faction just founded around them -- and MF resolves a player in two
+                // factions to NEITHER, so the symptom is a realm that reports no members.
+                //
+                // After the save, and failure-tolerant, exactly as the command has it: the faction
+                // exists by this line and reporting the whole call as a failure over an uncancelled
+                // application would be a worse answer than the stale applications.
+                runCatching { factionService.cancelAllApplicationsForPlayer(mfPlayer) }
+                    .onFailure { failure ->
+                        plugin.logger.warning(
+                            "Founded ${result.value.name} but could not cancel " +
+                                "$founderId's outstanding applications: ${failure.message}"
+                        )
+                    }
+                ApiOutcome.success(FactionId(result.value.id.value))
+            }
             is Failure -> ApiOutcome.failure(result.reason.message)
         }
     }
@@ -343,10 +360,37 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         val sworn = relationshipService.save(
             MfFactionRelationship(factionId = vassalId, targetId = liegeId, type = LIEGE)
         )
-        if (sworn is Failure) return sworn.toApiResult()
-        return relationshipService.save(
+        // Captured through a when rather than relying on a smart cast: Result4k is a sealed type from
+        // another module, so Kotlin will not narrow `sworn` after the failure branch returns.
+        val swornRow = when (sworn) {
+            is Failure -> return sworn.toApiResult()
+            is Success -> sworn.value
+        }
+        val accepted = relationshipService.save(
             MfFactionRelationship(factionId = liegeId, targetId = vassalId, type = VASSAL)
-        ).toApiResult()
+        )
+        if (accepted is Failure) {
+            // The first row is rolled back, and without this the failure was UNRECOVERABLE. The
+            // precondition above tests only the vassal's own LIEGE row, so a half-written oath made
+            // every retry answer "already swears to a liege" while the liege's side said it had no
+            // such vassal -- a state no caller could see, fix, or escape.
+            //
+            // The rollback can itself fail, and then the half-oath stands. Nothing here can do
+            // better without a transaction MF does not have across two relationship writes, so it is
+            // logged loudly rather than swallowed: an operator can delete the row, and cannot delete
+            // one nobody told them about.
+            val rolledBack = relationshipService.delete(swornRow.id)
+            if (rolledBack is Failure) {
+                plugin.logger.severe(
+                    "Faction ${vassal.value} was sworn to ${liege.value}, the liege's side of the " +
+                        "oath failed to save, and the rollback failed too. That faction now holds a " +
+                        "one-sided oath which will refuse every attempt to swear again. Delete its " +
+                        "LIEGE relationship row by hand."
+                )
+            }
+            return accepted.toApiResult()
+        }
+        return ApiResult.success()
     }
 
     override fun declareWar(faction: FactionId, otherFaction: FactionId): ApiResult {

@@ -284,8 +284,11 @@ interface MedievalFactionsApi {
      * have given that name. If the arriving player is meant to lead, say so with [setPrimaryOwner]
      * and grant the role explicitly.
      *
-     * Moving a faction's recorded head out of it leaves that faction headless, and MF's succession
-     * runs on the next save. If you are moving everybody, disband instead.
+     * Moving a faction's recorded head out of it does NOT leave the faction headless: MF's succession
+     * runs inside the very save that removes them, so a new head is already seated and
+     * [event.FactionPrimaryOwnerChangedEvent] already delivered by the time this returns. A caller
+     * that wants the seat to end up somewhere specific should say so with [setPrimaryOwner]
+     * afterwards rather than assume it is vacant. If you are moving everybody, disband instead.
      */
     fun transferMembers(from: FactionId, to: FactionId, playerIds: Collection<UUID>): ApiResult
 
@@ -358,7 +361,14 @@ interface MedievalFactionsApi {
      * start could not start one it intends to end. Fails if the two are already at war, if either
      * does not exist, or if they are the same faction.
      *
-     * Fires [event.FactionWarStartedEvent] once for the pair on success.
+     * **[event.FactionWarStartedEvent] is fired from the relationship write, which happens BEFORE the
+     * row is persisted**, so a consumer can see a war announced that then fails to save. It is fired
+     * once per pair either way -- the bridge collapses the two rows into one event -- but "once on
+     * success" would be a promise this cannot keep. A consumer that must not act on a war that did
+     * not happen should re-read [FactionView.isAtWarWith] on the next tick.
+     *
+     * The same ordering means a retry after a failure is *silent*: the bridge has already recorded
+     * the pair as warring, so the second attempt fires nothing.
      */
     fun declareWar(faction: FactionId, otherFaction: FactionId): ApiResult
 
