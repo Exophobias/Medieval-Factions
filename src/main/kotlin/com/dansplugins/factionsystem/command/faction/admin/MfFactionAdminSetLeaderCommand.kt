@@ -46,21 +46,34 @@ class MfFactionAdminSetLeaderCommand(private val plugin: MedievalFactions) : Com
 
                 val factionService = plugin.services.factionService
 
-                // Check if target player is already in a faction
-                if (factionService.getFaction(targetMfPlayer.id) != null) {
-                    sender.sendMessage("$RED${plugin.language["CommandFactionAdminSetLeaderTargetPlayerAlreadyInFaction"]}")
-                    return@Runnable
-                }
-
-                // Get target faction
+                // Get target faction. Resolved BEFORE the membership guard below, because the
+                // guard has to know which faction is being asked for.
                 val targetFaction = factionService.getFaction(args.dropFirst().joinToString(" "))
                 if (targetFaction == null) {
                     sender.sendMessage("$RED${plugin.language["CommandFactionAdminSetLeaderInvalidTargetFaction"]}")
                     return@Runnable
                 }
 
+                // Refuse only if they belong to a DIFFERENT faction. It used to refuse anybody who
+                // belonged to any faction at all, which made this command unable to do the one job
+                // V9 hands it: every faction that existed before V9 has a null primary_owner_id,
+                // deliberately not backfilled, and the migration says "operators appoint a head with
+                // /f admin setleader". The obvious head of such a faction is a member of it, so the
+                // guard always fired -- leaving every pre-existing faction on the server permanently
+                // headless, with /f transfer, /f heir, succession and setPrimaryOwner all refusing
+                // in turn because none of them will act without a recorded owner.
+                val currentFaction = factionService.getFaction(targetMfPlayer.id)
+                val alreadyAMember = currentFaction != null && currentFaction.id == targetFaction.id
+                if (currentFaction != null && !alreadyAMember) {
+                    sender.sendMessage("$RED${plugin.language["CommandFactionAdminSetLeaderTargetPlayerAlreadyInFaction"]}")
+                    return@Runnable
+                }
+
+                // A member being promoted is not a member being added, so a full faction must not
+                // block seating a head on it -- which would otherwise leave the largest factions,
+                // the ones most in need of a head, as the ones that cannot be given one.
                 val maxMembers = plugin.config.getInt("factions.maxMembers")
-                if (maxMembers > 0 && targetFaction.members.size >= maxMembers) {
+                if (!alreadyAMember && maxMembers > 0 && targetFaction.members.size >= maxMembers) {
                     sender.sendMessage("$RED${plugin.language["CommandFactionAdminSetLeaderTargetFactionFull"]}")
                     return@Runnable
                 }
@@ -77,9 +90,19 @@ class MfFactionAdminSetLeaderCommand(private val plugin: MedievalFactions) : Com
 
                 // Add player as the owner. This is the one command that reassigns the recorded head
                 // of a faction; nothing a faction can do to itself moves it.
+                // PROMOTE IN PLACE when they are already a member, rather than appending. Two
+                // MfFactionMember rows for one player make MfFaction.getRole -- a singleOrNull --
+                // return null, so the appointed head would hold the seat with no role at all.
+                val members = if (alreadyAMember) {
+                    targetFaction.members.map {
+                        if (it.playerId == targetMfPlayer.id) MfFactionMember(targetMfPlayer.id, ownerRole) else it
+                    }
+                } else {
+                    targetFaction.members + MfFactionMember(targetMfPlayer.id, ownerRole)
+                }
                 val updatedFaction = factionService.save(
                     targetFaction.copy(
-                        members = targetFaction.members + MfFactionMember(targetMfPlayer.id, ownerRole),
+                        members = members,
                         invites = targetFaction.invites.filter { it.playerId != targetMfPlayer.id },
                         primaryOwnerId = targetMfPlayer.id
                     )

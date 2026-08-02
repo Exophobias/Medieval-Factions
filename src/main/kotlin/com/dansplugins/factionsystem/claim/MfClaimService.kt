@@ -224,24 +224,35 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         }
         val factionService = plugin.services.factionService
         val faction = factionService.getFaction(claim.factionId).let(::requireNotNull)
-        val event = FactionClaimEvent(claim.factionId, claim, !plugin.server.isPrimaryThread)
-        plugin.server.pluginManager.callEvent(event)
-        if (event.isCancelled) throw EventCancelledException("Event cancelled")
-        // The stable-API counterpart, fired alongside MF's own and for the same reason: a consumer
-        // with a rule that has to FORBID a claim had nothing to bind to. ClaimOverrideProvider is
-        // additive only, and refusing the command misses autoclaim entirely -- which needs no
-        // command at all. Fired here so it sits underneath every route into a claim.
-        val previousOwner = claimsByKey[ClaimKey(event.claim)]?.factionId
+        // The stable-API event, and it fires BEFORE MedievalFactions' own.
+        //
+        // The order is the point. Whichever event is checked last is the real gate, and everything
+        // after it observes a decision it can no longer influence -- so with this one second, a
+        // MONITOR handler of FactionClaimEvent (the event every existing third-party plugin binds
+        // to, and the one whose contract says MONITOR sees the outcome) was being told about claims
+        // that then never happened. MF's own event stays the final word; this one is an earlier gate.
+        //
+        // It exists because a consumer with a rule that has to FORBID a claim had nothing on the
+        // stable API to bind to: ClaimOverrideProvider is additive only, and refusing the command
+        // misses autoclaim entirely, which needs no command at all. Fired inside save() so it sits
+        // underneath every route into a claim.
+        //
+        // Reading `claim` rather than `event.claim` is safe and necessary: FactionClaimEvent.claim
+        // is a val, so no handler could have changed it anyway, and it does not exist yet here.
+        val previousOwner = claimsByKey[ClaimKey(claim)]?.factionId
         val apiEvent = FactionClaimAttemptEvent(
-            FactionId(event.claim.factionId.value),
-            event.claim.worldId,
-            event.claim.x,
-            event.claim.z,
+            FactionId(claim.factionId.value),
+            claim.worldId,
+            claim.x,
+            claim.z,
             previousOwner?.let { FactionId(it.value) },
             !plugin.server.isPrimaryThread
         )
         plugin.server.pluginManager.callEvent(apiEvent)
         if (apiEvent.isCancelled) throw EventCancelledException("Claim refused by a plugin")
+        val event = FactionClaimEvent(claim.factionId, claim, !plugin.server.isPrimaryThread)
+        plugin.server.pluginManager.callEvent(event)
+        if (event.isCancelled) throw EventCancelledException("Event cancelled")
         val result = repository.upsert(event.claim)
         // The map write and the secondary index MUST move together, under the map's own per-key
         // lock, and a plain put() followed by the index calls does not do that.

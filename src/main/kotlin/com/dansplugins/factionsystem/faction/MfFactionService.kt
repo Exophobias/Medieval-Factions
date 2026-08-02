@@ -167,7 +167,23 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         //
         // Only when it actually changes. An ordinary save that leaves the head alone must not push
         // the date forward, or every /f desc would reset the tenure of whoever is sitting there.
-        val stamped = if (successor.primaryOwnerId != previousState?.primaryOwnerId) {
+        //
+        // EXCEPT for a faction that predates MF recording heads at all. V9 leaves every existing
+        // row's primary_owner_id null on purpose and V10 defaults primary_owner_since to 0, on the
+        // stated reasoning that "zero reads as held since the epoch, so every existing head clears
+        // every tenure gate immediately" -- the alternative being to freeze the whole server out of
+        // those gates for a week. But that protection could never apply: the first time an operator
+        // seated a head with /f admin setleader, null != <newOwner> was true and the stamp landed on
+        // "now", which is precisely the outcome the migration says it exists to avoid.
+        //
+        // A brand-new faction has no previousState. A pre-existing one has a previousState with no
+        // recorded owner and a zero date, and only that combination is left at zero. A faction that
+        // went headless later under allowLeaderlessFactions was stamped when it emptied, so its date
+        // is non-zero and it is still treated as taking a new head.
+        val firstHeadOfAPreV9Faction = previousState != null &&
+            previousState.primaryOwnerId == null &&
+            previousState.primaryOwnerSince == 0L
+        val stamped = if (successor.primaryOwnerId != previousState?.primaryOwnerId && !firstHeadOfAPreV9Faction) {
             successor.copy(primaryOwnerSince = System.currentTimeMillis())
         } else {
             successor

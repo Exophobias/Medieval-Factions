@@ -105,9 +105,26 @@ class MfFactionClaimCircleCommand(private val plugin: MedievalFactions) : Comman
                                         // says it cannot hold -- so turning the curve on made large
                                         // realms HARDER to take from, which is the opposite of the
                                         // point.
+                                        // Compares COSTS, not a floored allowance, and that is not
+                                        // a stylistic preference. maxChunks(p, FLAT) is floor(p),
+                                        // so `maxChunks(power) <= X` is `floor(power) <= X` where
+                                        // upstream had `power <= X`. Those differ for fractional
+                                        // power at exactly X == floor(power) -- the floored form
+                                        // admits one case upstream rejected. Power is routinely
+                                        // fractional, and this gate decides whether a faction at
+                                        // war can be taken from, so the curve being "off by
+                                        // default" would not have saved anybody: the behaviour
+                                        // changed on servers that never enabled it.
+                                        //
+                                        // powerFor(X, FLAT) is X.toDouble(), so this reads
+                                        // `X >= power`, i.e. upstream's `power <= X` exactly. Under
+                                        // a curve it still says what it should: the land the
+                                        // defender would keep costs at least the power they have.
                                         return@filter (relationships + reverseRelationships).any { it.type == MfFactionRelationshipType.AT_WAR } &&
-                                            MfDemesne.maxChunks(claimFaction.power, MfDemesne.Settings.from(plugin.config)) <=
-                                            claimService.getClaimCount(claimFactionId) - claims.size
+                                            MfDemesne.powerFor(
+                                            claimService.getClaimCount(claimFactionId) - claims.size,
+                                            MfDemesne.Settings.from(plugin.config)
+                                        ) >= claimFaction.power
                                     }
                                     .flatMap { it.value.map { (chunk, _) -> chunk } }
                                 val claimableChunks = unclaimedChunks + contestedChunks

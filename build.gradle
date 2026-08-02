@@ -127,6 +127,24 @@ processResources {
     ]
 }
 
+// The plain `jar` task's output MUST NOT share a path with shadowJar's.
+//
+// rootProject.name is "medieval-factions", so `jar` writes medieval-factions-<version>.jar. The
+// shadowJar block below writes Medieval-Factions-<version>.jar. On a case-insensitive filesystem --
+// NTFS, which is what this is built on, and APFS -- THOSE ARE ONE FILE, and both tasks are in
+// assemble's graph. Last writer wins, so `clean shadowJar` followed by anything that runs `jar`
+// leaves a 1.6 MB unshaded jar sitting under the documented deploy name: it has plugin.yml, so the
+// server loads it, and then MedievalFactions dies at enable with NoClassDefFoundError on
+// kotlin/jvm/internal/Intrinsics, taking Fiefs and PatriamMFAddon's integration with it.
+//
+// Upstream never had this: its shadowJar used the 'all' classifier, which cannot collide. The
+// collision came in with the rename below. Gradle already flags it -- "Task
+// ':publishMavenPublicationToMavenLocal' uses this output of task ':jar' without declaring an
+// explicit or implicit dependency" -- and that warning is this, not noise.
+tasks.named('jar') {
+    archiveClassifier.set('thin')
+}
+
 shadowJar {
     // Deploy jar filename: Medieval-Factions-<version>.jar (nicer than the default
     // medieval-factions-<version>-all.jar). The Maven publication below overrides the classifier

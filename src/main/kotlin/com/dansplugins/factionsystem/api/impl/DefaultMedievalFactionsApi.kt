@@ -179,16 +179,48 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         // window between the two writes must leave them factionless rather than doubly seated. The
         // same ordering, and the same reason, as transferMembers.
         val previousFaction = factionService.getFaction(playerId)
+        // What to put the founder back into if the creation then fails, at the version the row
+        // actually holds by then. Null when there is nothing to go back to: either they were in no
+        // faction, or theirs was dissolved because they were the last one in it.
+        var restorable: MfFaction? = null
         if (previousFaction != null) {
-            // Their departure runs MF's ordinary machinery: succession reseats the faction if the
-            // founder was its head, and FactionMemberLeftEvent is delivered so consumers holding
-            // sub-group state can react. A caller that did not want that should not be founding a
-            // faction around somebody who is already in one.
-            val departed = factionService.save(
-                previousFaction.copy(members = previousFaction.members.filterNot { it.playerId == playerId })
-            )
-            if (departed is Failure) {
-                return ApiOutcome.failure("Could not remove $founderId from their current faction: ${departed.reason.message}")
+            val remaining = previousFaction.members.filterNot { it.playerId == playerId }
+            if (remaining.isEmpty()) {
+                // DISSOLVE, do not save an emptied faction. With the shipped
+                // factions.allowLeaderlessFactions: false, saving one whose only member has left
+                // throws NoSuccessorException -- so createFaction refused outright for the most
+                // ordinary case there is, a solo player re-founding, while its own contract said
+                // the founder is MOVED rather than refused. /f leave and transferMembers both
+                // dissolve here; this was the one emptying path that did neither.
+                val dissolved = factionService.delete(previousFaction.id)
+                if (dissolved is Failure) {
+                    return ApiOutcome.failure(
+                        "Could not dissolve ${previousFaction.name}, which $founderId was the last " +
+                            "member of: ${dissolved.reason.message}"
+                    )
+                }
+            } else {
+                // Their departure runs MF's ordinary machinery: succession reseats the faction if
+                // the founder was its head, and FactionMemberLeftEvent is delivered so consumers
+                // holding sub-group state can react. A caller that did not want that should not be
+                // founding a faction around somebody who is already in one.
+                val departed = factionService.save(previousFaction.copy(members = remaining))
+                if (departed is Failure) {
+                    return ApiOutcome.failure("Could not remove $founderId from their current faction: ${departed.reason.message}")
+                }
+                // Built from the POST-departure state, which is the whole point. Rolling back by
+                // re-saving `previousFaction` could never work: that object carries the version the
+                // row held before the departure, the row is now at version + 1, and
+                // JooqMfFactionRepository.upsertFaction matches on version and throws
+                // OptimisticLockingFailureException when no row matches. So the rollback added to
+                // stop a failed creation stranding the founder failed every single time, and always
+                // took the "they are now in NO faction" branch. Carrying the new version forward
+                // while restoring membership and the seat is what makes it actually save.
+                restorable = (departed as Success).value.copy(
+                    members = previousFaction.members,
+                    primaryOwnerId = previousFaction.primaryOwnerId,
+                    heirId = previousFaction.heirId
+                )
             }
         }
         val mfPlayer = playerService.getPlayer(playerId)
@@ -226,20 +258,34 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
                 // FactionMemberLeftEvent, and a consumer holding sub-group state answers that by
                 // moving a holding away from them. Restoring membership does not undo that, which
                 // is why the log line says so rather than pretending the state is clean.
-                if (previousFaction != null) {
-                    val restored = factionService.save(previousFaction)
-                    if (restored is Failure) {
-                        plugin.logger.severe(
-                            "Could not found '$name' for $founderId, and could not restore them to " +
-                                "${previousFaction.name} either. They are now in NO faction. " +
-                                "Re-add them by hand."
-                        )
-                    } else {
-                        plugin.logger.warning(
-                            "Could not found '$name' for $founderId, so they were restored to " +
-                                "${previousFaction.name}. Anything that reacted to their departure " +
-                                "(a fief, a settlement) has NOT been undone."
-                        )
+                if (previousFaction != null && restorable == null) {
+                    // Their old faction was dissolved on the way in, because they were its last
+                    // member, and a dissolved faction cannot be resurrected: its id is gone, and so
+                    // are its claims, roles and relationships. Said plainly rather than hidden --
+                    // this is the one path where a failed creation genuinely costs something.
+                    plugin.logger.severe(
+                        "Could not found '$name' for $founderId. They were the last member of " +
+                            "${previousFaction.name}, which was dissolved to move them, and it " +
+                            "cannot be restored. They are now in NO faction."
+                    )
+                } else {
+                    // Pulled into a val so the name is read from the thing actually being saved.
+                    val target = restorable
+                    if (target != null) {
+                        val restored = factionService.save(target)
+                        if (restored is Failure) {
+                            plugin.logger.severe(
+                                "Could not found '$name' for $founderId, and could not restore them " +
+                                    "to ${target.name} either. They are now in NO faction. " +
+                                    "Re-add them by hand."
+                            )
+                        } else {
+                            plugin.logger.warning(
+                                "Could not found '$name' for $founderId, so they were restored to " +
+                                    "${target.name}. Anything that reacted to their departure " +
+                                    "(a fief, a settlement) has NOT been undone."
+                            )
+                        }
                     }
                 }
                 ApiOutcome.failure(result.reason.message)
@@ -376,11 +422,20 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         val liegeRelationship = relationshipService.getRelationships(vassalId, LIEGE).firstOrNull()
             ?: return ApiResult.failure("Faction ${vassal.value} has no liege")
         val liegeId = liegeRelationship.targetId
-        // Every row between the two, both ways -- the vassal's LIEGE row and the liege's VASSAL row
-        // are separate records and leaving either behind would produce a half-broken oath that reads
-        // differently depending on which side is asked.
-        val rows = relationshipService.getRelationships(vassalId, liegeId) +
-            relationshipService.getRelationships(liegeId, vassalId)
+        // The two HIERARCHY rows between them, both ways -- the vassal's LIEGE row and the liege's
+        // VASSAL row are separate records, and leaving either behind produces a half-broken oath
+        // that reads differently depending on which side is asked.
+        //
+        // Filtered to those two types, because getRelationships(a, b) returns EVERY row between the
+        // pair. Deleting all of them also deleted an AT_WAR row -- so in the one workflow this
+        // method exists for, a war of independence, a consumer that declared war and then renounced
+        // ended up with no war: the fighting stopped the instant independence was declared, and a
+        // FactionWarEndedEvent went out that nobody asked for. An alliance would have gone the same
+        // way. Breaking an oath is not making peace.
+        val rows = (
+            relationshipService.getRelationships(vassalId, liegeId) +
+                relationshipService.getRelationships(liegeId, vassalId)
+            ).filter { it.type == LIEGE || it.type == VASSAL }
         rows.forEach { relationship ->
             val result = relationshipService.delete(relationship.id)
             if (result is Failure) {

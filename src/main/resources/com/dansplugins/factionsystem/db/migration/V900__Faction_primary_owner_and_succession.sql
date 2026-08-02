@@ -1,3 +1,12 @@
+-- Numbered 900, not 9, and the gap is deliberate.
+--
+-- This is a FORK. Upstream Medieval-Factions is at V8 and its next migration will be V9 -- and
+-- Flyway refuses to start at all when two migrations share a version: "Found more than one
+-- migration with version 9", thrown before any faction data loads. Renaming to fix that after a
+-- server has applied it means editing the schema-history table on live data, because the version is
+-- the key Flyway records. So the fork's migrations live in a reserved band from 900 up, leaving 9
+-- through 899 to upstream.
+--
 -- Records who the head of a faction is, instead of inferring it from a role name.
 --
 -- primary_owner_id is nullable. MedievalFactions already ships factions.allowLeaderlessFactions,

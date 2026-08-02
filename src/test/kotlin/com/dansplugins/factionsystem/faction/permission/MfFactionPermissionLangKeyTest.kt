@@ -28,7 +28,7 @@ class MfFactionPermissionLangKeyTest {
     private val languageKeyPattern = Regex("""plugin\.language\["([^"]+)"""")
 
     private val translations: Properties = Properties().apply {
-        File("src/main/resources/lang/lang_en_US.properties")
+        File("src/main/resources/lang/lang.properties")
             .reader(StandardCharsets.UTF_8)
             .use { reader -> load(reader) }
     }
@@ -44,7 +44,7 @@ class MfFactionPermissionLangKeyTest {
         val missing = referenced.filterNot(translations::containsKey)
         assertTrue(
             missing.isEmpty(),
-            "permission translation keys with no entry in lang_en_US.properties: $missing"
+            "permission translation keys with no entry in lang.properties: $missing"
         )
     }
 
@@ -56,7 +56,7 @@ class MfFactionPermissionLangKeyTest {
     fun manageShopsHasATranslation() {
         assertTrue(
             translations.containsKey("FactionPermissionManageShops"),
-            "FactionPermissionManageShops is missing from lang_en_US.properties"
+            "FactionPermissionManageShops is missing from lang.properties"
         )
     }
 }

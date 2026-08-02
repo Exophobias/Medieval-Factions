@@ -3,11 +3,16 @@ package com.dansplugins.factionsystem.claim
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.event.ClaimOwnerChangedEvent
+import com.dansplugins.factionsystem.api.event.FactionClaimAttemptEvent
+import com.dansplugins.factionsystem.event.faction.FactionClaimEvent
+import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
+import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.service.Services
+import dev.forkhandles.result4k.Failure
 import org.bukkit.Server
 import org.bukkit.event.Event
 import org.bukkit.plugin.Plugin
@@ -46,6 +51,9 @@ class MfClaimServiceTest {
     /** Every event handed to the plugin manager, internal and API alike, in the order fired. */
     private val firedEvents = mutableListOf<Event>()
 
+    /** When set, every FactionClaimAttemptEvent is vetoed, standing in for a consumer that refuses. */
+    private var vetoAttempts = false
+
     private val factionA = MfFactionId("faction-a")
     private val factionB = MfFactionId("faction-b")
     private val factionUnknown = MfFactionId("faction-unknown")
@@ -56,6 +64,7 @@ class MfClaimServiceTest {
     fun setUp() {
         world = UUID.randomUUID()
         firedEvents.clear()
+        vetoAttempts = false
         plugin = mock(MedievalFactions::class.java)
         `when`(plugin.logger).thenReturn(mock(Logger::class.java))
 
@@ -69,7 +78,11 @@ class MfClaimServiceTest {
         val pluginManager = mock(PluginManager::class.java)
         `when`(server.pluginManager).thenReturn(pluginManager)
         doAnswer { invocation ->
-            firedEvents.add(invocation.getArgument(0, Event::class.java))
+            val event = invocation.getArgument(0, Event::class.java)
+            firedEvents.add(event)
+            if (vetoAttempts && event is FactionClaimAttemptEvent) {
+                event.isCancelled = true
+            }
             null
         }.`when`(pluginManager).callEvent(any(Event::class.java))
 
@@ -172,6 +185,109 @@ class MfClaimServiceTest {
     }
 
     // --- ClaimOwnerChangedEvent ---
+
+    // ---- the cancellable claim event -------------------------------------------------
+    //
+    // None of this was covered. An edit that moved the veto check below repository.upsert would
+    // have persisted the claim, indexed it, still reported a failure to the caller, and left all
+    // 515 tests green -- a chunk the API calls unclaimed and the map calls claimed.
+
+    private fun attempts() = firedEvents.filterIsInstance<FactionClaimAttemptEvent>()
+
+    @Test
+    fun claimingWildernessFiresAnAttemptWithNoPreviousOwner() {
+        val service = serviceWith()
+        firedEvents.clear()
+
+        service.save(claim(4, 7, factionA))
+
+        assertEquals(1, attempts().size)
+        val attempt = attempts().single()
+        assertEquals(factionA.value, attempt.faction.value)
+        assertEquals(world, attempt.worldId)
+        assertEquals(4, attempt.chunkX)
+        assertEquals(7, attempt.chunkZ)
+        assertNull(attempt.previousOwner, "wilderness has no previous owner")
+    }
+
+    @Test
+    fun overclaimingReportsTheFactionBeingDisplaced() {
+        val service = serviceWith(claim(0, 0, factionA))
+        firedEvents.clear()
+
+        service.save(claim(0, 0, factionB))
+
+        val attempt = attempts().single()
+        assertEquals(factionB.value, attempt.faction.value, "the claimant")
+        assertEquals(factionA.value, attempt.previousOwner?.value, "the incumbent, read before the write")
+    }
+
+    /**
+     * The API event is an EARLIER gate than MedievalFactions' own, deliberately.
+     *
+     * Whichever event is checked last is the real decision, and everything after it observes an
+     * outcome it cannot influence. MF's own event is the one every existing third-party plugin binds
+     * to and the one whose MONITOR handlers are documented to see the result, so it has to be last.
+     */
+    @Test
+    fun theApiAttemptIsOfferedBeforeMedievalFactionsOwnEvent() {
+        val service = serviceWith()
+        firedEvents.clear()
+
+        service.save(claim(1, 1, factionA))
+
+        val attemptAt = firedEvents.indexOfFirst { it is FactionClaimAttemptEvent }
+        val internalAt = firedEvents.indexOfFirst { it is FactionClaimEvent }
+        assertTrue(attemptAt >= 0, "the API attempt event should have fired")
+        assertTrue(internalAt >= 0, "MF's own claim event should have fired")
+        assertTrue(attemptAt < internalAt, "the API event must not be the last word; MF's own is")
+    }
+
+    @Test
+    fun aVetoedClaimIsReportedAsAFailure() {
+        vetoAttempts = true
+        val service = serviceWith(claim(0, 0, factionA))
+        firedEvents.clear()
+
+        val result = service.save(claim(0, 0, factionB))
+
+        assertTrue(result is Failure<*>, "a refused claim must reach the caller as a failure")
+        val reason = (result as Failure<*>).reason
+        assertTrue(reason is ServiceFailure, "the failure should be MF's own service failure type")
+        assertTrue(
+            (reason as ServiceFailure).cause is EventCancelledException,
+            "the cause should say it was cancelled, not something generic"
+        )
+    }
+
+    @Test
+    fun aVetoedClaimWritesNothingAnywhere() {
+        vetoAttempts = true
+        val service = serviceWith(claim(0, 0, factionA))
+        firedEvents.clear()
+
+        service.save(claim(0, 0, factionB))
+
+        assertEquals(factionA, service.getClaim(world, 0, 0)?.factionId, "the chunk must not change hands")
+        assertEquals(0, service.getClaimCount(factionB), "the claimant must gain nothing")
+        assertEquals(1, service.getClaimCount(factionA), "and the incumbent must lose nothing")
+        assertEquals(emptyList<ClaimOwnerChangedEvent>(), ownerChanges(), "and nothing may be announced")
+    }
+
+    @Test
+    fun aVetoStopsBeforeMedievalFactionsOwnEventIsEvenAsked() {
+        vetoAttempts = true
+        val service = serviceWith()
+        firedEvents.clear()
+
+        service.save(claim(2, 2, factionA))
+
+        assertEquals(1, attempts().size)
+        assertTrue(
+            firedEvents.none { it is FactionClaimEvent },
+            "a refusal on the API gate should short-circuit, not run MF's gate for a claim that cannot happen"
+        )
+    }
 
     private fun ownerChanges() = firedEvents.filterIsInstance<ClaimOwnerChangedEvent>()
 

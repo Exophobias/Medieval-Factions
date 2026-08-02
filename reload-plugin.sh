@@ -22,7 +22,7 @@ fi
 
 # Copy the new plugin jar to the server
 echo "Copying new plugin jar to test server..."
-LATEST_JAR=$(find build/libs -name "*-all.jar" -type f -print -quit)
+LATEST_JAR=$(find build/libs -name "Medieval-Factions-*.jar" -type f -print -quit)
 
 if [ -z "$LATEST_JAR" ]; then
     echo "Error: No plugin jar found in build/libs"

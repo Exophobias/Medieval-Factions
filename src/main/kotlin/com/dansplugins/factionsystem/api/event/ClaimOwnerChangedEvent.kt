@@ -33,7 +33,9 @@ import java.util.UUID
  *
  * Past tense, not cancellable, fired on the main thread on the tick after the write succeeded. It
  * reports a transfer that has already taken effect, so there is nothing left to veto. A consumer that
- * wants to *prevent* a claim should use MF's own cancellable path instead.
+ * wants to *prevent* a claim binds to [FactionClaimAttemptEvent], which is cancellable and on this
+ * same stable surface -- it used to say "use MF's own cancellable path", which meant reaching into
+ * MF's internals, and that is the dependency this package exists to remove.
  *
  * Fired only when the owner genuinely differs. Re-saving a chunk to the faction that already holds
  * it, which MF does on some administrative paths, emits nothing.
