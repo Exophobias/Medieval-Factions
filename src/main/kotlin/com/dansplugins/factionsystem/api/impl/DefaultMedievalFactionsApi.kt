@@ -89,6 +89,18 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     override fun claim(faction: FactionId, chunk: Chunk): ApiResult =
         plugin.services.claimService.save(MfClaimedChunk(chunk, MfFactionId(faction.value))).toApiResult()
 
+    // Constructs MfClaimedChunk from coordinates rather than from a Chunk, which is what the internal
+    // model holds anyway. The world is resolved only to confirm it exists -- getWorld is a map lookup
+    // over loaded worlds and loads nothing.
+    override fun claim(faction: FactionId, worldId: UUID, chunkX: Int, chunkZ: Int): ApiResult {
+        if (plugin.server.getWorld(worldId) == null) {
+            return ApiResult.failure("No loaded world with id $worldId")
+        }
+        return plugin.services.claimService
+            .save(MfClaimedChunk(worldId, chunkX, chunkZ, MfFactionId(faction.value)))
+            .toApiResult()
+    }
+
     override fun unclaim(chunk: Chunk): ApiResult {
         val claim = plugin.services.claimService.getClaim(chunk)
             ?: return ApiResult.failure("Chunk is not claimed")
@@ -155,9 +167,29 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         }
         val playerService = plugin.services.playerService
         val playerId = MfPlayerId(founderId.toString())
-        // Checked before the player record is created, so a refusal leaves nothing behind.
-        if (factionService.getFaction(playerId) != null) {
-            return ApiOutcome.failure("Player $founderId is already in a faction")
+        // The founder is RELOCATED, not refused, and this used to be a refusal. It was wrong, and
+        // wrong in a way that made the whole calling feature impossible: the motivating consumer is a
+        // secession, where a lord takes part of a realm out of it, and such a lord is by construction
+        // still a member of the realm they are leaving at the moment the new one is founded. Refusing
+        // meant createFaction could only ever be called for somebody who already belonged nowhere,
+        // which is a player who does not need a faction founded around them.
+        //
+        // Removed BEFORE the new faction is saved, deliberately. MF resolves a player found in two
+        // factions to NEITHER -- getFaction(playerId) is a singleOrNull over every faction -- so the
+        // window between the two writes must leave them factionless rather than doubly seated. The
+        // same ordering, and the same reason, as transferMembers.
+        val previousFaction = factionService.getFaction(playerId)
+        if (previousFaction != null) {
+            // Their departure runs MF's ordinary machinery: succession reseats the faction if the
+            // founder was its head, and FactionMemberLeftEvent is delivered so consumers holding
+            // sub-group state can react. A caller that did not want that should not be founding a
+            // faction around somebody who is already in one.
+            val departed = factionService.save(
+                previousFaction.copy(members = previousFaction.members.filterNot { it.playerId == playerId })
+            )
+            if (departed is Failure) {
+                return ApiOutcome.failure("Could not remove $founderId from their current faction: ${departed.reason.message}")
+            }
         }
         val mfPlayer = playerService.getPlayer(playerId)
             ?: playerService.save(MfPlayer(plugin, plugin.server.getOfflinePlayer(founderId)))
@@ -207,18 +239,27 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         // plain list with no key, so the destination would hold two rows for one player.
         val moving = playerIds.map { MfPlayerId(it.toString()) }.distinct()
         if (moving.isEmpty()) return ApiResult.success()
-        val notMembers = moving.filter { id -> source.members.none { it.playerId == id } }
-        if (notMembers.isNotEmpty()) {
-            return ApiResult.failure("Not members of faction ${from.value}: ${notMembers.joinToString { it.value }}")
+        // Ids that are no longer members are SKIPPED, not refused, and this used to fail the whole
+        // call. All-or-nothing was the wrong shape for every real caller: the motivating one moves a
+        // group of players recorded minutes or days earlier, and any one of them leaving in the
+        // meantime turned a routine move into a failure that stranded everybody else. Worse, the
+        // callers that then carried on regardless -- because the move looked like housekeeping --
+        // left the entire remaining group factionless.
+        //
+        // A caller that genuinely needs all-or-nothing can compare the count it asked for against the
+        // count it got, which is why this reports one.
+        val movable = moving.filter { id -> source.members.any { it.playerId == id } }
+        if (movable.isEmpty()) {
+            return ApiResult.success()
         }
-        val movingSet = moving.toSet()
+        val movingSet = movable.toSet()
         // Removed first. See the contract note on MedievalFactionsApi.transferMembers: the window
         // between these two saves must leave a player factionless rather than in two factions, since
         // MF resolves a player in two factions to neither.
         val departed = factionService.save(source.copy(members = source.members.filterNot { it.playerId in movingSet }))
         if (departed is Failure) return departed.toApiResult()
         val role = destination.roles.default
-        val arrivals = moving.map { MfFactionMember(it, role) }
+        val arrivals = movable.map { MfFactionMember(it, role) }
         return factionService.save(destination.copy(members = destination.members + arrivals)).toApiResult()
     }
 

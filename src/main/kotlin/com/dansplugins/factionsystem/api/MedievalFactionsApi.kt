@@ -155,6 +155,23 @@ interface MedievalFactionsApi {
 
     fun claim(faction: FactionId, chunk: Chunk): ApiResult
 
+    /**
+     * Claim a chunk by coordinates, **without loading it**.
+     *
+     * The write-side counterpart to [isClaimed] and the positional [getClaimAt], and it exists for
+     * the same reason they do. The [Chunk]-typed overload forces a caller holding only coordinates
+     * through `World.getChunkAt`, which **loads and if necessary generates** the chunk -- and doing
+     * that off the main thread, which every write here is supposed to be on, is a synchronous load
+     * from the wrong thread. A caller moving a large holding's land would generate all of it.
+     *
+     * MF stores claims by `(worldId, x, z)` internally and never needs the [Chunk] object, so this
+     * is the shape the write always wanted.
+     *
+     * Fails if no world with that id is loaded. Everything else about it matches [claim], including
+     * the events fired and the fact that it is not transactional.
+     */
+    fun claim(faction: FactionId, worldId: UUID, chunkX: Int, chunkZ: Int): ApiResult
+
     fun unclaim(chunk: Chunk): ApiResult
 
     /** Ends any war between the two factions by removing the war relationship in both directions. */
@@ -202,10 +219,21 @@ interface MedievalFactionsApi {
      * relationships and MF's default flags.
      *
      * Fails, creating nothing, if a faction of that name already exists, if the name is longer than
-     * `factions.maxNameLength`, if the name is blank, or if [founderId] is already in a faction. That
-     * last one is not a convenience check: MF finds a player's faction by scanning for the single
-     * faction containing them, so a player in two factions resolves to **neither** rather than to an
-     * error, and every membership question about them silently answers "none" from then on.
+     * `factions.maxNameLength`, or if the name is blank.
+     *
+     * **A founder who is already in a faction is MOVED, not refused**, and the distinction is
+     * load-bearing rather than a convenience. The motivating consumer is a secession -- somebody
+     * taking part of a realm out of it -- and such a founder is by construction still a member of
+     * the realm they are leaving at the moment the new one is founded. Refusing them meant this
+     * could only be called for a player who already belonged nowhere, which is a player who does not
+     * need a faction founded around them.
+     *
+     * They are removed from the old faction **before** the new one is written, because MF resolves a
+     * player found in two factions to *neither* -- the lookup is a `singleOrNull` over every faction
+     * -- so the window between the two writes must leave them factionless rather than doubly seated.
+     * The departure runs MF's ordinary machinery: succession reseats the old faction if the founder
+     * was its head, and [event.FactionMemberLeftEvent] is delivered, so a consumer holding sub-group
+     * state (a fief, a settlement) reacts to it as it would to any other departure.
      *
      * A player record is created for [founderId] if MF has never seen them, exactly as `/f create`
      * does for a first-time founder.
@@ -233,8 +261,15 @@ interface MedievalFactionsApi {
     /**
      * Move members from one faction to another, giving them the destination's default role.
      *
-     * Every id in [playerIds] must currently be a member of [from], and both factions must exist;
-     * otherwise nothing moves at all. Duplicates and an empty collection are accepted and are no-ops.
+     * Both factions must exist. Duplicates and an empty collection are accepted and are no-ops.
+     *
+     * **Ids that are no longer members of [from] are skipped, not refused.** This was all-or-nothing
+     * and that was the wrong shape for every real caller: the motivating one moves a group recorded
+     * minutes or days earlier, and any single member leaving in the meantime turned a routine move
+     * into a failure that stranded everybody else -- or, for a caller that treated the move as
+     * housekeeping and carried on, left the whole remaining group factionless. A caller that
+     * genuinely needs all-or-nothing should compare the count it asked for against the membership it
+     * finds afterwards.
      *
      * **Two writes, and a failure between them leaves the players factionless.** They are removed
      * from [from] first and admitted to [to] second, deliberately in that order: the other order
