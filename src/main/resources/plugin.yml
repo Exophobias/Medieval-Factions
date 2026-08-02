@@ -23,7 +23,7 @@ softdepend:
 - rpk-selection-lib-bukkit
 - Mailboxes
 - Multiverse-Core
-description: Allows players to organise themselves into feudal, diplomatic, lawful groups akin to nations.
+description: "Allows players to organise themselves into feudal, diplomatic, lawful groups akin to nations. PATRIAM BUILD: adds a consumer API (faction creation, member and claim transfer, fealty, a cancellable claim event) and an optional demesne curve. Patriam's own plugins require it; a stock build will not run them. See /f version."
 commands:
   faction:
     description: |
@@ -128,6 +128,9 @@ commands:
     description: Denies a player's application to your faction
     usage: /<command> <player>
 permissions:
+  mf.version:
+    description: See which build of Medieval-Factions this server is running.
+    default: true
   mf.help:
     description: View a list of helpful commands.
     default: true

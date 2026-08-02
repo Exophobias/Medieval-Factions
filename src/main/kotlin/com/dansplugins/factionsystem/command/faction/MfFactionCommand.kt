@@ -50,6 +50,7 @@ import com.dansplugins.factionsystem.command.faction.transfer.MfFactionTransferC
 import com.dansplugins.factionsystem.command.faction.unclaim.MfFactionUnclaimCommand
 import com.dansplugins.factionsystem.command.faction.unclaimall.MfFactionUnclaimAllCommand
 import com.dansplugins.factionsystem.command.faction.vassalize.MfFactionVassalizeCommand
+import com.dansplugins.factionsystem.command.faction.version.MfFactionVersionCommand
 import com.dansplugins.factionsystem.command.faction.who.MfFactionWhoCommand
 import org.bukkit.ChatColor
 import org.bukkit.command.Command
@@ -77,6 +78,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
     private val factionUnclaimAllCommand = MfFactionUnclaimAllCommand(plugin)
     private val factionPowerCommand = MfFactionPowerCommand(plugin)
     private val factionWhoCommand = MfFactionWhoCommand(plugin)
+    private val factionVersionCommand = MfFactionVersionCommand(plugin)
     private val factionDisbandCommand = MfFactionDisbandCommand(plugin)
     private val factionInvokeCommand = MfFactionInvokeCommand(plugin)
     private val factionLeaveCommand = MfFactionLeaveCommand(plugin)
@@ -128,6 +130,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
     private val unclaimAllAliases = listOf("unclaimall", plugin.language["CmdFactionUnclaimAll"])
     private val powerAliases = listOf("power", plugin.language["CmdFactionPower"])
     private val whoAliases = listOf("who", plugin.language["CmdFactionWho"])
+    private val versionAliases = listOf("version", "ver", "about", plugin.language["CmdFactionVersion"])
     private val disbandAliases = listOf("disband", plugin.language["CmdFactionDisband"])
     private val invokeAliases = listOf("invoke", plugin.language["CmdFactionInvoke"])
     private val leaveAliases = listOf("leave", plugin.language["CmdFactionLeave"])
@@ -210,7 +213,8 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
         denyAliases +
         pendingActionsAliases +
         transferAliases +
-        heirAliases
+        heirAliases +
+        versionAliases
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         return when (args.firstOrNull()?.lowercase()) {
@@ -232,6 +236,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in unclaimAllAliases -> factionUnclaimAllCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in powerAliases -> factionPowerCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in whoAliases -> factionWhoCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
+            in versionAliases -> factionVersionCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in disbandAliases -> factionDisbandCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in invokeAliases -> factionInvokeCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in leaveAliases -> factionLeaveCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
