@@ -22,6 +22,7 @@ import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationship
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.AT_WAR
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.LIEGE
+import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.VASSAL
 import dev.forkhandles.result4k.Failure
 import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.Success
@@ -278,6 +279,33 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
             }
         }
         return ApiResult.success()
+    }
+
+    override fun swearFealty(vassal: FactionId, liege: FactionId): ApiResult {
+        if (vassal.value == liege.value) return ApiResult.failure("A faction cannot swear to itself")
+        val vassalId = MfFactionId(vassal.value)
+        val liegeId = MfFactionId(liege.value)
+        val factionService = plugin.services.factionService
+        if (factionService.getFaction(vassalId) == null) {
+            return ApiResult.failure("No faction with id ${vassal.value}")
+        }
+        if (factionService.getFaction(liegeId) == null) {
+            return ApiResult.failure("No faction with id ${liege.value}")
+        }
+        val relationshipService = plugin.services.factionRelationshipService
+        // Refused rather than replaced. A faction with two liege rows is resolved by MF's own walk
+        // taking the first, so which oath is in force would depend on row order -- and moving an
+        // existing oath is a different act from swearing one, which a caller should have to say.
+        if (relationshipService.getRelationships(vassalId, LIEGE).isNotEmpty()) {
+            return ApiResult.failure("Faction ${vassal.value} already swears to a liege")
+        }
+        val sworn = relationshipService.save(
+            MfFactionRelationship(factionId = vassalId, targetId = liegeId, type = LIEGE)
+        )
+        if (sworn is Failure) return sworn.toApiResult()
+        return relationshipService.save(
+            MfFactionRelationship(factionId = liegeId, targetId = vassalId, type = VASSAL)
+        ).toApiResult()
     }
 
     override fun declareWar(faction: FactionId, otherFaction: FactionId): ApiResult {

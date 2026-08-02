@@ -295,6 +295,28 @@ interface MedievalFactionsApi {
     fun renounceLiege(vassal: FactionId): ApiResult
 
     /**
+     * Swear [vassal] to [liege], as `/f swearfealty` accepting a `/f vassalize` offer does, without
+     * either faction having to agree.
+     *
+     * The counterpart of [renounceLiege], and needed for the same reason it is: a plugin that can
+     * break an oath but not restore one can only ever destroy hierarchy. The motivating case is a war
+     * of independence that the vassal <em>loses</em> -- the oath it broke has to go back, or losing
+     * would cost a realm its whole position over an attempt, which is a far heavier penalty than
+     * winning is a reward.
+     *
+     * Writes both rows: the vassal's liege row and the liege's vassal row. Fails, changing nothing,
+     * if either faction does not exist, if they are the same faction, or if [vassal] already swears
+     * to somebody -- a faction with two lieges is a state MF's own walk resolves by picking the
+     * first, so it must not be creatable.
+     *
+     * **It does not check for a cycle**, and a caller that swears a liege to its own vassal will
+     * produce one. MF's hierarchy walk is depth-bounded rather than cycle-safe, so the symptom is a
+     * wrong depth rather than a hang, but it is still wrong. Callers move oaths they already know
+     * the shape of; do not expose this to a command without checking.
+     */
+    fun swearFealty(vassal: FactionId, liege: FactionId): ApiResult
+
+    /**
      * Put two factions at war, as `/f declarewar` does, without asking either of them.
      *
      * The mirror of [forcePeace], and the reason it exists: a plugin that can end a war it did not
