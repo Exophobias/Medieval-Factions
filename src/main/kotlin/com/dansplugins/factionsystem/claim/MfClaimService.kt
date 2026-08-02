@@ -25,6 +25,7 @@ import org.bukkit.Material
 import org.bukkit.World
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 class MfClaimService(private val plugin: MedievalFactions, private val repository: MfClaimedChunkRepository) {
 
@@ -225,13 +226,36 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         plugin.server.pluginManager.callEvent(event)
         if (event.isCancelled) throw EventCancelledException("Event cancelled")
         val result = repository.upsert(event.claim)
-        val previousClaim = claimsByKey.put(ClaimKey(result), result)
-        if (previousClaim == null) {
-            indexClaim(result)
-        } else if (previousClaim.factionId != result.factionId) {
-            unindexClaim(previousClaim)
-            indexClaim(result)
+        // The map write and the secondary index MUST move together, under the map's own per-key
+        // lock, and a plain put() followed by the index calls does not do that.
+        //
+        // The race it permits is not theoretical and it does not heal. Take an unclaimed chunk that
+        // two threads claim at once, A for faction F and B for faction G. A's put returns null, so A
+        // is going to index F. B's put then returns A's value, so B unindexes F and indexes G. A,
+        // still behind, now indexes F. The map ends up saying G while claimKeysByFaction holds keys
+        // for BOTH -- F keeps a phantom claim it does not own, and nothing ever removes it, because
+        // every later correction is keyed on what the map says.
+        //
+        // Reachable because MF's own command layer calls this off the main thread from ~119 async
+        // task sites, and because the stable API exposes claim() to consumers with no ordering of
+        // its own. Unlike faction saves, claims have no version column and so no optimistic lock to
+        // catch the second writer.
+        //
+        // compute() is used purely for the atomicity of the whole block; the value returned is
+        // always the new claim. The index maps are different maps, which is what makes updating
+        // them inside the remapping function legal.
+        val previous = AtomicReference<MfClaimedChunk?>()
+        claimsByKey.compute(ClaimKey(result)) { _, existing ->
+            previous.set(existing)
+            if (existing == null) {
+                indexClaim(result)
+            } else if (existing.factionId != result.factionId) {
+                unindexClaim(existing)
+                indexClaim(result)
+            }
+            result
         }
+        val previousClaim = previous.get()
         // The one place in MF where the outgoing and incoming owners of a chunk are both known, and
         // the write has already succeeded. The stable API's ClaimOwnerChangedEvent needs both, and
         // MF's own FactionClaimEvent above carries neither the old owner nor a guarantee that the

@@ -16,10 +16,76 @@ import java.util.UUID
  * working without recompilation.
  *
  * Obtain an instance via Bukkit's ServicesManager (see [get]).
+ *
+ * ## Threading
+ *
+ * **Reads are safe from any thread. Writes block on the database and belong OFF the main thread.**
+ *
+ * Everything under "Reads" below is answered from `ConcurrentHashMap`s held in MF's services, so it
+ * costs a map lookup and cannot stall anything. Everything under "Writes" performs synchronous JDBC
+ * on **the thread that called it** — there is no internal dispatch that moves the write elsewhere.
+ * MF's own command layer reflects this: it wraps service calls in `runTaskAsynchronously` at well
+ * over a hundred sites, and this API is the same code underneath.
+ *
+ * ### What a main-thread write actually costs
+ *
+ * Enough to matter, and how much depends on the database:
+ *
+ * - **Saving one faction is not one statement.** The whole member, invite and application list is
+ *   deleted and reinserted every time, with a read-back after each insert, inside one transaction —
+ *   roughly `6 + 2 × (members + invites + applications)` statements. A forty-member faction is
+ *   around eighty-six of them, whether you changed its name or its description.
+ * - **Claiming one chunk is two** (an upsert and a read-back), and it is not transactional.
+ * - **On the default embedded H2** those are in-process file writes and a main-thread call is merely
+ *   wasteful. **On MySQL or MariaDB** — both fully supported — every statement is its own network
+ *   round trip, because nothing is batched. The same call that was invisible on H2 becomes a
+ *   multi-second freeze, and the failure arrives when an operator migrates the database rather than
+ *   when anybody changed the code.
+ *
+ * So: do the write on an async task, and hop back with `runTask` for anything that touches the world
+ * afterwards.
+ *
+ * ### Events do not follow the same rule as calls, and the exception matters
+ *
+ * Every event in the `event` package is delivered on the **main thread**, scheduled onto the next
+ * tick, so a handler may touch the world freely — with one deliberate exception.
+ * [event.FactionCreateEvent] is fired **inline and may be asynchronous**, because it is cancellable
+ * and a veto has to reach MF before it persists anything. `/f create` runs its whole chain on an
+ * async task, so in ordinary play that event *is* async.
+ *
+ * Two consequences for anything handling it. A handler must not assume it can touch the world. And
+ * **the faction does not exist yet**: the event is fired before the row is written and before the
+ * cache is populated, so [getFaction] with the new id answers `null` and any write keyed on it
+ * fails. React to a creation *after* the fact by other means; use this event only to allow or refuse.
+ *
+ * [ClaimOverrideProvider] and [SuccessionPolicy] are the mirror image — they are consumer callbacks
+ * that MF invokes **inline on whatever thread MF is on**, so they must be fast and must not block.
+ *
+ * ### Calling a write off the main thread runs other plugins' listeners there too
+ *
+ * Bukkit invokes listeners inline on the calling thread; the asynchronous flag on an event describes
+ * it, it does not move it. So an off-thread [claim] runs every third-party `FactionClaimEvent`
+ * listener on that thread, and a listener written on the assumption it is on the main thread will
+ * misbehave. This is unavoidable and is why MF marks its own events honestly rather than pretending.
+ *
+ * ### Concurrency between two writers
+ *
+ * Faction writes carry an optimistic lock, so two callers racing on one faction produce a *failure*
+ * for the loser rather than a silent overwrite; treat a failed [ApiResult] as possibly meaning
+ * "somebody else got there first" and re-read before retrying. Claim writes have no version column
+ * and so no such protection: two callers racing on the same chunk are last-writer-wins.
+ *
+ * ### Views are snapshots of identity and live for territory
+ *
+ * A [FactionView] freezes name, members and ownership at the moment you looked it up, but reads
+ * claim count, wars and hierarchy live on every access. Holding one across ticks therefore mixes
+ * stale identity with fresh territory. Re-fetch rather than caching a view.
  */
 interface MedievalFactionsApi {
 
     // --- Reads ---
+    //
+    // In-memory, and safe from any thread. See the threading note on the interface.
 
     fun getFaction(id: FactionId): FactionView?
 
@@ -81,6 +147,9 @@ interface MedievalFactionsApi {
     fun getPower(playerId: UUID): Double
 
     // --- Mutations ---
+    //
+    // BLOCKING JDBC on the calling thread. Call these off the main thread. See the threading
+    // note on the interface for what one costs and why the database backend changes the answer.
 
     fun setHome(faction: FactionId, location: Location): ApiResult
 
@@ -119,6 +188,9 @@ interface MedievalFactionsApi {
     fun setPrimaryOwner(faction: FactionId, playerId: UUID): ApiResult
 
     // --- Territory protection exceptions ---
+    //
+    // Registration is in-memory. The PROVIDER is called back inline on MF's own thread, from
+    // block and entity listeners, so it must be fast and must never block.
 
     /**
      * Register a [ClaimOverrideProvider], letting this plugin grant narrow exceptions to territory
