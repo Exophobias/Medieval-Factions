@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.command.faction.claim
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfChunkPosition
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.MfDemesne
 import com.dansplugins.factionsystem.exception.WorldClaimBlockedException
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
@@ -16,7 +17,6 @@ import org.bukkit.entity.Player
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.logging.Level
-import kotlin.math.floor
 
 class MfFactionClaimCircleCommand(private val plugin: MedievalFactions) : CommandExecutor, TabCompleter {
 
@@ -106,8 +106,14 @@ class MfFactionClaimCircleCommand(private val plugin: MedievalFactions) : Comman
                                     sender.sendMessage("${ChatColor.RED}${plugin.language["CommandFactionClaimNoClaimableChunks"]}")
                                     return@saveChunks
                                 }
-                                if (plugin.config.getBoolean("factions.limitLand") && claimableChunks.size + claimService.getClaimCount(faction.id) > faction.power) {
-                                    sender.sendMessage("${ChatColor.RED}${plugin.language["CommandFactionClaimReachedDemesneLimit", decimalFormat.format(floor(faction.power))]}")
+                                val demesne = MfDemesne.Settings.from(plugin.config)
+                                if (plugin.config.getBoolean("factions.limitLand") &&
+                                    !MfDemesne.mayClaim(claimService.getClaimCount(faction.id), claimableChunks.size, faction.power, demesne)
+                                ) {
+                                    // The allowance rather than the raw power, which are the same figure only on the
+                                    // flat rule. Telling a faction it has 400 power while refusing its 300th chunk
+                                    // would read as a bug rather than as a curve.
+                                    sender.sendMessage("${ChatColor.RED}${plugin.language["CommandFactionClaimReachedDemesneLimit", decimalFormat.format(MfDemesne.maxChunks(faction.power, demesne).toLong())]}")
                                     return@saveChunks
                                 }
                                 // Checks if the attempted claim is connected to an already existing claim. Will make an exception if the faction has no claims.

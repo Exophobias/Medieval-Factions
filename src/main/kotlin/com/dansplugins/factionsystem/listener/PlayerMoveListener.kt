@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.listener
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfChunkPosition
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.MfDemesne
 import com.dansplugins.factionsystem.exception.WorldClaimBlockedException
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
@@ -47,7 +48,9 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
                         if (claimService.isClaimingBlockedInWorld(to.world!!)) {
                             return@Runnable
                         }
-                        if (plugin.config.getBoolean("factions.limitLand") && claimService.getClaimCount(playerFaction.id) + 1 > playerFaction.power) {
+                        if (plugin.config.getBoolean("factions.limitLand") &&
+                            !MfDemesne.mayClaim(claimService.getClaimCount(playerFaction.id), 1, playerFaction.power, MfDemesne.Settings.from(plugin.config))
+                        ) {
                             event.player.sendMessage("$RED${plugin.language["AutoclaimPowerLimitReached"]}")
                             val updatedFaction = factionService.save(playerFaction.copy(autoclaim = false)).onFailure {
                                 plugin.logger.log(SEVERE, "Failed to save faction: ${it.reason.message}", it.reason.cause)

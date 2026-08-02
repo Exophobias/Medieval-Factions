@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.command.faction.claim
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfChunkPosition
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.MfDemesne
 import com.dansplugins.factionsystem.exception.WorldClaimBlockedException
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.player.MfPlayer
@@ -19,7 +20,6 @@ import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.*
 import java.util.logging.Level.SEVERE
-import kotlin.math.floor
 
 class MfFactionClaimFillCommand(private val plugin: MedievalFactions) : CommandExecutor, TabCompleter {
 
@@ -106,8 +106,11 @@ class MfFactionClaimFillCommand(private val plugin: MedievalFactions) : CommandE
                             sender.sendMessage("$RED${plugin.language["CommandFactionClaimFillNoClaimableChunks"]}")
                             return@saveChunks
                         }
-                        if (plugin.config.getBoolean("factions.limitLand") && claimableChunks.size + claimService.getClaimCount(faction.id) > faction.power) {
-                            sender.sendMessage("$RED${plugin.language["CommandFactionClaimFillReachedDemesneLimit", decimalFormat.format(floor(faction.power))]}")
+                        val demesne = MfDemesne.Settings.from(plugin.config)
+                        if (plugin.config.getBoolean("factions.limitLand") &&
+                            !MfDemesne.mayClaim(claimService.getClaimCount(faction.id), claimableChunks.size, faction.power, demesne)
+                        ) {
+                            sender.sendMessage("$RED${plugin.language["CommandFactionClaimFillReachedDemesneLimit", decimalFormat.format(MfDemesne.maxChunks(faction.power, demesne).toLong())]}")
                             return@saveChunks
                         }
                         claimableChunks.forEach { chunk ->

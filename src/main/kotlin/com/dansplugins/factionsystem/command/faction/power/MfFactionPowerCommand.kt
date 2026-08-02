@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.power
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.claim.MfDemesne
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
@@ -129,7 +130,10 @@ class MfFactionPowerCommand(private val plugin: MedievalFactions) : CommandExecu
                                 plugin.language[
                                     "CommandFactionPowerFactionClaims",
                                     decimalFormat.format(claimCount.toLong()),
-                                    decimalFormat.format(floor(faction.power))
+                                    // The allowance, not the power. On the flat rule they are the same
+                                    // number; under a demesne curve they are not, and the readout has to
+                                    // show the one that decides whether the next claim is refused.
+                                    decimalFormat.format(MfDemesne.maxChunks(faction.power, MfDemesne.Settings.from(plugin.config)).toLong())
                                 ]
                                 }"
                             )

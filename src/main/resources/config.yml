@@ -73,6 +73,32 @@ factions:
   nonMembersCanInteractWithDoors: false
   maxClaimRadius: 3
   limitLand: true
+
+  # Makes each chunk cost slightly more power than the last, so expansion slows as a realm grows.
+  #
+  # The default rule is flat -- one power point buys one chunk, for ever -- which means the marginal
+  # cost of land is the same whether a faction holds three chunks or three hundred. The largest
+  # faction on a server is then the one for which expansion is cheapest relative to what it already
+  # controls, and the only thing slowing it is how fast it can recruit.
+  #
+  # DISABLED BY DEFAULT, and enabling it redraws every faction's allowance. Nothing is ever
+  # unclaimed -- a faction over its allowance simply cannot claim more until it grows or gives land
+  # up, exactly as happens today when a member leaves and takes their power with them -- but it is a
+  # real change to a live server's borders and should be announced before it is turned on.
+  #
+  # freeChunks: how many chunks still cost exactly one power each. A faction below this is untouched.
+  # step:       how many chunks share a price before it rises again. Larger is gentler.
+  # increment:  how much the per-chunk price rises at each step.
+  #
+  # With the values below, 64 chunks cost 64 power as they always did; 128 cost about 145; 256 cost
+  # about 400; and 512 cost about 1,250. /f power shows the allowance rather than the raw power, so
+  # a realm can always see the figure that actually decides its next claim.
+  demesneCurve:
+    enabled: false
+    freeChunks: 64
+    step: 32
+    increment: 0.25
+
   contiguousClaims: false
   blockedClaimWorlds: [] # List of world names where claiming is not allowed. Example: ["world_nether", "world_the_end"]
   actionBarTerritoryIndicator: true
