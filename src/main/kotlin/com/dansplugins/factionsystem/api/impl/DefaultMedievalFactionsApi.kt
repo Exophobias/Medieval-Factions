@@ -215,6 +215,35 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
             primaryOwnerId = mfPlayer.id
         )
         return when (val result = factionService.save(faction)) {
+            is Failure -> {
+                // Put the founder BACK. Removing them first is required -- a player in two factions
+                // resolves to neither -- but leaving them nowhere when the create then fails is
+                // strictly worse than the refusal this replaced. The create fails routinely: it
+                // fires a cancellable FactionCreateEvent, and a server with a founding-permit
+                // plugin will veto it for anybody without a permit.
+                //
+                // Worse than "worse", in fact: the departure has already fired
+                // FactionMemberLeftEvent, and a consumer holding sub-group state answers that by
+                // moving a holding away from them. Restoring membership does not undo that, which
+                // is why the log line says so rather than pretending the state is clean.
+                if (previousFaction != null) {
+                    val restored = factionService.save(previousFaction)
+                    if (restored is Failure) {
+                        plugin.logger.severe(
+                            "Could not found '$name' for $founderId, and could not restore them to " +
+                                "${previousFaction.name} either. They are now in NO faction. " +
+                                "Re-add them by hand."
+                        )
+                    } else {
+                        plugin.logger.warning(
+                            "Could not found '$name' for $founderId, so they were restored to " +
+                                "${previousFaction.name}. Anything that reacted to their departure " +
+                                "(a fief, a settlement) has NOT been undone."
+                        )
+                    }
+                }
+                ApiOutcome.failure(result.reason.message)
+            }
             is Success -> {
                 // The same housekeeping /f create does after its own save. A founder holding live
                 // applications to other factions would be approved into one later and silently
@@ -233,7 +262,6 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
                     }
                 ApiOutcome.success(FactionId(result.value.id.value))
             }
-            is Failure -> ApiOutcome.failure(result.reason.message)
         }
     }
 
@@ -267,16 +295,39 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         // count it got, which is why this reports one.
         val movable = moving.filter { id -> source.members.any { it.playerId == id } }
         if (movable.isEmpty()) {
-            return ApiResult.success()
+            // A FAILURE, not a success, and the difference is load-bearing for the caller. Returning
+            // success here made "everybody moved" and "nobody was there to move" the same answer,
+            // and the motivating caller then disbands the source faction on the strength of it --
+            // around whoever is still in it.
+            return ApiResult.failure(
+                "None of the ${moving.size} named players are members of faction ${from.value}"
+            )
         }
         val movingSet = movable.toSet()
-        // Removed first. See the contract note on MedievalFactionsApi.transferMembers: the window
-        // between these two saves must leave a player factionless rather than in two factions, since
-        // MF resolves a player in two factions to neither.
-        val departed = factionService.save(source.copy(members = source.members.filterNot { it.playerId in movingSet }))
-        if (departed is Failure) return departed.toApiResult()
+        val remaining = source.members.filterNot { it.playerId in movingSet }
         val role = destination.roles.default
         val arrivals = movable.map { MfFactionMember(it, role) }
+
+        // Moving EVERY member dissolves the source rather than saving it empty, and without this the
+        // whole call failed. An empty faction cannot be saved: MfFactionService runs succession on
+        // every save, and with the shipped allowLeaderlessFactions:false a faction whose head has no
+        // successor throws. So the ordinary case -- a group returning home in one move -- reported
+        // failure and left everybody where they were.
+        //
+        // This is what /f leave already does when the last member walks out; see
+        // MfFactionLeaveCommand. Arrivals are saved FIRST here, because the source is about to stop
+        // existing and a failure after its deletion would strand them.
+        if (remaining.isEmpty()) {
+            val arrived = factionService.save(destination.copy(members = destination.members + arrivals))
+            if (arrived is Failure) return arrived.toApiResult()
+            return factionService.delete(source.id).toApiResult()
+        }
+
+        // Removed first otherwise. See the contract note on MedievalFactionsApi.transferMembers: the
+        // window between these two saves must leave a player factionless rather than in two
+        // factions, since MF resolves a player in two factions to neither.
+        val departed = factionService.save(source.copy(members = remaining))
+        if (departed is Failure) return departed.toApiResult()
         return factionService.save(destination.copy(members = destination.members + arrivals)).toApiResult()
     }
 

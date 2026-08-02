@@ -228,6 +228,13 @@ interface MedievalFactionsApi {
      * could only be called for a player who already belonged nowhere, which is a player who does not
      * need a faction founded around them.
      *
+     * **If the creation then fails, they are put back.** The creation fails routinely rather than
+     * exceptionally: [event.FactionCreateEvent] is cancellable, and a server running a
+     * founding-permit plugin vetoes it for anybody without a permit. Note that restoring membership
+     * does not undo what other plugins did in response to the departure -- a fief moved on by a
+     * consumer watching [event.FactionMemberLeftEvent] stays moved -- so a caller that cannot
+     * tolerate that should establish the founder may create one before calling.
+     *
      * They are removed from the old faction **before** the new one is written, because MF resolves a
      * player found in two factions to *neither* -- the lookup is a `singleOrNull` over every faction
      * -- so the window between the two writes must leave them factionless rather than doubly seated.
@@ -262,6 +269,15 @@ interface MedievalFactionsApi {
      * Move members from one faction to another, giving them the destination's default role.
      *
      * Both factions must exist. Duplicates and an empty collection are accepted and are no-ops.
+     *
+     * **Moving every member dissolves [from] rather than emptying it.** An empty faction cannot be
+     * saved at all when `factions.allowLeaderlessFactions` is off, because succession runs on every
+     * save and finds no successor -- so without this the ordinary case of a group returning home in
+     * one call simply failed. This is what `/f leave` already does when the last member walks out.
+     *
+     * **Fails if none of the named players are members**, rather than reporting a vacuous success.
+     * A caller that acts on the result -- disbanding the source, say -- must be able to tell
+     * "everybody moved" from "nobody was there to move".
      *
      * **Ids that are no longer members of [from] are skipped, not refused.** This was all-or-nothing
      * and that was the wrong shape for every real caller: the motivating one moves a group recorded
