@@ -2,9 +2,11 @@ package com.dansplugins.factionsystem.command.faction.version
 
 import com.dansplugins.factionsystem.MedievalFactions
 import org.bukkit.ChatColor.DARK_GRAY
-import org.bukkit.ChatColor.GRAY
+import org.bukkit.ChatColor.GREEN
 import org.bukkit.ChatColor.RED
 import org.bukkit.ChatColor.STRIKETHROUGH
+import org.bukkit.ChatColor.WHITE
+import org.bukkit.ChatColor.YELLOW
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
@@ -48,19 +50,30 @@ class MfFactionVersionCommand(private val plugin: MedievalFactions) : CommandExe
         val marked = version.contains(FORK_MARKER)
 
         sender.sendMessage("$DARK_GRAY$STRIKETHROUGH$RULE")
-        sender.sendMessage("$GRAY${plugin.language["CommandFactionVersionTitle"]}")
-        sender.sendMessage("$DARK_GRAY${plugin.language["CommandFactionVersionVersion", version]}")
+        sender.sendMessage("$YELLOW${plugin.language["CommandFactionVersionTitle"]}")
+        sender.sendMessage("$GREEN${plugin.language["CommandFactionVersionVersion", value(version)]}")
         if (marked) {
-            sender.sendMessage("$DARK_GRAY${plugin.language["CommandFactionVersionUpstream", version.substringBefore(FORK_MARKER)]}")
-            sender.sendMessage("$DARK_GRAY${plugin.language["CommandFactionVersionForkNotice"]}")
+            sender.sendMessage("$GREEN${plugin.language["CommandFactionVersionUpstream", value(version.substringBefore(FORK_MARKER))]}")
+            sender.sendMessage("$YELLOW${plugin.language["CommandFactionVersionForkNotice"]}")
         } else {
-            sender.sendMessage("$DARK_GRAY${plugin.language["CommandFactionVersionUnmarked"]}")
+            // Red, because this one is a fault rather than information: the version string above
+            // cannot be relied on to tell this jar from an upstream one.
+            sender.sendMessage("$RED${plugin.language["CommandFactionVersionUnmarked"]}")
         }
         sender.sendMessage("$DARK_GRAY$STRIKETHROUGH$RULE")
         return true
     }
 
     override fun onTabComplete(sender: CommandSender, command: Command, label: String, args: Array<out String>) = emptyList<String>()
+
+    /**
+     * A version number, coloured apart from the sentence around it.
+     *
+     * The colour is reapplied on the way out rather than left hanging, so the language string keeps
+     * its {0} wherever a translator wants it: a value in the middle of a sentence returns the line
+     * to its own colour instead of painting the rest of it white.
+     */
+    private fun value(text: String) = "$WHITE$text$GREEN"
 
     companion object {
         /**
