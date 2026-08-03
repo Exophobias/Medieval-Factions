@@ -1,5 +1,20 @@
 # Medieval Factions
 
+> ### This is the Patriam fork
+>
+> It is not upstream [Dans-Plugins/Medieval-Factions](https://github.com/Dans-Plugins/Medieval-Factions),
+> and it is **not interchangeable with it**. It adds a stable consumer API, a cancellable claim event,
+> and an optional demesne curve, and Patriam's own plugins link against that API -- so a stock
+> Medieval-Factions jar will not run them, and the failure arrives later and somewhere else than the
+> mistake that caused it.
+>
+> The version string is marked `-patriam` and `/f version` says which build a server is running. Its
+> database migrations are numbered from **900**, leaving 9 through 899 to upstream. Once they have
+> been applied, going back to a stock build is not supported.
+>
+> Everything below this box is upstream's README.
+
+
 ## Description 
 Medieval Factions is a system of mechanics that allows for the simulation of sovereign nations in Minecraft. Players can create nations, claim territory, engage in warfare or politics, write laws or hold dueling tournaments, and generally are able to attempt to recreate society somewhat.
 

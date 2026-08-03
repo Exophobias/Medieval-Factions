@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+<!--
+  PATRIAM FORK. Everything under this heading is this fork's, not upstream Dans-Plugins'. Kept in one
+  block so an upstream merge has an obvious seam, and so a reader can tell at a glance which changes
+  they will not find in a release from SpigotMC.
+-->
+
+### Patriam fork
+
+#### Added
+- **A stable consumer API** under `com.dansplugins.factionsystem.api`, so a dependent plugin never has
+  to name an MF internal: `createFaction`, `disbandFaction`, `transferMembers`, `transferAllClaims`,
+  `renounceLiege`, `swearFealty`, `declareWar`, a positional `claim(faction, worldId, x, z)`,
+  `primaryOwnerSince`, and `ApiOutcome<T>` for the calls that return a value.
+- **`FactionClaimAttemptEvent`** -- the first *cancellable* claim event on the stable surface.
+  `ClaimOverrideProvider` is additive only and can never refuse anything, so a consumer with a rule
+  that has to forbid a claim previously had to bind to MF's internal `FactionClaimEvent`. Fired inside
+  `MfClaimService.save`, so it sits underneath every route into a claim including autoclaim, which
+  involves no command at all. It fires *before* MF's own event, so MF's stays the last word and its
+  MONITOR handlers keep seeing only claims that really happened.
+- **A demesne curve** (`MfDemesne`): land that costs more power the more of it you hold. Off by
+  default (`factions.demesneCurve.enabled: false`) and arithmetically identical to the flat rule at
+  `increment: 0.0`. On the shipped figures 64 chunks cost 64 power, 128 cost 152, 256 cost 424 and
+  512 cost 1,352. Enforced at all three claim gates and at autoclaim, and reported by `/f power` and
+  the Dynmap readout, so a realm sees the figure that actually decides its next claim. Nothing is ever
+  unclaimed: a faction over its allowance simply cannot take more.
+- **`/f version`** (also `ver`, `about`), which says which build this is and that a stock jar will not
+  run Patriam's plugins. The version string itself is marked `-patriam`, because a fork reporting the
+  same string as upstream is how somebody spends an hour debugging the wrong jar.
+- Migrations **V900** and **V901**, recording a faction's head and when they took the seat. Numbered
+  from 900 so upstream keeps 9 through 899: two migrations sharing a version makes Flyway refuse to
+  start, and renaming one after a server has applied it means editing `schema_history` on live data.
+
+#### Fixed
+- **The deploy jar could be the wrong jar.** shadowJar's renamed output shared a path with the plain
+  `jar` task's on case-insensitive filesystems, so a build could leave an unshaded jar under the
+  documented deploy name -- it loads, then dies on `NoClassDefFoundError`. `jar` now carries a `-thin`
+  classifier.
+- **`/f admin setleader` could not seat a head on a faction that already had members**, which is every
+  faction predating V900 and exactly the ones the migration tells operators to fix with it. It also
+  promotes in place rather than appending, since two member rows for one player make `getRole` return
+  null.
+- **A `de_DE` server would not start.** With `lang_en_US` as the only bundle there is no ROOT to fall
+  back to, and the failing `getBundle` call was not inside the try. The shipped bundle is now
+  `lang.properties`; servers with a customised `lang_en_US.properties` keep it and now inherit missing
+  keys from the base instead of rendering `Missing translation for`.
+- `createFaction` no longer refuses a founder who is the sole member of their faction -- it dissolves
+  the emptied one, as `/f leave` and `transferMembers` already did -- and its rollback now carries the
+  optimistic-lock version forward, without which it could never succeed.
+- `renounceLiege` deletes the oath rather than every relationship row between the two factions, which
+  had included `AT_WAR`: declaring war and then renouncing ended the war instantly.
+- The war-conquest gate in `/f claim circle` compares costs rather than a floored allowance, so the
+  flat rule is byte-for-byte upstream's again.
+- The release workflow and `reload-plugin.sh` follow the renamed artifact instead of globbing for
+  `*-all.jar`, which has matched nothing since the rename.
+
+
 ### Added
 - Configurable moderator approval for faction declarations. When enabled, `/faction declarewar`, `/faction ally`, and `/faction vassalize` create a pending request that a moderator (permission `mf.approve`, default `op`) must approve before it takes effect. Gated independently by the `factions.warDeclarationRequiresApproval`, `factions.allyDeclarationRequiresApproval`, and `factions.vassalizeDeclarationRequiresApproval` config options (all default `false`). New `/faction approve [id]`, `/faction deny [id]`, and `/faction pendingactions` commands manage requests, and a reason can be attached with `-- <reason>`.
 - `/faction power` now also reports a faction's claim count. When `factions.limitLand` is enabled it is shown as `claimed/capacity` (capacity equals the faction's current power); otherwise just the number of claimed chunks is shown.
