@@ -48,6 +48,9 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     override fun getFactionByPlayer(playerId: UUID): FactionView? =
         plugin.services.factionService.getFaction(MfPlayerId(playerId.toString()))?.let(::toView)
 
+    override fun getFactions(): List<FactionView> =
+        plugin.services.factionService.factions.map(::toView)
+
     override fun getFactionAt(chunk: Chunk): FactionView? {
         val claim = plugin.services.claimService.getClaim(chunk) ?: return null
         return plugin.services.factionService.getFaction(claim.factionId)?.let(::toView)

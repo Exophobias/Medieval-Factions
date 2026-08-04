@@ -38,6 +38,19 @@ interface FactionView {
     /** Number of chunks this faction has claimed. Backed by an O(1) count. */
     val claimCount: Int
 
+    /**
+     * The faction's territory colour as `#RRGGBB`.
+     *
+     * Exposed as the string MedievalFactions actually stores and validates rather than as a packed
+     * int, so this cannot disagree with what `/f flag set color` shows a player. MF's own flag
+     * validator rejects anything not matching `#[A-Fa-f0-9]{6}`, so a consumer may parse it with
+     * `Integer.decode` without defending against a malformed value.
+     *
+     * Defaults are assigned per faction at creation, randomised unless the server configures a fixed
+     * one, so two factions being the same colour is possible but unlikely and is not prevented.
+     */
+    val color: String
+
     /** Factions this faction is currently at war with. */
     val factionsAtWarWith: List<FactionId>
 

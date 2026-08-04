@@ -23,6 +23,11 @@ class FactionViewAdapter(
     override val memberIds: List<UUID> get() = faction.members.map { UUID.fromString(it.playerId.value) }
     override val claimCount: Int get() = plugin.services.claimService.getClaimCount(faction.id)
 
+    // Read through the flag registry rather than a stored field, which is where MF keeps it and how
+    // DynmapService has always read it. The flag is always present: MfFlags seeds a value at faction
+    // creation, so there is no unset case to fall back from.
+    override val color: String get() = faction.flags[plugin.flags.color]
+
     override val factionsAtWarWith: List<FactionId>
         get() = plugin.services.factionRelationshipService.getFactionsAtWarWith(faction.id)
             .map { FactionId(it.value) }

@@ -101,6 +101,19 @@ interface MedievalFactionsApi {
 
     fun getFactionByPlayer(playerId: UUID): FactionView?
 
+    /**
+     * Every faction on the server.
+     *
+     * For consumers that must render or audit all of them rather than answer a question about one:
+     * a web map's initial draw, a dashboard, a report. Every other lookup here is by id, name,
+     * player or chunk, and none of them compose into "all of them".
+     *
+     * O(factions), off the in-memory faction index, with no database on the path. The list is a
+     * snapshot and does not track factions created or disbanded afterwards; consumers that must stay
+     * current should listen for the lifecycle events rather than re-reading this on a timer.
+     */
+    fun getFactions(): List<FactionView>
+
     /** The faction that owns the given chunk, or null if it is unclaimed. */
     fun getFactionAt(chunk: Chunk): FactionView?
 
