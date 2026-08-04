@@ -1,5 +1,6 @@
 package com.dansplugins.factionsystem.api
 
+import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import org.bukkit.Bukkit
 import org.bukkit.Chunk
 import org.bukkit.Location
@@ -132,6 +133,44 @@ interface MedievalFactionsApi {
      * lookup and never touches world state.
      */
     fun getClaimAt(world: World, chunkX: Int, chunkZ: Int): ClaimView?
+
+    /**
+     * Every chunk [faction] holds, grouped by the world it is in.
+     *
+     * The inverse of [getClaimAt]: that answers "who owns this chunk", this answers "what does this
+     * faction own". Rendering a territory outline needs the second question and there was previously
+     * no way to ask it short of walking every claim on the server.
+     *
+     * **Grouped by world because [ChunkPos] deliberately carries none.** A faction may hold land in
+     * several worlds, and a boundary traced across a mixed set would be nonsense. Each value is
+     * therefore exactly what [com.dansplugins.factionsystem.api.geometry.ChunkRingBuilder.buildPolygons]
+     * takes, so the common caller is one lookup and one call per world with nothing to reshape.
+     *
+     * O(chunks owned by this faction), off the in-memory per-faction claim index. It never walks the
+     * global claim set and never touches world state, so it is safe on the server thread. Worlds with
+     * no claims are absent rather than mapped to an empty set, and an unknown faction gives an empty
+     * map.
+     *
+     * The returned collections are snapshots and do not track later claims or unclaims. Re-read after
+     * any of the claim lifecycle events rather than holding one and mutating it.
+     */
+    fun getClaimedChunks(faction: FactionId): Map<UUID, Set<ChunkPos>>
+
+    /**
+     * The chunks [faction] holds in one world, or an empty set if it holds none there.
+     *
+     * The overload to prefer when the caller is already per-world, which a web map marker set always
+     * is: it skips grouping the faction's other worlds only to discard them.
+     */
+    fun getClaimedChunks(faction: FactionId, worldId: UUID): Set<ChunkPos>
+
+    /**
+     * How many chunks [faction] holds, across every world.
+     *
+     * O(1), off the same index. Prefer it to `getClaimedChunks(faction).values.sumOf { it.size }`,
+     * which materialises every chunk to count them.
+     */
+    fun getClaimCount(faction: FactionId): Int
 
     /**
      * The power level of the given player, or `0.0` if MedievalFactions has no record of them.

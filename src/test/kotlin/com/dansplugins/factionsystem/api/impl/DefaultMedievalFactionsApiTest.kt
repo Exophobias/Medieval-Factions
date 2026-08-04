@@ -2,6 +2,7 @@ package com.dansplugins.factionsystem.api.impl
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
+import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
@@ -176,5 +177,63 @@ class DefaultMedievalFactionsApiTest {
         val result = api.unclaim(chunk)
         assertTrue(result.isFailure)
         assertEquals("Chunk is not claimed", result.errorMessage)
+    }
+
+    // The grouping is the contract, not an implementation detail: ChunkPos carries no world, so a
+    // caller handed one flat set would trace a boundary across two worlds and get nonsense out.
+    @Test
+    fun getClaimedChunksGroupsByWorld() {
+        val overworld = UUID.randomUUID()
+        val nether = UUID.randomUUID()
+        `when`(claimService.getClaims(MfFactionId("f1"))).thenReturn(
+            listOf(
+                MfClaimedChunk(overworld, 0, 0, MfFactionId("f1")),
+                MfClaimedChunk(overworld, 1, 0, MfFactionId("f1")),
+                MfClaimedChunk(nether, -4, 9, MfFactionId("f1"))
+            )
+        )
+
+        val byWorld = api.getClaimedChunks(FactionId("f1"))
+
+        assertEquals(setOf(overworld, nether), byWorld.keys)
+        assertEquals(setOf(ChunkPos(0, 0), ChunkPos(1, 0)), byWorld[overworld])
+        assertEquals(setOf(ChunkPos(-4, 9)), byWorld[nether])
+    }
+
+    // An empty map rather than a map of empty sets. A caller iterating the result to build one marker
+    // set per world must not be handed worlds the faction holds nothing in.
+    @Test
+    fun getClaimedChunksIsEmptyForAFactionWithNoClaims() {
+        `when`(claimService.getClaims(MfFactionId("f1"))).thenReturn(emptyList())
+
+        assertTrue(api.getClaimedChunks(FactionId("f1")).isEmpty())
+        assertTrue(api.getClaimedChunks(FactionId("f1"), UUID.randomUUID()).isEmpty())
+    }
+
+    @Test
+    fun getClaimedChunksForOneWorldExcludesEveryOther() {
+        val overworld = UUID.randomUUID()
+        val nether = UUID.randomUUID()
+        `when`(claimService.getClaims(MfFactionId("f1"))).thenReturn(
+            listOf(
+                MfClaimedChunk(overworld, 2, 3, MfFactionId("f1")),
+                MfClaimedChunk(nether, 2, 3, MfFactionId("f1"))
+            )
+        )
+
+        assertEquals(setOf(ChunkPos(2, 3)), api.getClaimedChunks(FactionId("f1"), overworld))
+        assertEquals(emptySet<ChunkPos>(), api.getClaimedChunks(FactionId("f1"), UUID.randomUUID()))
+    }
+
+    // Delegates to the O(1) index rather than counting a materialised list, which is the only reason
+    // the method exists separately at all.
+    @Test
+    fun getClaimCountUsesTheIndexRatherThanListingClaims() {
+        `when`(claimService.getClaimCount(MfFactionId("f1"))).thenReturn(1234)
+
+        assertEquals(1234, api.getClaimCount(FactionId("f1")))
+
+        verify(claimService).getClaimCount(MfFactionId("f1"))
+        verifyNoMoreInteractions(claimService)
     }
 }

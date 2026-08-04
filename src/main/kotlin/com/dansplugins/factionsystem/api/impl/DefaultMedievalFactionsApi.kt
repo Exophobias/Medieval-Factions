@@ -9,6 +9,7 @@ import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.FactionView
 import com.dansplugins.factionsystem.api.MedievalFactionsApi
 import com.dansplugins.factionsystem.api.SuccessionPolicy
+import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.area.MfPosition
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
@@ -63,6 +64,27 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
 
     override fun getClaimAt(world: World, chunkX: Int, chunkZ: Int): ClaimView? =
         plugin.services.claimService.getClaim(world.uid, chunkX, chunkZ)?.let(::ClaimViewAdapter)
+
+    override fun getClaimedChunks(faction: FactionId): Map<UUID, Set<ChunkPos>> {
+        val claims = plugin.services.claimService.getClaims(MfFactionId(faction.value))
+        if (claims.isEmpty()) return emptyMap()
+        // groupingBy/fold rather than groupBy().mapValues(): one pass, and the sets are built
+        // directly instead of materialising an intermediate list per world only to copy it.
+        return claims.groupingBy(MfClaimedChunk::worldId)
+            .fold({ _, _ -> HashSet<ChunkPos>() }) { _, acc, claim ->
+                acc.add(ChunkPos(claim.x, claim.z))
+                acc
+            }
+    }
+
+    override fun getClaimedChunks(faction: FactionId, worldId: UUID): Set<ChunkPos> =
+        plugin.services.claimService.getClaims(MfFactionId(faction.value))
+            .asSequence()
+            .filter { it.worldId == worldId }
+            .mapTo(HashSet()) { ChunkPos(it.x, it.z) }
+
+    override fun getClaimCount(faction: FactionId): Int =
+        plugin.services.claimService.getClaimCount(MfFactionId(faction.value))
 
     override fun registerClaimOverrideProvider(provider: ClaimOverrideProvider) {
         plugin.services.claimService.claimOverrides.register(provider)
