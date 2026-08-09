@@ -68,6 +68,7 @@ class FactionHierarchyViewTest {
             override val home = null
             override val memberIds = emptyList<java.util.UUID>()
             override val claimCount = 0
+            override val color = "#ffffff"
             override val factionsAtWarWith = emptyList<FactionId>()
             override fun isAtWarWith(other: FactionId) = false
             override fun roleOf(playerId: java.util.UUID): FactionRoleView? = null
