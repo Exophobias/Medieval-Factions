@@ -64,7 +64,12 @@ class MedievalFactionsPlaceholderExpansion(private val plugin: MedievalFactions)
                     if (matchingAllyFaction != null) return isPlayerFactionAlly(player, matchingAllyFaction)
                 }
                 if (paramsLowercase.startsWith("faction_flag_")) {
-                    val matchingFlag = plugin.flags.singleOrNull { paramsLowercase == "faction_flag_" + it.name }
+                    // The flag's name is lowercased for the comparison, as the faction names above
+                    // already are. Without it no flag whose name carries a capital could ever
+                    // resolve, because params has been lowercased and the registered name has not:
+                    // alliesCanInteractWithLand and vassalageTreeCanInteractWithLand both shipped
+                    // unreachable.
+                    val matchingFlag = plugin.flags.singleOrNull { paramsLowercase == "faction_flag_" + it.name.lowercase() }
                     if (matchingFlag != null) return getFactionFlagValue(player, matchingFlag)
                 }
                 return null

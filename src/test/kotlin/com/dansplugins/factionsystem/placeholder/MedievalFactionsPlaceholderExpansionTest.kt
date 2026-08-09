@@ -5,6 +5,8 @@ import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionMember
 import com.dansplugins.factionsystem.faction.MfFactionService
+import com.dansplugins.factionsystem.faction.flag.MfFlagValues
+import com.dansplugins.factionsystem.faction.flag.MfFlags
 import com.dansplugins.factionsystem.gate.MfGate
 import com.dansplugins.factionsystem.gate.MfGateService
 import com.dansplugins.factionsystem.lang.Language
@@ -16,8 +18,10 @@ import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
 import com.dansplugins.factionsystem.service.Services
 import org.bukkit.Location
 import org.bukkit.OfflinePlayer
+import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.entity.Player
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -36,6 +40,7 @@ class MedievalFactionsPlaceholderExpansionTest {
     private lateinit var claimService: MfClaimService
     private lateinit var relationshipService: MfFactionRelationshipService
     private lateinit var language: Language
+    private lateinit var flags: MfFlags
     private lateinit var uut: MedievalFactionsPlaceholderExpansion
 
     @BeforeEach
@@ -45,6 +50,7 @@ class MedievalFactionsPlaceholderExpansionTest {
         `when`(plugin.name).thenReturn("MedievalFactions")
         mockServices()
         mockLanguageSystem()
+        mockFlags()
         uut = MedievalFactionsPlaceholderExpansion(plugin)
     }
 
@@ -316,6 +322,47 @@ class MedievalFactionsPlaceholderExpansionTest {
         assertEquals("0:0:0", result)
     }
 
+    /**
+     * The two flags MedievalFactions ships with a capital in their names were unreachable through
+     * PlaceholderAPI. params arrives lowercased and the registered flag name did not, so
+     * faction_flag_alliesCanInteractWithLand could never match anything.
+     *
+     * Asserted against the real [MfFlags] rather than a fixture flag, because the bug was in the
+     * shipped flag list: a fixture that invented its own camelCase flag would pass while the two
+     * flags players actually have stayed broken.
+     */
+    @Test
+    fun testFactionFlagWithACapitalInItsName() {
+        val player = fixture.player
+        val faction = fixture.faction
+        val mfPlayer = fixture.mfPlayer
+        `when`(playerService.getPlayer(player)).thenReturn(mfPlayer)
+        `when`(factionService.getFaction(mfPlayer.id)).thenReturn(faction)
+        `when`(faction.flags).thenReturn(MfFlagValues(plugin, mapOf("alliesCanInteractWithLand" to true)))
+
+        assertEquals("true", uut.onRequest(player, "faction_flag_alliesCanInteractWithLand"))
+        assertEquals("true", uut.onRequest(player, "faction_flag_alliescaninteractwithland"))
+    }
+
+    /** The other direction, so lowercasing the registered name cannot break a name that had none. */
+    @Test
+    fun testFactionFlagWithNoCapitalsInItsName() {
+        val player = fixture.player
+        val faction = fixture.faction
+        val mfPlayer = fixture.mfPlayer
+        `when`(playerService.getPlayer(player)).thenReturn(mfPlayer)
+        `when`(factionService.getFaction(mfPlayer.id)).thenReturn(faction)
+        `when`(faction.flags).thenReturn(MfFlagValues(plugin, mapOf("neutral" to true)))
+
+        assertEquals("true", uut.onRequest(player, "faction_flag_neutral"))
+    }
+
+    /** An unregistered flag is not a placeholder at all, so PlaceholderAPI leaves the text alone. */
+    @Test
+    fun testUnknownFactionFlagIsNotAPlaceholder() {
+        assertNull(uut.onRequest(fixture.player, "faction_flag_thereisnosuchflag"))
+    }
+
     // TODO: add unit tests for the following placeholders: faction_bonus_power, faction_power, faction_player_max_power, faction_player_power_full, faction_at_location, faction_color, player_chunk_location, player_world
 
     // Helper functions
@@ -357,5 +404,18 @@ class MedievalFactionsPlaceholderExpansionTest {
         language = mock(Language::class.java)
         `when`(plugin.language).thenReturn(language)
         `when`(language.locale).thenReturn(Locale.ENGLISH)
+    }
+
+    /**
+     * The real flag list, over a stub config.
+     *
+     * [MfFlags] reads its boolean defaults out of the config as it is constructed, so the config has
+     * to be in place first. A mocked config answers false for every getBoolean and null for every
+     * getString, which is what an install that never set these keys gets anyway.
+     */
+    private fun mockFlags() {
+        `when`(plugin.config).thenReturn(mock(FileConfiguration::class.java))
+        flags = MfFlags(plugin)
+        `when`(plugin.flags).thenReturn(flags)
     }
 }
