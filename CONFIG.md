@@ -413,6 +413,12 @@ These settings define the default values for faction flags when a new faction is
 **Description:** Default setting for whether hostile mobs are protected from damage by non-members in faction territory. While the flag is available for factions to set, this config option is not currently implemented in the default config file.  
 **Note:** Factions can still set this flag individually using `/f flag set enableMobProtection [true/false]`.
 
+### `factions.defaults.flags.coatofarms`
+**Type:** String  
+**Default:** `''` (empty)  
+**Description:** The arms a new faction starts with, as the code issued by whichever plugin owns heraldry on the server. Empty means the faction bears no arms. Medieval Factions stores this value and reads nothing from it; see [FACTION_FLAGS.md](FACTION_FLAGS.md#coatofarms).  
+**Note:** Leaving the key out of the file has the same effect as setting it empty, so an existing install needs no edit unless every new faction is meant to share one coat of arms.
+
 ## Chat Settings
 
 ### `chat.enableDefaultChatFormatting`

@@ -18,6 +18,7 @@ Faction flags are settings that can be configured per-faction to customize how t
   - [acceptBonusPower](#acceptbonuspower)
   - [enableMobProtection](#enablemobprotection)
   - [protectVillagerTrade](#protectvillagertrade)
+  - [coatofarms](#coatofarms)
 - [Default Values](#default-values)
 - [Use Cases](#use-cases)
 
@@ -296,6 +297,44 @@ To set a flag value for your faction:
 
 ---
 
+### coatofarms
+**Type:** String  
+**Default:** `''` (empty, configurable in config.yml)  
+**Description:** The faction's coat of arms, held as the code issued by whichever plugin owns heraldry on the server. Medieval Factions stores it and reads nothing from it.
+
+**Impact:**
+- None inside Medieval Factions. No MF command and no MF listener consults it.
+- A heraldry plugin reads it to decide what arms to draw for the faction, and a scoreboard or nameplate can read it through PlaceholderAPI.
+
+**Validation:**
+- At most 64 characters. That is a limit on what MF is willing to store and print, not a statement about any code format.
+- The value is otherwise accepted as typed. MF does not know the code format and deliberately does not check it, so a change to that format does not require MF to be rebuilt.
+
+**Command:**
+```
+/f flag set coatofarms 2CJW-634K-M
+/f flag set coatofarms
+```
+The second form clears it, since an empty value is what "no arms" looks like.
+
+**Placeholder:**
+```
+%MedievalFactions_faction_flag_coatofarms%
+```
+
+**Delegating it:**
+The founding Owner may set the arms and may hand that right to another role:
+```
+/f role setpermission Officer SET_FLAG(coatofarms) allow
+```
+
+**Important Notes:**
+- The flag name is all lowercase on purpose. It keeps the placeholder resolvable and the permission typeable.
+- An operator holding `mf.force.flag` can set any faction's arms with `/f flag set [faction] coatofarms [code]`.
+- A faction created before this flag existed can never have `SET_FLAG(coatofarms)` granted to any of its roles, operator included, because both grant lists involved are written once when the faction is created. Such a faction's arms can still be set by an operator with `mf.force.flag`.
+
+---
+
 ## Default Values
 
 Default values for faction flags are set in the server's `config.yml` file under `factions.defaults.flags`. When a new faction is created, it inherits these default values.
@@ -314,6 +353,7 @@ factions:
       acceptBonusPower: true
       enableMobProtection: false
       protectVillagerTrade: true
+      coatofarms: ''  # or a code to give every new faction the same arms
 ```
 
 ## Use Cases

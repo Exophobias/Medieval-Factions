@@ -357,6 +357,22 @@ class MedievalFactionsPlaceholderExpansionTest {
         assertEquals("true", uut.onRequest(player, "faction_flag_neutral"))
     }
 
+    /**
+     * The payoff of registering coatofarms under an all-lowercase name: a scoreboard or nameplate can
+     * read a House's arms code straight out of MF with no help from any other plugin.
+     */
+    @Test
+    fun testFactionCoatOfArmsFlag() {
+        val player = fixture.player
+        val faction = fixture.faction
+        val mfPlayer = fixture.mfPlayer
+        `when`(playerService.getPlayer(player)).thenReturn(mfPlayer)
+        `when`(factionService.getFaction(mfPlayer.id)).thenReturn(faction)
+        `when`(faction.flags).thenReturn(MfFlagValues(plugin, mapOf("coatofarms" to "2CJW-634K-M")))
+
+        assertEquals("2CJW-634K-M", uut.onRequest(player, "faction_flag_coatofarms"))
+    }
+
     /** An unregistered flag is not a placeholder at all, so PlaceholderAPI leaves the text alone. */
     @Test
     fun testUnknownFactionFlagIsNotAPlaceholder() {

@@ -126,6 +126,7 @@ factions:
       allowFriendlyFire: false
       acceptBonusPower: true
       protectVillagerTrade: true
+      coatofarms: '' # The arms a new faction starts with, as the code the heraldry plugin issues. Empty means no arms. MedievalFactions stores this and reads nothing from it.
 chat:
   enableDefaultChatFormatting: true
   faction:
