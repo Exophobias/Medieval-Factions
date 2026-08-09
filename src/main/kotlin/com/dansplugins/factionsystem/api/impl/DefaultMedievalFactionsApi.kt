@@ -15,6 +15,9 @@ import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionMember
+import com.dansplugins.factionsystem.faction.flag.MfFlagValidationFailure
+import com.dansplugins.factionsystem.faction.flag.MfFlagValueCoercionFailure
+import com.dansplugins.factionsystem.faction.flag.MfFlagValueCoercionSuccess
 import com.dansplugins.factionsystem.faction.role.MfFactionRoles
 import com.dansplugins.factionsystem.faction.withRole
 import com.dansplugins.factionsystem.failure.ServiceFailure
@@ -102,12 +105,61 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     override fun getPower(playerId: UUID): Double =
         plugin.services.playerService.getPlayer(MfPlayerId(playerId.toString()))?.power ?: 0.0
 
+    // MfFlagValues.get falls back to the flag's default for a missing key, so this reports the
+    // EFFECTIVE value and never null for a flag a faction has simply not set. That is what MF's own
+    // reads do, and it is why null here can only mean "no such flag" or "no such faction".
+    override fun getFlag(faction: FactionId, flag: String): String? {
+        val mfFlag = plugin.flags.get<Any>(flag) ?: return null
+        val mfFaction = plugin.services.factionService.getFaction(MfFactionId(faction.value)) ?: return null
+        return mfFaction.flags[mfFlag].toString()
+    }
+
     override fun setHome(faction: FactionId, location: Location): ApiResult {
         if (location.world == null) return ApiResult.failure("Location has no world")
         val mfFaction = plugin.services.factionService.getFaction(MfFactionId(faction.value))
             ?: return ApiResult.failure("No faction with id ${faction.value}")
         return plugin.services.factionService
             .save(mfFaction.copy(home = MfPosition.fromBukkitLocation(location)))
+            .toApiResult()
+    }
+
+    // Mirrors MfFactionFlagSetCommand's own order -- coerce, validate, then the neutrality check --
+    // rather than sharing code with it, because that command is a chain of chat messages with a save
+    // in the middle. If a check moves there it has to move here.
+    //
+    // The flag is resolved before the faction so that a caller naming a flag that does not exist is
+    // told which of the two arguments is wrong, even when the faction id is also wrong.
+    override fun setFlag(faction: FactionId, flag: String, value: String): ApiResult {
+        val mfFlag = plugin.flags.get<Any>(flag)
+            ?: return ApiResult.failure("No faction flag named $flag")
+        val mfFaction = plugin.services.factionService.getFaction(MfFactionId(faction.value))
+            ?: return ApiResult.failure("No faction with id ${faction.value}")
+        val coerced = when (val coercion = mfFlag.coerce(value)) {
+            is MfFlagValueCoercionFailure -> return ApiResult.failure(
+                "'$value' is not a valid ${mfFlag.type.simpleName} for flag ${mfFlag.name}: ${coercion.failureMessage}"
+            )
+            is MfFlagValueCoercionSuccess<*> -> coercion.value
+        }
+        val validation = mfFlag.validate(coerced)
+        if (validation is MfFlagValidationFailure) {
+            return ApiResult.failure("'$value' was refused for flag ${mfFlag.name}: ${validation.failureMessage}")
+        }
+        // The server owner's setting, not the faction's, so the API does not offer a way around it --
+        // the same reasoning as allowLeaderlessFactions in setPrimaryOwner. MfFactionFlagSetCommand
+        // makes the same check after validation, and only for a value of true: turning neutrality OFF
+        // must stay possible on a server that has just forbidden it.
+        if (mfFlag == plugin.flags.isNeutral && coerced == true && !plugin.config.getBoolean("factions.allowNeutrality")) {
+            return ApiResult.failure("Neutrality is disabled on this server")
+        }
+        // No-op writes are skipped, which matters more here than anywhere else in this interface: the
+        // motivating caller mirrors its own state onto a flag, and MF has no per-field write, so every
+        // pass that changed nothing would still cost a whole faction save. Compared against the
+        // EFFECTIVE value, so a faction whose stored flags carry no key for this one and whose default
+        // already matches keeps no key. Nothing reads the key's presence; MfFlagValues.get falls back
+        // to the default either way.
+        if (mfFaction.flags[mfFlag] == coerced) return ApiResult.success()
+        return plugin.services.factionService
+            .save(mfFaction.copy(flags = mfFaction.flags + (mfFlag to coerced)))
             .toApiResult()
     }
 

@@ -198,12 +198,90 @@ interface MedievalFactionsApi {
      */
     fun getPower(playerId: UUID): Double
 
+    /**
+     * The value of one of the faction's flags, or null if no flag of that name is registered and null
+     * if there is no such faction.
+     *
+     * Flags are MedievalFactions' per-faction settings: whether allies may build on the land, the
+     * territory colour, and so on. They were readable only through MF's internal `plugin.flags` and
+     * `MfFaction.flags`, so a consumer that wanted one had to bind to both, and the whole point of
+     * this interface is that it does not have to.
+     *
+     * ## Why a name and not an enum, and why a string and not a type
+     *
+     * The name is already public. It is what a player types into `/f flag set`, what `/f flag list`
+     * prints, what `factions.defaults.flags.*` keys on in config.yml, and what
+     * `%MedievalFactions_faction_flag_<name>%` resolves. Nothing internal crosses the seam by naming
+     * one, and unlike [FactionPermission] the set is not fixed at compile time: it is a list MF builds
+     * at enable and another plugin may add to. Matching is case-insensitive, as MF's own lookup is.
+     *
+     * The value comes back as the string MF stores and shows for the same reason: MF's flags are
+     * typed, boolean or string, but every one of them is set from a string and printed as one, so
+     * handing back that string is the one answer that cannot disagree with what a player sees. A
+     * boolean flag answers `"true"` or `"false"`.
+     *
+     * ## What null does and does not mean
+     *
+     * Null means there is nothing to read: no such flag, or no such faction. It never means "the
+     * faction has not set this one". A faction whose stored flags carry no entry for a flag answers
+     * that flag's default, which is what MF's own reads do, so an unset flag is indistinguishable from
+     * one explicitly set to the default value. For a flag whose default is the empty string, an empty
+     * answer is the honest one and is not the same as null.
+     *
+     * ## The value is not yours
+     *
+     * Anything a consumer writes here is visible to `/f flag list` and can be changed by a member
+     * holding the flag's own permission, or by an operator holding `mf.force.flag` for any faction.
+     * Treat it as a published field rather than as private storage, and re-read it rather than caching
+     * what you last wrote.
+     *
+     * In-memory, and safe from any thread.
+     */
+    fun getFlag(faction: FactionId, flag: String): String?
+
     // --- Mutations ---
     //
     // BLOCKING JDBC on the calling thread. Call these off the main thread. See the threading
     // note on the interface for what one costs and why the database backend changes the answer.
 
     fun setHome(faction: FactionId, location: Location): ApiResult
+
+    /**
+     * Set one of the faction's flags, as `/f flag set` does.
+     *
+     * The write half of [getFlag], and see that method for why a flag is named rather than enumerated
+     * and why its value is a string. [value] is coerced and validated by the flag's own rules, exactly
+     * as the command coerces and validates what a player types, so a boolean flag refuses anything but
+     * `"true"` or `"false"` and a string flag refuses whatever its own validator refuses. The failure
+     * message is the one the player would have been shown.
+     *
+     * Fails, changing nothing, if the faction does not exist, if no flag of that name is registered,
+     * if [value] cannot be coerced to the flag's type, or if the flag's validation refuses it.
+     *
+     * **It checks no faction permission.** This is a plugin acting, not a player, so it is the
+     * equivalent of an operator's `mf.force.flag` rather than of a member's `/f flag set`. Deciding who
+     * may ask is the caller's job, and [FactionRoleView.hasPermission] is how to ask it: gate on the
+     * permission that guards the flag in question, which for the arms is
+     * [FactionPermission.SET_COAT_OF_ARMS].
+     *
+     * **`factions.allowNeutrality` is still honoured**, so setting `neutral` to true on a server that
+     * forbids neutrality fails. That is the server owner's setting rather than the faction's, and this
+     * API does not offer a way around one; the same reasoning as `factions.allowLeaderlessFactions` in
+     * [setPrimaryOwner].
+     *
+     * **Setting a flag costs a whole faction save.** MF has no per-field write, so this is the full
+     * save described in the threading note above, member list and all: changing a flag on a
+     * forty-member faction is around eighty-six statements. Reconcile on a change, never on a timer.
+     *
+     * Succeeds without writing anything when the flag already holds that value, so a caller mirroring
+     * its own state onto MF need not compare first. Same shape as [setPrimaryOwner], and it exists for
+     * the same reason: a reconciler that had to read before writing would either duplicate this
+     * comparison or pay the save every pass.
+     *
+     * No event is fired. MF does not publish one for a flag change, and inventing one here would
+     * announce to third-party listeners something that MF's own `/f flag set` does not.
+     */
+    fun setFlag(faction: FactionId, flag: String, value: String): ApiResult
 
     fun claim(faction: FactionId, chunk: Chunk): ApiResult
 

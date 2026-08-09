@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.api.impl
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.anyArg
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.claim.MfClaimService
@@ -8,13 +9,20 @@ import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
+import com.dansplugins.factionsystem.faction.flag.MfFlagValues
+import com.dansplugins.factionsystem.faction.flag.MfFlags
+import com.dansplugins.factionsystem.faction.permission.MfFactionPermissions
+import com.dansplugins.factionsystem.faction.role.MfFactionRoles
+import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
 import com.dansplugins.factionsystem.service.Services
+import dev.forkhandles.result4k.Success
 import org.bukkit.Chunk
 import org.bukkit.World
+import org.bukkit.configuration.file.FileConfiguration
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -23,7 +31,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.mockito.Mockito.RETURNS_SMART_NULLS
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
@@ -34,15 +44,29 @@ import java.util.UUID
 class DefaultMedievalFactionsApiTest {
 
     private lateinit var plugin: MedievalFactions
+    private lateinit var config: FileConfiguration
     private lateinit var factionService: MfFactionService
     private lateinit var claimService: MfClaimService
     private lateinit var relationshipService: MfFactionRelationshipService
     private lateinit var playerService: MfPlayerService
     private lateinit var api: DefaultMedievalFactionsApi
 
+    /** The faction the last successful save was handed, so a flag write can be read back. */
+    private var savedFaction: MfFaction? = null
+
     @BeforeEach
     fun setUp() {
         plugin = mock(MedievalFactions::class.java)
+        config = mock(FileConfiguration::class.java)
+        `when`(plugin.config).thenReturn(config)
+        `when`(plugin.language).thenReturn(mock(Language::class.java, RETURNS_SMART_NULLS))
+        // The real flag list and the real permission list, so a flag test is asserting against what
+        // the plugin actually registers. Both are built into locals first, because constructing
+        // either reads back off the mocked plugin.
+        val flags = MfFlags(plugin)
+        `when`(plugin.flags).thenReturn(flags)
+        val permissions = MfFactionPermissions(plugin)
+        `when`(plugin.factionPermissions).thenReturn(permissions)
         val services = mock(Services::class.java)
         `when`(plugin.services).thenReturn(services)
         factionService = mock(MfFactionService::class.java)
@@ -53,6 +77,12 @@ class DefaultMedievalFactionsApiTest {
         `when`(services.factionRelationshipService).thenReturn(relationshipService)
         playerService = mock(MfPlayerService::class.java)
         `when`(services.playerService).thenReturn(playerService)
+        savedFaction = null
+        `when`(factionService.save(anyArg())).thenAnswer { invocation ->
+            val faction = invocation.getArgument<MfFaction>(0)
+            savedFaction = faction
+            Success(faction)
+        }
         api = DefaultMedievalFactionsApi(plugin)
     }
 
@@ -235,5 +265,174 @@ class DefaultMedievalFactionsApiTest {
 
         verify(claimService).getClaimCount(MfFactionId("f1"))
         verifyNoMoreInteractions(claimService)
+    }
+
+    // --- faction flags ---
+
+    @Test
+    fun getFlagReturnsTheStoredValue() {
+        val faction = realFaction("coatofarms" to "2CJW-634K-M")
+
+        assertEquals("2CJW-634K-M", api.getFlag(FactionId(faction.id.value), "coatofarms"))
+    }
+
+    /**
+     * A faction that has never set a flag reports the flag's default, not null, because that is the
+     * value MF itself reads everywhere. Null therefore only ever means there is nothing to read.
+     */
+    @Test
+    fun getFlagFallsBackToTheFlagsDefaultRatherThanNull() {
+        val faction = realFaction()
+
+        assertEquals("", api.getFlag(FactionId(faction.id.value), "coatofarms"))
+        assertEquals("false", api.getFlag(FactionId(faction.id.value), "neutral"))
+    }
+
+    /** MF's own flag lookup ignores case, and a consumer typing the name should not have to care. */
+    @Test
+    fun getFlagIgnoresTheCaseOfTheFlagName() {
+        val faction = realFaction("coatofarms" to "2CJW-634K-M")
+
+        assertEquals("2CJW-634K-M", api.getFlag(FactionId(faction.id.value), "CoatOfArms"))
+    }
+
+    @Test
+    fun getFlagReturnsNullForAnUnregisteredFlag() {
+        val faction = realFaction()
+
+        assertNull(api.getFlag(FactionId(faction.id.value), "thereisnosuchflag"))
+    }
+
+    @Test
+    fun getFlagReturnsNullForAnUnknownFaction() {
+        assertNull(api.getFlag(FactionId("does-not-exist"), "coatofarms"))
+    }
+
+    /**
+     * The write, and the reason this pair exists at all: a consumer mirroring a House's arms onto its
+     * faction had no route to a flag short of MF's internal services and a seventeen-parameter data
+     * class copy.
+     *
+     * Note that the faction here grants nothing to anybody. [DefaultMedievalFactionsApi.setFlag]
+     * deliberately checks no faction permission, because it is a plugin acting rather than a player;
+     * deciding who may ask is the caller's job.
+     */
+    @Test
+    fun setFlagWritesTheValueOntoTheFaction() {
+        val faction = realFaction()
+
+        val result = api.setFlag(FactionId(faction.id.value), "coatofarms", "2CJW-634K-M")
+
+        assertTrue(result.isSuccess)
+        assertEquals("2CJW-634K-M", savedFaction?.flags?.get(plugin.flags.coatOfArms))
+    }
+
+    /** The string is coerced by the flag's own rules, so a boolean flag stores a boolean. */
+    @Test
+    fun setFlagCoercesTheValueToTheFlagsType() {
+        val faction = realFaction()
+
+        val result = api.setFlag(FactionId(faction.id.value), "alliesCanInteractWithLand", "true")
+
+        assertTrue(result.isSuccess)
+        assertEquals(true, savedFaction?.flags?.valuesByName?.get("alliesCanInteractWithLand"))
+    }
+
+    @Test
+    fun setFlagFailsForAnUnregisteredFlag() {
+        val faction = realFaction()
+
+        assertTrue(api.setFlag(FactionId(faction.id.value), "thereisnosuchflag", "x").isFailure)
+        verify(factionService, never()).save(anyArg())
+    }
+
+    @Test
+    fun setFlagFailsForAnUnknownFaction() {
+        assertTrue(api.setFlag(FactionId("does-not-exist"), "coatofarms", "2CJW-634K-M").isFailure)
+        verify(factionService, never()).save(anyArg())
+    }
+
+    @Test
+    fun setFlagRefusesAValueItCannotCoerce() {
+        val faction = realFaction()
+
+        assertTrue(api.setFlag(FactionId(faction.id.value), "neutral", "banana").isFailure)
+        verify(factionService, never()).save(anyArg())
+    }
+
+    /** The flag's own validator has the last word, so a consumer cannot write past a flag's rules. */
+    @Test
+    fun setFlagRefusesAValueTheFlagsValidatorRejects() {
+        val faction = realFaction()
+
+        assertTrue(api.setFlag(FactionId(faction.id.value), "color", "not a colour").isFailure)
+        assertTrue(api.setFlag(FactionId(faction.id.value), "coatofarms", "A".repeat(65)).isFailure)
+        verify(factionService, never()).save(anyArg())
+    }
+
+    /**
+     * factions.allowNeutrality is the server owner's setting rather than the faction's, so this API
+     * offers no way around it. The same reasoning as allowLeaderlessFactions in setPrimaryOwner.
+     */
+    @Test
+    fun setFlagWillNotTurnNeutralityOnWhereTheServerForbidsIt() {
+        val faction = realFaction()
+        `when`(config.getBoolean("factions.allowNeutrality")).thenReturn(false)
+
+        assertTrue(api.setFlag(FactionId(faction.id.value), "neutral", "true").isFailure)
+        verify(factionService, never()).save(anyArg())
+    }
+
+    /** Turning it off must stay possible on a server that has just forbidden it. */
+    @Test
+    fun setFlagWillStillTurnNeutralityOffWhereTheServerForbidsIt() {
+        val faction = realFaction("neutral" to true)
+        `when`(config.getBoolean("factions.allowNeutrality")).thenReturn(false)
+
+        assertTrue(api.setFlag(FactionId(faction.id.value), "neutral", "false").isSuccess)
+    }
+
+    /**
+     * A whole faction save costs `6 + 2 x (members + invites + applications)` statements, so a
+     * reconciler writing the value it already holds would pay that on every pass. Reported as success
+     * rather than failure: nothing is wrong, and the caller wanted the flag to hold that value.
+     */
+    @Test
+    fun setFlagSkipsTheSaveWhenTheFlagAlreadyHoldsThatValue() {
+        val faction = realFaction("coatofarms" to "2CJW-634K-M")
+
+        assertTrue(api.setFlag(FactionId(faction.id.value), "coatofarms", "2CJW-634K-M").isSuccess)
+        verify(factionService, never()).save(anyArg())
+    }
+
+    /** The same skip, against a flag the faction has never set whose default already matches. */
+    @Test
+    fun setFlagSkipsTheSaveWhenTheDefaultAlreadyMatches() {
+        val faction = realFaction()
+
+        assertTrue(api.setFlag(FactionId(faction.id.value), "coatofarms", "").isSuccess)
+        verify(factionService, never()).save(anyArg())
+    }
+
+    /**
+     * A real [MfFaction] rather than a mock, because these tests read the flag map the adapter writes
+     * and a mocked data class has no working copy().
+     *
+     * Registered with the faction service on the way out, so a test only has to name the flags it
+     * cares about.
+     */
+    private fun realFaction(vararg flagValues: Pair<String, Any>): MfFaction {
+        val factionId = MfFactionId.generate()
+        // Built before the stubbing starts: constructing an MfFaction calls back into the mocked
+        // plugin, and Mockito treats a mock call made mid-stubbing as an unfinished stub.
+        val faction = MfFaction(
+            plugin,
+            id = factionId,
+            name = "Test Faction",
+            roles = MfFactionRoles.defaults(plugin, factionId),
+            flags = MfFlagValues(plugin, mapOf(*flagValues))
+        )
+        `when`(factionService.getFaction(factionId)).thenReturn(faction)
+        return faction
     }
 }
