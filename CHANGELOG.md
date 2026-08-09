@@ -37,8 +37,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Migrations **V900** and **V901**, recording a faction's head and when they took the seat. Numbered
   from 900 so upstream keeps 9 through 899: two migrations sharing a version makes Flyway refuse to
   start, and renaming one after a server has applied it means editing `schema_history` on live data.
+- **A `coatofarms` faction flag**, a string, empty by default, holding whatever code the plugin that
+  owns heraldry issues. MF stores it and reads nothing from it. Deliberately not validated as an arms
+  code, because MF does not know the codec and a validator here would refuse codes a later version of
+  it issues legally; the only check is a 64-character ceiling, which is about MF's own storage and
+  display. Read it as `%MedievalFactions_faction_flag_coatofarms%`, and note the lowercase name is what
+  makes both that and `SET_FLAG(coatofarms)` work.
+- **`getFlag` and `setFlag` on `MedievalFactionsApi`**, so a consumer that needs one of MF's
+  per-faction settings no longer has to bind to `plugin.flags` and `plugin.services.factionService` and
+  rebuild a faction through a seventeen-parameter `copy`. Flags are named rather than enumerated,
+  because a flag name is already public and the set is not fixed at compile time. The write goes
+  through the flag's own coercion and validation and still honours `factions.allowNeutrality`; it
+  checks no faction permission, since it is a plugin acting rather than a player. A write that changes
+  nothing is skipped, because MF has no per-field write and a reconciler would otherwise pay a whole
+  faction save on every pass.
+- **`FactionPermission.SET_COAT_OF_ARMS`**, so a ruler can delegate "may change this House's arms"
+  with `/f role setpermission Officer SET_FLAG(coatofarms) allow` instead of a consumer gating arms on
+  `DISBAND` or `CHANGE_PREFIX` and thereby tying two unrelated rights together forever. The founding
+  Owner holds it and may hand it on, so it works from the day a faction is founded. It is the first
+  parameterised permission on the enum: what keeps a role id off the API is that it cannot be named
+  without being handed MF's model, and a flag name is already published everywhere.
 
 #### Fixed
+- **The test tier did not compile from clean.** The anonymous `FactionView` in
+  `FactionHierarchyViewTest` never implemented `color`, and Kotlin's incremental compiler did not
+  revisit it, so `./gradlew test` reported green against a snapshot taken before that member existed.
+
+#### Notes for operators
+- A faction created **before** the `coatofarms` flag existed can never have `SET_FLAG(coatofarms)`
+  granted to any of its roles, by anybody, operator included. Both grant lists involved are written
+  once when the faction is created. Such a faction's arms can still be set by an operator holding
+  `mf.force.flag`, and the flag's value reads normally; it is the delegation inside the faction that is
+  lost. There is no migration, so a server that wants the arms delegable everywhere must recreate its
+  factions.
+- `factions.defaults.flags.coatofarms` may be added to an existing `config.yml`, but need not be:
+  leaving the key out has the same effect as setting it empty. Add it only to give every new faction
+  the same starting arms.
 - **The deploy jar could be the wrong jar.** shadowJar's renamed output shared a path with the plain
   `jar` task's on case-insensitive filesystems, so a build could leave an unshaded jar under the
   documented deploy name -- it loads, then dies on `NoClassDefFoundError`. `jar` now carries a `-thin`
@@ -71,6 +105,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - bStats charts for DPC opt-in rate, login-reminder usage, server-IP sharing, and Discord-link presence.
 
 ### Fixed
+- Faction flag placeholders no longer fail for any flag whose name carries a capital. `params` arrives lowercased and the registered flag name did not, so neither `%MedievalFactions_faction_flag_alliesCanInteractWithLand%` nor its `vassalageTreeCanInteractWithLand` counterpart returned anything, in any spelling. The faction ally and enemy branches beside it already lowercased.
 - Faction snapshot for the DPC sync is now collected on the Bukkit main thread before being dispatched off-thread via `HttpClient.sendAsync`. Off-thread access to `factionService.factions` could otherwise produce inconsistent reads or `ConcurrentModificationException` under load.
 - The DPC sync no longer POSTs an empty faction roster. A transient empty read (e.g. faction data not yet loaded at startup, or a reload mid-cycle) is skipped client-side rather than sent, so it can never depend on the provider's safety guards to avoid a faction wipe.
 
