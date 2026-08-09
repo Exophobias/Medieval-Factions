@@ -3,6 +3,8 @@ package com.dansplugins.factionsystem.api.impl
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionPermission
 import com.dansplugins.factionsystem.faction.MfFaction
+import com.dansplugins.factionsystem.faction.flag.MfFlag
+import com.dansplugins.factionsystem.faction.flag.MfFlags
 import com.dansplugins.factionsystem.faction.permission.MfFactionPermission
 import com.dansplugins.factionsystem.faction.permission.MfFactionPermissions
 import com.dansplugins.factionsystem.faction.role.MfFactionRole
@@ -33,9 +35,10 @@ class FactionRoleViewAdapterTest {
     /**
      * One internal permission per API constant, named identically to it.
      *
-     * MF's internal names happen to match the API's one for one today. Relying on that keeps the
-     * fixture short, and it does not weaken the test: the adapter never sees these names, it only
-     * follows its own `when`, so a mis-wired branch still shows up as the wrong constant answering.
+     * The names do not have to match MF's real ones, and for SET_COAT_OF_ARMS they do not: MF spells
+     * that one `SET_FLAG(coatofarms)`. All the fixture needs is a distinct identity per constant, since
+     * the adapter never reads these names and only follows its own `when`, so a mis-wired branch still
+     * shows up as the wrong constant answering.
      */
     private val internals = FactionPermission.values().associateWith { MfFactionPermission(it.name, it.name, false) }
 
@@ -70,6 +73,13 @@ class FactionRoleViewAdapterTest {
         `when`(permissions.declareWar).thenReturn(internalFor(FactionPermission.DECLARE_WAR))
         `when`(permissions.makePeace).thenReturn(internalFor(FactionPermission.MAKE_PEACE))
         `when`(permissions.manageShops).thenReturn(internalFor(FactionPermission.MANAGE_SHOPS))
+        // The arms gate is MF's parameterised SET_FLAG permission over one fixed flag, so the fixture
+        // has to supply the flag as well as the permission.
+        val flags = mock(MfFlags::class.java)
+        `when`(plugin.flags).thenReturn(flags)
+        val coatOfArms = MfFlag.string("coatofarms", "")
+        `when`(flags.coatOfArms).thenReturn(coatOfArms)
+        `when`(permissions.setFlag(coatOfArms)).thenReturn(internalFor(FactionPermission.SET_COAT_OF_ARMS))
 
         faction = mock(MfFaction::class.java)
     }
@@ -141,5 +151,42 @@ class FactionRoleViewAdapterTest {
     @Test
     fun theRoleNameIsCarriedThroughUnchanged() {
         assertTrue(view(roleGranting(name = "Guildmaster")).name == "Guildmaster")
+    }
+
+    // --- the arms gate ---
+
+    @Test
+    fun theArmsGateIsDeniedByDefault() {
+        assertFalse(view(roleGranting()).hasPermission(FactionPermission.SET_COAT_OF_ARMS))
+    }
+
+    /**
+     * The delegation the constant exists for: a role that has been granted it may set the arms, and
+     * granting it says nothing about any other authority. That is the whole improvement on gating arms
+     * behind DISBAND or CHANGE_PREFIX, which is what a consumer had to do while no purpose-built
+     * permission existed.
+     */
+    @Test
+    fun aRoleGrantedTheArmsGateHoldsNothingElse() {
+        val view = view(roleGranting(FactionPermission.SET_COAT_OF_ARMS, name = "Herald"))
+
+        assertTrue(view.hasPermission(FactionPermission.SET_COAT_OF_ARMS))
+        assertFalse(view.hasPermission(FactionPermission.DISBAND))
+        assertFalse(view.hasPermission(FactionPermission.CHANGE_PREFIX))
+    }
+
+    /** And the reverse: the terminal authority does not carry the arms with it. */
+    @Test
+    fun aRoleThatMayDisbandTheFactionDoesNotTherebyHoldTheArms() {
+        assertFalse(view(roleGranting(FactionPermission.DISBAND)).hasPermission(FactionPermission.SET_COAT_OF_ARMS))
+    }
+
+    /** A faction may open the arms to every role at once, as it may any other permission. */
+    @Test
+    fun theArmsGateFallsBackToTheFactionDefault() {
+        `when`(faction.defaultPermissions)
+            .thenReturn(mapOf(internalFor(FactionPermission.SET_COAT_OF_ARMS) to true))
+
+        assertTrue(view(roleGranting()).hasPermission(FactionPermission.SET_COAT_OF_ARMS))
     }
 }

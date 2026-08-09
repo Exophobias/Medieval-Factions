@@ -13,9 +13,12 @@ package com.dansplugins.factionsystem.api
  * requires an explicit grant from someone who already holds the right to hand it out, which is a real
  * delegation of authority rather than an impersonation of one.
  *
- * Only MF's simple permissions are listed. The parameterised ones - chat channels, faction flags, and
- * the per-role view/modify/delete/set family - carry an internal id in their argument, so exposing
- * them would leak MF's model through the API seam this package exists to keep closed.
+ * Mostly MF's simple permissions. The parameterised ones - chat channels and the per-role
+ * view/modify/delete/set family - carry an internal id in their argument, so exposing them would leak
+ * MF's model through the API seam this package exists to keep closed. A parameterised permission whose
+ * argument is FIXED here is a different matter: from a consumer's side it is a plain capability, and
+ * nothing internal crosses the seam. [SET_COAT_OF_ARMS] is the one such constant, and its own note
+ * says what makes its argument admissible where a role id is not.
  *
  * Constants may be added in later versions. Consumers should not treat this set as complete, and
  * should not write exhaustive `when` blocks over it.
@@ -86,5 +89,67 @@ enum class FactionPermission {
      * constant exists and pays nothing. Do not delete this on the grounds that nothing reads it yet:
      * re-adding it later is a migration, not an enum edit.
      */
-    MANAGE_SHOPS
+    MANAGE_SHOPS,
+
+    /**
+     * Change this faction's coat of arms: choose the arms a House bears, and replace them later.
+     *
+     * The gate on the `coatofarms` faction flag. MedievalFactions stores that flag and reads nothing
+     * from it; whichever plugin owns heraldry is the consumer, and the arms code itself moves through
+     * [MedievalFactionsApi.getFlag] and [MedievalFactionsApi.setFlag].
+     *
+     * Read it the way any other constant here is read, through [FactionRoleView.hasPermission].
+     *
+     * ## Why a parameterised permission is exposed here at all
+     *
+     * This resolves to MF's `SET_FLAG(coatofarms)`, which is one of the parameterised permissions the
+     * note at the top of this enum says are kept off the API. The distinction is that the argument is
+     * fixed and public rather than variable and internal. A role id is meaningless outside the faction
+     * that owns it and a consumer could not name one without being handed MF's model; a flag name is
+     * already published everywhere - `/f flag set coatofarms`, `/f flag list`,
+     * `factions.defaults.flags.coatofarms`, `%MedievalFactions_faction_flag_coatofarms%`. Naming one
+     * constant for one fixed flag therefore leaks nothing, and it buys the consumer a compile-time
+     * check that a string could not give it.
+     *
+     * ## Delegating it, which is the point
+     *
+     * A House's ruler may hand this to an officer with
+     *
+     * ```
+     * /f role setpermission Officer SET_FLAG(coatofarms) allow
+     * ```
+     *
+     * and the founding Owner holds both the permission and the right to hand it on, so this works from
+     * the day a faction is founded. That is the whole reason it exists as a permission rather than a
+     * consumer gating arms on [DISBAND] or [CHANGE_PREFIX]: choosing a House's arms is a heraldic act
+     * a ruler should be able to delegate, and reusing an unrelated right means whoever may change the
+     * prefix may also change the arms, forever, with no way to separate the two.
+     *
+     * An operator who needs to fix a faction's arms sets the value directly with `mf.force.flag`
+     * (`/f flag set [faction] coatofarms [code]`), which bypasses role permissions entirely. There is
+     * no operator route to *granting* the permission; `/f role setpermission` has no bypass.
+     *
+     * ## Why this had to ship before the arms feature did
+     *
+     * Same trap as [MANAGE_SHOPS], and the same two creation-time snapshots, except that here it is
+     * the FLAG's registration rather than a permission constant that has to predate the faction:
+     *
+     * - `MfFactionRoles.defaults` walks the flag list once, at creation, and gives the Owner role a
+     *   `SET_FLAG(x)` grant for every flag registered at that moment plus the matching
+     *   `SET_ROLE_PERMISSION(SET_FLAG(x))` that lets Owner hand it on. A faction created before
+     *   `coatofarms` existed has neither.
+     * - The faction's own `default_permissions` JSON column is the same kind of snapshot, so it has
+     *   no key for either.
+     *
+     * `MfFactionRole.hasPermission` resolves role grant, then faction default, then the permission's
+     * built-in default. All three miss, the built-in default is false, and `/f role setpermission`
+     * then refuses the grant for want of `SET_ROLE_PERMISSION(SET_FLAG(coatofarms))`. So on a faction
+     * older than the flag this constant reads false for every role and can never be made to read
+     * anything else. The only escape is a database migration that backfills both snapshots.
+     *
+     * The Patriam database held one test faction and was wiped when this landed, so nothing was
+     * stranded. That window is closed. Do not delete this, or the flag it names, on the grounds that
+     * nothing in MF reads either: re-adding them later is a database migration, not an enum edit.
+     */
+    SET_COAT_OF_ARMS
 }

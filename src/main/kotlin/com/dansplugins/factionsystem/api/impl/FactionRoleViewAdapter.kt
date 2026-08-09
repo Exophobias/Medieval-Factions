@@ -25,7 +25,7 @@ class FactionRoleViewAdapter(
     override val name: String get() = role.name
 
     override fun hasPermission(permission: FactionPermission): Boolean =
-        role.hasPermission(faction, permission.toInternal(plugin.factionPermissions))
+        role.hasPermission(faction, permission.toInternal(plugin))
 }
 
 /**
@@ -34,9 +34,13 @@ class FactionRoleViewAdapter(
  * Written as an exhaustive `when` rather than a lookup by name so that the compiler, not a runtime
  * null, catches it if MF ever renames or drops one of these. That is the whole reason the API owns
  * its own enum instead of passing the internal name string through.
+ *
+ * Takes the plugin rather than [MfFactionPermissions] alone, because one constant maps to a permission
+ * parameterised over a flag and so needs the flag list too.
  */
-private fun FactionPermission.toInternal(permissions: MfFactionPermissions): MfFactionPermission =
-    when (this) {
+private fun FactionPermission.toInternal(plugin: MedievalFactions): MfFactionPermission {
+    val permissions = plugin.factionPermissions
+    return when (this) {
         FactionPermission.DISBAND -> permissions.disband
         FactionPermission.CHANGE_NAME -> permissions.changeName
         FactionPermission.CHANGE_DESCRIPTION -> permissions.changeDescription
@@ -52,4 +56,9 @@ private fun FactionPermission.toInternal(permissions: MfFactionPermissions): MfF
         FactionPermission.DECLARE_WAR -> permissions.declareWar
         FactionPermission.MAKE_PEACE -> permissions.makePeace
         FactionPermission.MANAGE_SHOPS -> permissions.manageShops
+        // The one constant whose internal permission is parameterised. The argument is fixed, so the
+        // consumer never names it; see the note on FactionPermission.SET_COAT_OF_ARMS for why a flag
+        // name may cross this seam where a role id may not.
+        FactionPermission.SET_COAT_OF_ARMS -> permissions.setFlag(plugin.flags.coatOfArms)
     }
+}
