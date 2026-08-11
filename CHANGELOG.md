@@ -57,6 +57,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   Owner holds it and may hand it on, so it works from the day a faction is founded. It is the first
   parameterised permission on the enum: what keeps a role id off the API is that it cannot be named
   without being handed MF's model, and a flag name is already published everywhere.
+- **`layDownArms` on `MedievalFactionsApi`**, the one-sided half of a peace, which the API was missing
+  entirely. A war is two mirrored `AT_WAR` rows, one per faction, and `forcePeace` deletes both -- so a
+  plugin that had watched one realm agree to stop could only end the war outright, over the other
+  realm's head. This deletes only the named faction's rows, exactly as `/f makepeace` does for the
+  faction that runs it, leaving the second half to be given rather than taken. It answers
+  `ApiOutcome<PeaceOutcome>` rather than a boolean, because "our half is down and they are still at
+  war with us" (`PEACE_REQUESTED`) and "that was the last row" (`PEACE_MADE`) are different
+  announcements. `FactionWarEndedEvent` fires on the second, from the relationship delete and so before
+  the row is gone, the same caveat `declareWar` carries; nothing at all fires on the first, because MF
+  publishes no event for a peace request. Holding no rows while the other side holds some is reported
+  as peace having already been requested, as the command reports it.
 
 #### Fixed
 - **The test tier did not compile from clean.** The anonymous `FactionView` in

@@ -8,6 +8,7 @@ import com.dansplugins.factionsystem.api.ClaimView
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.FactionView
 import com.dansplugins.factionsystem.api.MedievalFactionsApi
+import com.dansplugins.factionsystem.api.PeaceOutcome
 import com.dansplugins.factionsystem.api.SuccessionPolicy
 import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.area.MfPosition
@@ -208,6 +209,51 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     // seated for a fortnight should not silently acquire the right to disband the faction. The two
     // questions are separate throughout MF - see FactionView.primaryOwnerId versus isLeader - and a
     // caller that wants both should say so.
+    // Mirrors MfFactionMakePeaceCommand rather than sharing code with it, because that command is a
+    // permission check and five chat messages wrapped around three lines of work. The checks below are
+    // the same checks in the same order; if one moves there, it has to move here.
+    //
+    // Only the caller's rows are read and deleted. That asymmetry IS the method: forcePeace already
+    // deletes both sides, and the second half of a peace is the other faction's to give.
+    override fun layDownArms(faction: FactionId, otherFaction: FactionId): ApiOutcome<PeaceOutcome> {
+        if (faction.value == otherFaction.value) {
+            return ApiOutcome.failure("A faction cannot make peace with itself")
+        }
+        val a = MfFactionId(faction.value)
+        val b = MfFactionId(otherFaction.value)
+        val factionService = plugin.services.factionService
+        if (factionService.getFaction(a) == null) return ApiOutcome.failure("No faction with id ${faction.value}")
+        if (factionService.getFaction(b) == null) return ApiOutcome.failure("No faction with id ${otherFaction.value}")
+        val relationshipService = plugin.services.factionRelationshipService
+        val ownRows = relationshipService.getRelationships(a, b).filter { it.type == AT_WAR }
+        // Read BEFORE the deletes, because after them the answer is the same either way. Whether this
+        // was a request or a peace is decided entirely by what the other side is still holding.
+        val theirRows = relationshipService.getRelationships(b, a).filter { it.type == AT_WAR }
+        if (ownRows.isEmpty()) {
+            // Two distinct failures, as the command has two distinct messages. Collapsing them into
+            // "not at war" would tell a caller whose half is already down that there is no war, which
+            // is the opposite of the truth: the other side is still at war with it.
+            return if (theirRows.isEmpty()) {
+                ApiOutcome.failure("Factions are not at war")
+            } else {
+                ApiOutcome.failure(
+                    "Faction ${faction.value} has already laid its half of the war down; peace has " +
+                        "already been requested from faction ${otherFaction.value}"
+                )
+            }
+        }
+        ownRows.forEach { relationship ->
+            val result = relationshipService.delete(relationship.id)
+            if (result is Failure) {
+                return ApiOutcome.failure(result.reason.message)
+            }
+        }
+        // ApiRelationshipListener fires FactionWarEndedEvent off the LAST delete, and only when no
+        // AT_WAR row survives in either direction, so this branch reports what that listener has
+        // already decided rather than deciding it a second time.
+        return ApiOutcome.success(if (theirRows.isEmpty()) PeaceOutcome.PEACE_MADE else PeaceOutcome.PEACE_REQUESTED)
+    }
+
     override fun setPrimaryOwner(faction: FactionId, playerId: UUID): ApiResult {
         val mfFaction = plugin.services.factionService.getFaction(MfFactionId(faction.value))
             ?: return ApiResult.failure("No faction with id ${faction.value}")

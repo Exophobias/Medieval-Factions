@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.api.impl
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.anyArg
 import com.dansplugins.factionsystem.api.FactionId
+import com.dansplugins.factionsystem.api.PeaceOutcome
 import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
@@ -17,7 +18,9 @@ import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
+import com.dansplugins.factionsystem.relationship.MfFactionRelationship
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
+import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.AT_WAR
 import com.dansplugins.factionsystem.service.Services
 import dev.forkhandles.result4k.Success
 import org.bukkit.Chunk
@@ -198,6 +201,92 @@ class DefaultMedievalFactionsApiTest {
         val result = api.forcePeace(FactionId("a"), FactionId("b"))
         assertTrue(result.isFailure)
         assertEquals("Factions are not at war", result.errorMessage)
+    }
+
+    /**
+     * The reason [DefaultMedievalFactionsApi.layDownArms] exists: the caller's rows go, the other
+     * side's stay, and the war is still on. A consumer told this is peace would announce one that has
+     * not happened.
+     */
+    @Test
+    fun layDownArmsReportsAPeaceRequestWhileTheOtherSideStillHoldsItsHalf() {
+        val ours = atWar("a", "b")
+        atWar("b", "a")
+
+        val outcome = api.layDownArms(FactionId("a"), FactionId("b"))
+
+        assertTrue(outcome.isSuccess)
+        assertEquals(PeaceOutcome.PEACE_REQUESTED, outcome.get())
+        verify(relationshipService).delete(ours.id)
+    }
+
+    /** The second half of the handshake: the last row goes, so the war is over. */
+    @Test
+    fun layDownArmsReportsPeaceWhenTheLastRowGoes() {
+        val ours = atWar("a", "b")
+
+        val outcome = api.layDownArms(FactionId("a"), FactionId("b"))
+
+        assertTrue(outcome.isSuccess)
+        assertEquals(PeaceOutcome.PEACE_MADE, outcome.get())
+        verify(relationshipService).delete(ours.id)
+    }
+
+    @Test
+    fun layDownArmsFailsWhenNeitherSideIsAtWar() {
+        existingFaction("a")
+        existingFaction("b")
+
+        val outcome = api.layDownArms(FactionId("a"), FactionId("b"))
+
+        assertTrue(outcome.isFailure)
+        assertEquals("Factions are not at war", outcome.errorMessage)
+        // Reading both sides is the whole of the work here: nothing was deleted.
+        verify(relationshipService).getRelationships(MfFactionId("a"), MfFactionId("b"))
+        verify(relationshipService).getRelationships(MfFactionId("b"), MfFactionId("a"))
+        verifyNoMoreInteractions(relationshipService)
+    }
+
+    /**
+     * Distinct from "not at war", exactly as /f makepeace keeps them distinct. Telling a faction whose
+     * half is already down that there is no war would be the opposite of the truth: the other side is
+     * still at war with it.
+     */
+    @Test
+    fun layDownArmsSaysPeaceIsAlreadyRequestedWhenOnlyTheOtherSideHoldsRows() {
+        val theirs = atWar("b", "a")
+
+        val outcome = api.layDownArms(FactionId("a"), FactionId("b"))
+
+        assertTrue(outcome.isFailure)
+        assertTrue(outcome.errorMessage!!.contains("already been requested"))
+        // Their half is emphatically not the caller's to lay down.
+        verify(relationshipService, never()).delete(theirs.id)
+    }
+
+    /** Registers a faction with the faction service so an existence check finds it. */
+    private fun existingFaction(id: String): MfFaction {
+        val faction = mock(MfFaction::class.java)
+        `when`(factionService.getFaction(MfFactionId(id))).thenReturn(faction)
+        return faction
+    }
+
+    /**
+     * One AT_WAR row, held by [holder] against [target], with both factions registered and its
+     * deletion stubbed to succeed. Returns the row so a test can assert it was the one deleted.
+     */
+    private fun atWar(holder: String, target: String): MfFactionRelationship {
+        existingFaction(holder)
+        existingFaction(target)
+        val relationship = MfFactionRelationship(
+            factionId = MfFactionId(holder),
+            targetId = MfFactionId(target),
+            type = AT_WAR
+        )
+        `when`(relationshipService.getRelationships(MfFactionId(holder), MfFactionId(target)))
+            .thenReturn(listOf(relationship))
+        `when`(relationshipService.delete(relationship.id)).thenReturn(Success(Unit))
+        return relationship
     }
 
     @Test

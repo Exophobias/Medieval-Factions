@@ -308,6 +308,67 @@ interface MedievalFactionsApi {
     fun forcePeace(faction: FactionId, otherFaction: FactionId): ApiResult
 
     /**
+     * Lay [faction]'s own half of its war with [otherFaction] down, exactly as `/f makepeace` does for
+     * the faction that runs it, and report whether that ended the war or only offered to.
+     *
+     * The one-sided counterpart to [forcePeace], and it exists because that method is two-sided and
+     * cannot be made to be anything else. A war is two mirrored `AT_WAR` rows, one owned by each
+     * faction; [forcePeace] deletes both, which is the right call for a plugin ruling on a war and the
+     * wrong one for a plugin that has merely watched **one** side agree to stop. This deletes only
+     * [faction]'s rows, so the other side's consent is still required and is still theirs to withhold.
+     * Peace in MF is already a handshake -- what was missing here was the half of it.
+     *
+     * ## The two successes are different events and the caller must tell them apart
+     *
+     * [PeaceOutcome.PEACE_REQUESTED] means the rows are gone and [otherFaction] is still at war with
+     * [faction]. [PeaceOutcome.PEACE_MADE] means that was the last row and the war is over. Both are
+     * successes, both are ordinary, and announcing one as the other is a lie a consumer will tell its
+     * whole server, so the answer is an enum in an [ApiOutcome] rather than a boolean.
+     *
+     * Note that a `PEACE_REQUESTED` call leaves both factions still reporting each other in
+     * [FactionView.factionsAtWarWith] and still answering true to [FactionView.isAtWarWith]: MF reads a
+     * war from a row in either direction, so a half-laid-down war is a war. Do not use those reads to
+     * confirm this call worked.
+     *
+     * ## Failures
+     *
+     * Fails, changing nothing, if the two are the same faction, if either does not exist, or if
+     * [faction] holds no `AT_WAR` rows against [otherFaction]. That last case splits in two, and the
+     * split is reported in the failure message because `/f makepeace` reports it too:
+     *
+     * - Neither side holds a row: they are not at war, and there was nothing to lay down.
+     * - Only [otherFaction] holds rows: [faction] has already laid its half down, which the command
+     *   calls peace having already been requested. **This is a failure rather than an idempotent
+     *   success**, matching the command, so a caller laying both halves down in turn must carry on to
+     *   the second call rather than abort on the first. It has not lost anything: the state it wanted
+     *   is the state that already holds.
+     *
+     * ## Events, and what is fired before what
+     *
+     * On [PeaceOutcome.PEACE_MADE], **[event.FactionWarEndedEvent] is fired from the relationship
+     * delete, which happens BEFORE the row is removed from the database**, so a consumer can see a war
+     * ended that then fails to save. That is the mirror of the caveat on [declareWar] and it has the
+     * same consequence: a consumer that must not act on a peace that did not happen should re-read on
+     * the next tick, and a retry after a failure is *silent*, because the bridge has already forgotten
+     * the row and fires nothing the second time.
+     *
+     * On [PeaceOutcome.PEACE_REQUESTED] **nothing is fired at all.** MF publishes no event for a peace
+     * request -- `/f makepeace` announces one with two chat messages sent from the command body, and
+     * there is nothing a consumer could listen for -- and inventing one here would announce to
+     * third-party listeners something MF's own command does not. Announcing a request is the caller's
+     * job.
+     *
+     * **This sends no chat.** The command's four notifications to the two factions belong to the
+     * command, not to the write, so a consumer that wants its realms told must tell them.
+     *
+     * MF's internal relationship-delete event is cancellable, so another plugin can veto the write;
+     * that arrives here as an ordinary failure. A faction normally holds exactly one `AT_WAR` row per
+     * enemy, but every row it holds is deleted and the first failure stops the run, so corrupt data can
+     * leave a partial lay-down behind -- which is what the command does with it too.
+     */
+    fun layDownArms(faction: FactionId, otherFaction: FactionId): ApiOutcome<PeaceOutcome>
+
+    /**
      * Record [playerId] as the head of [faction], as though the previous head had handed it on.
      *
      * The write that makes an external government possible. Until this existed,
