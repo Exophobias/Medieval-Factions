@@ -40,12 +40,15 @@ import java.util.UUID
  * This is the same asymmetry as [ClaimOverrideProvider]: a third-party plugin may redirect one of
  * MF's decisions, never invalidate the invariant underneath it.
  *
- * ## Implementations must not block, and must not save
+ * ## The proposal must not block or save
  *
- * This is consulted from inside `MfFactionService.save`, on whichever thread called it. Answer from
- * memory. Do not touch the database, do not call back into MF's services, and above all do not save
- * a faction from here — the save you are already inside has not finished, and re-entering it is a
- * cycle rather than a deadlock you will find in a stack trace.
+ * This is consulted while `MfFactionService.save` is preparing a mutation, on whichever thread
+ * called it. Answer from memory. Do not touch the database, do not call back into MF's services, and
+ * above all do not save a faction from here — commit arbitration has not happened yet.
+ *
+ * A policy that must durably coordinate its own state with the faction commit can additionally
+ * implement [TransactionalSuccessionPolicy]. Its validated answer then receives a separate
+ * provisional prepare/commit/abort lifecycle; side effects do not belong in this proposal method.
  *
  * To *react* to a succession rather than decide one, listen for
  * [com.dansplugins.factionsystem.api.event.FactionPrimaryOwnerChangedEvent], which is fired after

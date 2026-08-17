@@ -1,10 +1,15 @@
 package com.dansplugins.factionsystem.relationship
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.FactionId
+import com.dansplugins.factionsystem.api.event.FactionWarStartEvent
 import com.dansplugins.factionsystem.event.relationship.RelationshipCreateEvent
+import com.dansplugins.factionsystem.event.relationship.RelationshipCreatedEvent
 import com.dansplugins.factionsystem.event.relationship.RelationshipDeleteEvent
+import com.dansplugins.factionsystem.event.relationship.RelationshipDeletedEvent
 import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.faction.MfFactionId
+import com.dansplugins.factionsystem.faction.ChildMutationCallbackGuard
 import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.failure.ServiceFailureType
@@ -14,12 +19,18 @@ import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.LIEG
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.VASSAL
 import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.mapFailure
+import dev.forkhandles.result4k.onFailure
 import dev.forkhandles.result4k.resultFrom
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 class MfFactionRelationshipService(private val plugin: MedievalFactions, private val repository: MfFactionRelationshipRepository) {
 
     private val relationshipsById: MutableMap<MfFactionRelationshipId, MfFactionRelationship> = ConcurrentHashMap()
+    private val mutationLock = ReentrantLock()
+    /** Factions whose parent row is being cascade-deleted; guarded by [mutationLock]. */
+    private val deletingFactions = HashSet<MfFactionId>()
 
     /**
      * The same relationships bucketed by the faction that holds them.
@@ -81,38 +92,187 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
         return getRelationships(factionId).filter { it.type == type }
     }
 
-    fun save(relationship: MfFactionRelationship): Result4k<MfFactionRelationship, ServiceFailure> = resultFrom {
-        val previousState = getRelationship(relationship.id)
-        if (previousState == null) {
-            val event = RelationshipCreateEvent(relationship.id, relationship, !plugin.server.isPrimaryThread)
-            plugin.server.pluginManager.callEvent(event)
-            if (event.isCancelled) {
-                throw EventCancelledException("Event cancelled")
+    fun save(relationship: MfFactionRelationship): Result4k<MfFactionRelationship, ServiceFailure> =
+        save(relationship, relationship.factionId)
+
+    /**
+     * Save a relationship while retaining which faction caused a new war to be created.
+     *
+     * Usually that is [MfFactionRelationship.factionId]. Invocation is the exception: an existing
+     * belligerent causes an ally to enter a war, so the political initiator is not either direction
+     * of the new relationship pair. Keeping it on the post-commit event lets stable consumers tell
+     * an outgoing act from a realm merely being invoked.
+     */
+    fun save(
+        relationship: MfFactionRelationship,
+        initiatingFaction: MfFactionId
+    ): Result4k<MfFactionRelationship, ServiceFailure> = mutationLock.withLock {
+        resultFrom {
+            require(relationship.factionId !in deletingFactions) {
+                "Faction ${relationship.factionId.value} is being deleted"
             }
+            require(relationship.targetId !in deletingFactions) {
+                "Faction ${relationship.targetId.value} is being deleted"
+            }
+            val previousState = getRelationship(relationship.id)
+            if (previousState == null) {
+                if (relationship.type == AT_WAR) {
+                    val warEvent = FactionWarStartEvent(
+                        FactionId(relationship.factionId.value),
+                        FactionId(relationship.targetId.value),
+                        FactionId(initiatingFaction.value),
+                        !plugin.server.isPrimaryThread
+                    )
+                    ChildMutationCallbackGuard.callEvent(plugin, warEvent)
+                    if (warEvent.isCancelled) {
+                        throw EventCancelledException("War refused by a plugin")
+                    }
+                }
+                val event = RelationshipCreateEvent(relationship.id, relationship, !plugin.server.isPrimaryThread)
+                ChildMutationCallbackGuard.callEvent(plugin, event)
+                if (event.isCancelled) {
+                    throw EventCancelledException("Event cancelled")
+                }
+            }
+            val result = repository.upsert(relationship)
+            // Unindex the previous state first: an upsert may move a relationship to a different holder,
+            // and leaving the old bucket populated would report a vassalage that no longer exists.
+            previousState?.let(::unindex)
+            relationshipsById[result.id] = result
+            index(result)
+            if (previousState == null) {
+                ChildMutationCallbackGuard.callEvent(
+                    plugin,
+                    RelationshipCreatedEvent(result, initiatingFaction, !plugin.server.isPrimaryThread)
+                )
+            }
+            return@resultFrom result
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-        val result = repository.upsert(relationship)
-        // Unindex the previous state first: an upsert may move a relationship to a different holder,
-        // and leaving the old bucket populated would report a vassalage that no longer exists.
-        previousState?.let(::unindex)
-        relationshipsById[result.id] = result
-        index(result)
-        return@resultFrom result
-    }.mapFailure { exception ->
-        ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+    }
+
+    /**
+     * Establish both directional rows of a war, repairing either half left by an interrupted write.
+     *
+     * <p>All callers share the relationship mutation lock, so command, approval, invocation and API
+     * retries cannot each append another first row while racing. The operation is intentionally
+     * idempotent: an already complete pair succeeds without writing; a partial pair writes only its
+     * missing mirror.</p>
+     */
+    fun ensureWarPair(
+        first: MfFactionId,
+        second: MfFactionId,
+        initiatingFaction: MfFactionId = first
+    ): Result4k<Unit, ServiceFailure> = mutationLock.withLock {
+        resultFrom {
+            if (getRelationships(first, second).none { it.type == AT_WAR }) {
+                save(MfFactionRelationship(factionId = first, targetId = second, type = AT_WAR),
+                    initiatingFaction).onFailure { throw it.reason.cause }
+            }
+            if (getRelationships(second, first).none { it.type == AT_WAR }) {
+                save(MfFactionRelationship(factionId = second, targetId = first, type = AT_WAR),
+                    initiatingFaction).onFailure { throw it.reason.cause }
+            }
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+        }
+    }
+
+    /**
+     * Break a vassal oath, optionally establishing war first, as one serialised relationship act.
+     *
+     * <p>The war's cancellable pre-commit checks run before either hierarchy row is touched. Reverse
+     * VASSAL rows are removed before the vassal's own LIEGE row, which remains a retry anchor if a
+     * non-transactional delete fails part-way through.</p>
+     */
+    fun breakOath(
+        vassal: MfFactionId,
+        liege: MfFactionId,
+        establishWar: Boolean
+    ): Result4k<Unit, ServiceFailure> = mutationLock.withLock {
+        resultFrom {
+            val held = getRelationships(vassal, liege)
+                .filter { it.type == LIEGE || it.type == VASSAL }
+            val reverse = getRelationships(liege, vassal)
+                .filter { it.type == LIEGE || it.type == VASSAL }
+            require(held.any { it.type == LIEGE }) {
+                "Faction ${vassal.value} no longer swears to ${liege.value}"
+            }
+            if (establishWar) {
+                ensureWarPair(vassal, liege, vassal)
+                    .onFailure { throw it.reason.cause }
+            }
+            val removalOrder = reverse + held.sortedBy { if (it.type == LIEGE) 1 else 0 }
+            removalOrder.forEach { relationship ->
+                delete(relationship.id).onFailure { throw it.reason.cause }
+            }
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+        }
     }
 
     @JvmName("deleteRelationshipByRelationshipId")
-    fun delete(id: MfFactionRelationshipId): Result4k<Unit, ServiceFailure> = resultFrom {
-        val event = RelationshipDeleteEvent(id, !plugin.server.isPrimaryThread)
-        plugin.server.pluginManager.callEvent(event)
-        if (event.isCancelled) {
-            throw EventCancelledException("Event cancelled")
+    fun delete(id: MfFactionRelationshipId): Result4k<Unit, ServiceFailure> = mutationLock.withLock {
+        resultFrom {
+            val live = relationshipsById[id]
+            require(live == null || live.factionId !in deletingFactions) {
+                "Faction ${live?.factionId?.value} is being deleted"
+            }
+            require(live == null || live.targetId !in deletingFactions) {
+                "Faction ${live?.targetId?.value} is being deleted"
+            }
+            val event = RelationshipDeleteEvent(id, !plugin.server.isPrimaryThread)
+            ChildMutationCallbackGuard.callEvent(plugin, event)
+            if (event.isCancelled) {
+                throw EventCancelledException("Event cancelled")
+            }
+            val result = repository.delete(id)
+            val deleted = relationshipsById.remove(id)
+            deleted?.let(::unindex)
+            if (deleted != null) {
+                ChildMutationCallbackGuard.callEvent(
+                    plugin,
+                    RelationshipDeletedEvent(deleted, !plugin.server.isPrimaryThread)
+                )
+            }
+            return@resultFrom result
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-        val result = repository.delete(id)
-        relationshipsById.remove(id)?.let(::unindex)
-        return@resultFrom result
-    }.mapFailure { exception ->
-        ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+    }
+
+    /**
+     * Evict relationships deleted by the faction repository's foreign-key cascade.
+     *
+     * The database removes rows whose holder or target was disbanded, but that cascade cannot update
+     * this service's in-memory indexes or publish the post-commit deletion events consumed by the
+     * stable war API. Remove the complete set before firing any event so the first war-row event sees
+     * the true resulting state and emits exactly one end for a mirrored pair.
+     */
+    fun evictForDeletedFaction(factionId: MfFactionId) = mutationLock.withLock {
+        val removed = relationshipsById.values.filter {
+            it.factionId == factionId || it.targetId == factionId
+        }
+        removed.forEach { relationship ->
+            relationshipsById.remove(relationship.id)
+            unindex(relationship)
+        }
+        removed.forEach { relationship ->
+            ChildMutationCallbackGuard.callEvent(
+                plugin,
+                RelationshipDeletedEvent(relationship, !plugin.server.isPrimaryThread)
+            )
+        }
+    }
+
+    /** Fence new relationship writes before a faction's parent row is cascade-deleted. */
+    internal fun blockFactionDeletion(factionId: MfFactionId) = mutationLock.withLock {
+        check(deletingFactions.add(factionId)) { "Faction ${factionId.value} is already being deleted" }
+    }
+
+    internal fun unblockFactionDeletion(factionId: MfFactionId) = mutationLock.withLock {
+        deletingFactions.remove(factionId)
     }
 
     @JvmName("getVassalTreeByFactionId")

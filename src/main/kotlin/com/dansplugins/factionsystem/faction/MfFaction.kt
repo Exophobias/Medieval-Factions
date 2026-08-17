@@ -74,7 +74,15 @@ data class MfFaction(
      * [primaryOwnerId] is null, and a caller that reads it without checking that first is asking how
      * long nobody has held the seat.
      */
-    val primaryOwnerSince: Long = 0L
+    val primaryOwnerSince: Long = 0L,
+    /**
+     * Opaque identity of this exact primary-owner tenure.
+     *
+     * Stamped alongside [primaryOwnerSince] on every actual owner transition. The all-zero UUID is
+     * the migration identity for an owner whose tenure predates this field; it is still a valid
+     * compare-and-set token and is replaced the next time the seat moves.
+     */
+    val primaryOwnerTerm: UUID = UUID(0L, 0L)
 ) {
 
     val memberPower
@@ -118,7 +126,7 @@ data class MfFaction(
     fun isMember(playerId: MfPlayerId): Boolean = members.any { it.playerId == playerId }
 
     /** Whether the record still names a head who is no longer on the member list. */
-    private val primaryOwnerHasDeparted: Boolean
+    internal val primaryOwnerHasDeparted: Boolean
         get() = primaryOwnerId != null && !isMember(primaryOwnerId)
 
     /**
@@ -261,12 +269,24 @@ data class MfFaction(
     }
 
     fun withPrimaryOwnerSuccession(): MfFaction {
+        val owner = primaryOwnerId
+        val policy = owner?.takeIf { primaryOwnerHasDeparted }?.let(::policySuccessor)
+        return withPrimaryOwnerSuccession(policy)
+    }
+
+    /**
+     * Reconcile a departed owner using one already-validated policy answer.
+     *
+     * The service uses this overload so it can retain the winning policy's provisional token until
+     * commit arbitration. Domain-only callers use the no-argument form above.
+     */
+    internal fun withPrimaryOwnerSuccession(policySuccessor: MfPlayerId?): MfFaction {
         val survivingHeir = heirId?.takeIf { heir -> isMember(heir) || heirsVassalFaction != null }
         val owner = primaryOwnerId
         if (owner == null || members.any { it.playerId == owner }) {
             return if (survivingHeir == heirId) this else copy(heirId = survivingHeir)
         }
-        val successor = policySuccessor(owner) ?: successorToPrimaryOwner
+        val successor = policySuccessor ?: successorToPrimaryOwner
         if (successor == null && !plugin.config.getBoolean("factions.allowLeaderlessFactions")) {
             throw NoSuccessorException(
                 "Faction ${id.value} lost its primary owner with nobody to inherit, " +

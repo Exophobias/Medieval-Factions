@@ -1,7 +1,10 @@
 package com.dansplugins.factionsystem.faction
 
 import com.dansplugins.factionsystem.api.FactionView
+import com.dansplugins.factionsystem.api.PreparedSuccession
 import com.dansplugins.factionsystem.api.SuccessionPolicy
+import com.dansplugins.factionsystem.api.SuccessionPreparationFence
+import com.dansplugins.factionsystem.api.TransactionalSuccessionPolicy
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.logging.Level
@@ -22,6 +25,14 @@ import java.util.logging.Logger
  * no lock.
  */
 class SuccessionPolicyRegistry(private val logger: Logger) {
+
+    data class Decision(val policy: SuccessionPolicy, val successor: UUID)
+
+    data class PreparedDecision(
+        val decision: Decision,
+        val preparationId: UUID?,
+        val preparation: PreparedSuccession?
+    )
 
     private val policies = CopyOnWriteArrayList<SuccessionPolicy>()
 
@@ -67,7 +78,11 @@ class SuccessionPolicyRegistry(private val logger: Logger) {
      * which is MF's own invariant, and a third-party plugin that could force a headless faction
      * would be overriding a server owner's setting from outside.
      */
-    fun successorFor(faction: FactionView, departingHead: UUID): UUID? {
+    fun successorFor(faction: FactionView, departingHead: UUID): UUID? =
+        decisionFor(faction, departingHead)?.successor
+
+    /** The validated answer together with the one policy that supplied it. */
+    fun decisionFor(faction: FactionView, departingHead: UUID): Decision? {
         if (policies.isEmpty()) {
             return null
         }
@@ -92,7 +107,7 @@ class SuccessionPolicyRegistry(private val logger: Logger) {
                 continue
             }
             if (answer != null && answer != departingHead && faction.memberIds.contains(answer)) {
-                return answer
+                return Decision(policy, answer)
             }
             if (answer != null) {
                 logger.warning(
@@ -104,5 +119,85 @@ class SuccessionPolicyRegistry(private val logger: Logger) {
             }
         }
         return null
+    }
+
+    /**
+     * Give the chosen policy its provisional phase. No non-winning policy is prepared.
+     *
+     * A null result means a transactional policy refused or failed preparation. The caller must
+     * fail the faction save; silently falling through after a validated constitutional answer would
+     * persist a different ruler without a recovery marker.
+     */
+    fun prepare(
+        decision: Decision,
+        faction: FactionView,
+        departingHead: UUID,
+        successorTerm: UUID
+    ): PreparedDecision? {
+        val transactional = decision.policy as? TransactionalSuccessionPolicy
+            ?: return PreparedDecision(decision, null, null)
+        val preparationId = UUID.randomUUID()
+        SuccessionPreparationFence.activate(preparationId)
+        val preparation = try {
+            transactional.prepareSuccession(
+                preparationId, faction, departingHead, decision.successor, successorTerm
+            )
+        } catch (throwable: Throwable) {
+            logger.log(
+                Level.SEVERE,
+                "Succession policy ${decision.policy.javaClass.name} could not durably prepare " +
+                    "faction ${faction.id.value}; the faction save was refused.",
+                throwable
+            )
+            null
+        }
+        if (preparation == null) {
+            SuccessionPreparationFence.release(preparationId)
+            return null
+        }
+        return PreparedDecision(decision, preparationId, preparation)
+    }
+
+    /** Notify a prepared decision after publication; callback failures cannot uncommit MF. */
+    fun committed(prepared: PreparedDecision, faction: FactionView) {
+        val token = prepared.preparation ?: return
+        try {
+            token.committed(faction)
+        } catch (throwable: Throwable) {
+            logger.log(
+                Level.SEVERE,
+                "Succession policy ${prepared.decision.policy.javaClass.name} could not confirm " +
+                    "the committed succession of ${faction.id.value}; its durable marker must " +
+                    "recover the transition.",
+                throwable
+            )
+        } finally {
+            prepared.preparationId?.let(SuccessionPreparationFence::release)
+        }
+    }
+
+    /** Abort a provisional decision. Safe to call while unwinding any precommit failure. */
+    fun aborted(prepared: PreparedDecision) {
+        val token = prepared.preparation ?: return
+        try {
+            token.aborted()
+        } catch (throwable: Throwable) {
+            logger.log(
+                Level.SEVERE,
+                "Succession policy ${prepared.decision.policy.javaClass.name} could not abort a " +
+                    "provisional succession; its durable marker must recover on restart.",
+                throwable
+            )
+        } finally {
+            prepared.preparationId?.let(SuccessionPreparationFence::release)
+        }
+    }
+
+    /**
+     * A repository call returned an ambiguous failure. Stop fencing in-process recovery, but retain
+     * the durable PREPARED token so live owner+term arbitration decides whether it committed.
+     */
+    fun uncertain(prepared: PreparedDecision) {
+        prepared.preparationId?.let(SuccessionPreparationFence::release)
     }
 }

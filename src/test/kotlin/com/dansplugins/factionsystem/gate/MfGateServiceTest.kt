@@ -4,6 +4,7 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.area.MfCuboidArea
 import com.dansplugins.factionsystem.faction.MfFactionId
+import dev.forkhandles.result4k.Failure
 import org.bukkit.Material
 import org.bukkit.Server
 import org.bukkit.configuration.file.FileConfiguration
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.util.UUID
 import java.util.logging.Logger
@@ -102,5 +105,21 @@ class MfGateServiceTest {
 
         assertEquals(listOf(gate), service.getGatesAt(pos(-19, 65, -19)))
         assertTrue(service.getGatesAt(pos(-1, 65, -1)).isEmpty())
+    }
+
+    @Test
+    fun factionDeleteFenceRejectsNewGateWrites() {
+        val gateRepo = mock(MfGateRepository::class.java)
+        `when`(gateRepo.getGates()).thenReturn(emptyList())
+        val service = MfGateService(plugin, gateRepo, mock(MfGateCreationContextRepository::class.java))
+        val gate = gate(MfCuboidArea(pos(0, 60, 0), pos(3, 70, 3)), trigger = pos(5, 64, 5))
+        service.blockFactionDeletion(factionId)
+
+        try {
+            assertTrue(service.save(gate) is Failure)
+            verify(gateRepo, never()).upsert(gate)
+        } finally {
+            service.unblockFactionDeletion(factionId)
+        }
     }
 }

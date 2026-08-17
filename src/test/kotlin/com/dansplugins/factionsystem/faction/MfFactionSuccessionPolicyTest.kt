@@ -3,15 +3,21 @@ package com.dansplugins.factionsystem.faction
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.FactionView
+import com.dansplugins.factionsystem.api.PrimaryOwnerReplaceOutcome
 import com.dansplugins.factionsystem.api.SuccessionPolicy
 import com.dansplugins.factionsystem.api.event.FactionPrimaryOwnerChangedEvent
 import com.dansplugins.factionsystem.api.impl.DefaultMedievalFactionsApi
+import com.dansplugins.factionsystem.event.faction.FactionDescriptionChangeEvent
 import com.dansplugins.factionsystem.exception.NoSuccessorException
 import com.dansplugins.factionsystem.faction.flag.MfFlags
 import com.dansplugins.factionsystem.faction.permission.MfFactionPermissions
 import com.dansplugins.factionsystem.faction.role.MfFactionRoles
+import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.locks.MfLockService
+import com.dansplugins.factionsystem.locks.MfLockRepository
+import com.dansplugins.factionsystem.locks.MfLockedBlock
+import com.dansplugins.factionsystem.locks.MfLockedBlockId
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationship
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipId
@@ -40,7 +46,11 @@ import org.mockito.Mockito.RETURNS_SMART_NULLS
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Logger
+import kotlin.concurrent.thread
 
 /**
  * The contract a plugin outside MedievalFactions may rely on when it decides who rules a faction.
@@ -69,18 +79,36 @@ class MfFactionSuccessionPolicyTest {
     private val outsider = MfPlayerId(UUID.randomUUID().toString())
 
     private class InMemoryFactionRepository : MfFactionRepository {
-        val rows = mutableMapOf<MfFactionId, MfFaction>()
+        val rows = java.util.concurrent.ConcurrentHashMap<MfFactionId, MfFaction>()
         override fun getFaction(id: MfFactionId) = rows[id]
         override fun getFaction(name: String) = rows.values.firstOrNull { it.name == name }
         override fun getFaction(playerId: MfPlayerId) = rows.values.firstOrNull { it.isMember(playerId) }
         override fun getFactions() = rows.values.toList()
+        @Synchronized
         override fun upsert(faction: MfFaction): MfFaction {
-            rows[faction.id] = faction
-            return faction
+            val current = rows[faction.id]
+            val persisted = if (current == null) {
+                faction.copy(version = 1)
+            } else {
+                if (current.version != faction.version) {
+                    throw OptimisticLockingFailureException("Invalid version: ${faction.version}")
+                }
+                faction.copy(version = faction.version + 1)
+            }
+            rows[faction.id] = persisted
+            return persisted
         }
         override fun delete(factionId: MfFactionId) {
             rows.remove(factionId)
         }
+    }
+
+    private class EmptyLockRepository : MfLockRepository {
+        override fun getLockedBlock(id: MfLockedBlockId): MfLockedBlock? = null
+        override fun getLockedBlock(worldId: UUID, x: Int, y: Int, z: Int): MfLockedBlock? = null
+        override fun getLockedBlocks(): List<MfLockedBlock> = emptyList()
+        override fun upsert(lockedBlock: MfLockedBlock): MfLockedBlock = lockedBlock
+        override fun delete(lockedBlock: MfLockedBlock) = Unit
     }
 
     private class InMemoryRelationshipRepository : MfFactionRelationshipRepository {
@@ -131,9 +159,10 @@ class MfFactionSuccessionPolicyTest {
         relationshipService = MfFactionRelationshipService(plugin, InMemoryRelationshipRepository())
         factionService = MfFactionService(plugin, InMemoryFactionRepository())
         val services = mock(Services::class.java)
+        val lockService = MfLockService(plugin, EmptyLockRepository())
         `when`(services.factionService).thenReturn(factionService)
         `when`(services.factionRelationshipService).thenReturn(relationshipService)
-        `when`(services.lockService).thenReturn(mock(MfLockService::class.java))
+        `when`(services.lockService).thenReturn(lockService)
         `when`(services.claimService).thenReturn(null)
         `when`(plugin.services).thenReturn(services)
         `when`(plugin.servicesOrNull).thenReturn(services)
@@ -503,18 +532,21 @@ class MfFactionSuccessionPolicyTest {
         // did nothing for the faction itself.
         val faction = foundFaction("Kingdom", ruler, listOf(marshal, steward))
         val founded = current(faction).primaryOwnerSince
+        val foundingTerm = current(faction).primaryOwnerTerm
         assertTrue(founded > 0L, "founding a faction seats its founder, so the stamp is set")
 
         // An ordinary save that leaves the head alone must NOT push the date forward, or every
         // /f desc would reset the tenure of whoever is in the seat.
         factionService.save(current(faction).copy(description = "A realm")).onFailure { throw it.reason.cause }
         assertEquals(founded, current(faction).primaryOwnerSince)
+        assertEquals(foundingTerm, current(faction).primaryOwnerTerm)
 
         // Moving the head restamps it, so the new ruler starts their tenure now rather than
         // inheriting the old one's standing along with the seat.
         factionService.save(current(faction).copy(primaryOwnerId = steward)).onFailure { throw it.reason.cause }
         assertTrue(current(faction).primaryOwnerSince >= founded)
         assertEquals(steward, current(faction).primaryOwnerId)
+        assertTrue(current(faction).primaryOwnerTerm != foundingTerm)
     }
 
     @Test
@@ -530,5 +562,138 @@ class MfFactionSuccessionPolicyTest {
         // faction on the server out of a tenure rule for its first week.
         factionService.save(current(faction).copy(primaryOwnerSince = 0L)).onFailure { throw it.reason.cause }
         assertEquals(0L, api.getFaction(FactionId(faction.id.value))!!.primaryOwnerSince)
+    }
+
+    @Test
+    @DisplayName("the API publishes the exact primary-owner term")
+    fun theOwnerTermIsVisibleThroughTheApi() {
+        val faction = foundFaction("Kingdom", ruler, listOf(marshal))
+
+        assertEquals(current(faction).primaryOwnerTerm, api.getFaction(FactionId(faction.id.value))!!.primaryOwnerTerm)
+    }
+
+    @Test
+    @DisplayName("an exact tenure may be cleared without removing members")
+    fun exactOwnerTenureMayBeCleared() {
+        val faction = foundFaction("Kingdom", ruler, listOf(marshal, steward))
+        val before = current(faction)
+        allowLeaderlessFactions(false)
+
+        val outcome = api.replacePrimaryOwnerIf(
+            FactionId(faction.id.value),
+            uuid(ruler),
+            before.primaryOwnerTerm,
+            null
+        )
+
+        assertTrue(outcome.isSuccess)
+        assertEquals(PrimaryOwnerReplaceOutcome.REPLACED, outcome.get())
+        assertNull(current(faction).primaryOwnerId)
+        assertEquals(before.members, current(faction).members)
+        assertEquals(before.heirId, current(faction).heirId)
+        assertTrue(before.primaryOwnerTerm != current(faction).primaryOwnerTerm)
+    }
+
+    @Test
+    @DisplayName("an away-and-back owner transition defeats a stale exact-tenure clear")
+    fun reacquiredOwnerTenureIsNotCleared() {
+        val faction = foundFaction("Kingdom", ruler, listOf(marshal))
+        val staleTerm = current(faction).primaryOwnerTerm
+        api.setPrimaryOwner(FactionId(faction.id.value), uuid(marshal))
+        api.setPrimaryOwner(FactionId(faction.id.value), uuid(ruler))
+        assertTrue(staleTerm != current(faction).primaryOwnerTerm)
+
+        val outcome = api.replacePrimaryOwnerIf(
+            FactionId(faction.id.value),
+            uuid(ruler),
+            staleTerm,
+            null
+        )
+
+        assertTrue(outcome.isSuccess)
+        assertEquals(PrimaryOwnerReplaceOutcome.MISMATCH, outcome.get())
+        assertEquals(ruler, current(faction).primaryOwnerId)
+    }
+
+    @Test
+    @DisplayName("repository versioning arbitrates exact owner CAS against an in-flight save")
+    fun exactOwnerCasConflictsWithInFlightOrdinarySaveWithoutStaleOverwrite() {
+        val faction = foundFaction("Kingdom", ruler, listOf(marshal))
+        val staleTerm = current(faction).primaryOwnerTerm
+        val saveReachedPreCommit = CountDownLatch(1)
+        val releaseSave = CountDownLatch(1)
+        val saveFinished = CountDownLatch(1)
+        val casStarted = CountDownLatch(1)
+        val casFinished = CountDownLatch(1)
+        val casOutcome = AtomicReference<com.dansplugins.factionsystem.api.ApiOutcome<PrimaryOwnerReplaceOutcome>>()
+        val saveFailure = AtomicReference<Throwable>()
+
+        val pluginManager = plugin.server.pluginManager
+        org.mockito.Mockito.doAnswer { invocation ->
+            val event = invocation.getArgument<Event>(0)
+            announced.add(event)
+            if (event is FactionDescriptionChangeEvent && event.description == "barrier") {
+                saveReachedPreCommit.countDown()
+                assertTrue(releaseSave.await(5, TimeUnit.SECONDS))
+            }
+            null
+        }.`when`(pluginManager).callEvent(any(Event::class.java))
+
+        val saver = thread(name = "ordinary-faction-save") {
+            try {
+                val result = factionService.save(
+                    current(faction).copy(primaryOwnerId = marshal, description = "barrier")
+                )
+                if (result is dev.forkhandles.result4k.Failure) {
+                    saveFailure.set(result.reason.cause)
+                }
+            } finally {
+                saveFinished.countDown()
+            }
+        }
+        assertTrue(saveReachedPreCommit.await(5, TimeUnit.SECONDS))
+
+        val cas = thread(name = "exact-owner-cas") {
+            casStarted.countDown()
+            casOutcome.set(
+                api.replacePrimaryOwnerIf(
+                    FactionId(faction.id.value), uuid(ruler), staleTerm, null
+                )
+            )
+            casFinished.countDown()
+        }
+        assertTrue(casStarted.await(5, TimeUnit.SECONDS))
+        assertTrue(casFinished.await(5, TimeUnit.SECONDS),
+            "the exact CAS was blocked behind a pre-commit callback")
+        assertEquals(PrimaryOwnerReplaceOutcome.REPLACED, casOutcome.get().get())
+
+        releaseSave.countDown()
+        assertTrue(saveFinished.await(5, TimeUnit.SECONDS))
+        saver.join()
+        cas.join()
+
+        assertTrue(saveFailure.get() is OptimisticLockingFailureException)
+        assertNull(current(faction).primaryOwnerId)
+        assertFalse(current(faction).description == "barrier")
+        assertTrue(staleTerm != current(faction).primaryOwnerTerm)
+    }
+
+    @Test
+    @DisplayName("a stale unrelated faction copy cannot reinstate the owner replaced by exact CAS")
+    fun staleWholeFactionCopyCannotUndoExactOwnerCas() {
+        val faction = foundFaction("Kingdom", ruler, listOf(marshal))
+        val before = current(faction)
+        val staleDescriptionEdit = before.copy(description = "prepared before the CAS")
+
+        val outcome = api.replacePrimaryOwnerIf(
+            FactionId(faction.id.value), uuid(ruler), before.primaryOwnerTerm, uuid(marshal)
+        )
+        val staleSave = factionService.save(staleDescriptionEdit)
+
+        assertEquals(PrimaryOwnerReplaceOutcome.REPLACED, outcome.get())
+        assertTrue(staleSave is dev.forkhandles.result4k.Failure)
+        assertEquals(marshal, current(faction).primaryOwnerId)
+        assertTrue(before.primaryOwnerTerm != current(faction).primaryOwnerTerm)
+        assertFalse(current(faction).description == staleDescriptionEdit.description)
     }
 }

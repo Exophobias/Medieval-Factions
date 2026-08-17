@@ -3,6 +3,8 @@ package com.dansplugins.factionsystem.api.impl
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.event.ClaimOwnerChangedEvent
+import com.dansplugins.factionsystem.api.event.FactionUnclaimedChunkEvent
+import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFactionId
 import java.util.UUID
 
@@ -70,6 +72,20 @@ object ApiClaimEventBridge {
             chunkZ,
             previousOwner?.let { FactionId(it.value) },
             newOwner?.let { FactionId(it.value) }
+        )
+        plugin.server.scheduler.runTask(
+            plugin,
+            Runnable { plugin.server.pluginManager.callEvent(event) }
+        )
+    }
+
+    /** Publish the stable unclaim notification after, and only after, repository success. */
+    fun unclaimed(plugin: MedievalFactions, claim: MfClaimedChunk) {
+        val event = FactionUnclaimedChunkEvent(
+            FactionId(claim.factionId.value),
+            claim.worldId,
+            claim.x,
+            claim.z
         )
         plugin.server.scheduler.runTask(
             plugin,

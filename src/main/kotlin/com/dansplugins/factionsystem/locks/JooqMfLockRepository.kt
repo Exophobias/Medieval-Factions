@@ -63,28 +63,34 @@ class JooqMfLockRepository(private val dsl: DSLContext) : MfLockRepository {
     }
 
     private fun upsertLockedBlock(dsl: DSLContext, lockedBlock: DomainMfLockedBlock): DomainMfLockedBlock {
-        val rowCount = dsl.insertInto(MF_LOCKED_BLOCK)
-            .set(MF_LOCKED_BLOCK.ID, lockedBlock.id.value)
-            .set(MF_LOCKED_BLOCK.WORLD_ID, lockedBlock.block.worldId.toString())
-            .set(MF_LOCKED_BLOCK.X, lockedBlock.block.x)
-            .set(MF_LOCKED_BLOCK.Y, lockedBlock.block.y)
-            .set(MF_LOCKED_BLOCK.Z, lockedBlock.block.z)
-            .set(MF_LOCKED_BLOCK.CHUNK_X, lockedBlock.chunkX)
-            .set(MF_LOCKED_BLOCK.CHUNK_Z, lockedBlock.chunkZ)
-            .set(MF_LOCKED_BLOCK.PLAYER_ID, lockedBlock.playerId.value)
-            .set(MF_LOCKED_BLOCK.VERSION, 1)
-            .onConflict(MF_LOCKED_BLOCK.ID).doUpdate()
-            .set(MF_LOCKED_BLOCK.WORLD_ID, lockedBlock.block.worldId.toString())
-            .set(MF_LOCKED_BLOCK.X, lockedBlock.block.x)
-            .set(MF_LOCKED_BLOCK.Y, lockedBlock.block.y)
-            .set(MF_LOCKED_BLOCK.Z, lockedBlock.block.z)
-            .set(MF_LOCKED_BLOCK.CHUNK_X, lockedBlock.chunkX)
-            .set(MF_LOCKED_BLOCK.CHUNK_Z, lockedBlock.chunkZ)
-            .set(MF_LOCKED_BLOCK.PLAYER_ID, lockedBlock.playerId.value)
-            .set(MF_LOCKED_BLOCK.VERSION, lockedBlock.version + 1)
-            .where(MF_LOCKED_BLOCK.ID.eq(lockedBlock.id.value))
-            .and(MF_LOCKED_BLOCK.VERSION.eq(lockedBlock.version))
-            .execute()
+        val rowCount = if (lockedBlock.version == 0) {
+            dsl.insertInto(MF_LOCKED_BLOCK)
+                .set(MF_LOCKED_BLOCK.ID, lockedBlock.id.value)
+                .set(MF_LOCKED_BLOCK.WORLD_ID, lockedBlock.block.worldId.toString())
+                .set(MF_LOCKED_BLOCK.X, lockedBlock.block.x)
+                .set(MF_LOCKED_BLOCK.Y, lockedBlock.block.y)
+                .set(MF_LOCKED_BLOCK.Z, lockedBlock.block.z)
+                .set(MF_LOCKED_BLOCK.CHUNK_X, lockedBlock.chunkX)
+                .set(MF_LOCKED_BLOCK.CHUNK_Z, lockedBlock.chunkZ)
+                .set(MF_LOCKED_BLOCK.PLAYER_ID, lockedBlock.playerId.value)
+                .set(MF_LOCKED_BLOCK.VERSION, 1)
+                .execute()
+        } else {
+            // A versioned value is an update of one exact durable lock, never permission to
+            // recreate a row removed by a claim transfer, member departure, or newer unlock.
+            dsl.update(MF_LOCKED_BLOCK)
+                .set(MF_LOCKED_BLOCK.WORLD_ID, lockedBlock.block.worldId.toString())
+                .set(MF_LOCKED_BLOCK.X, lockedBlock.block.x)
+                .set(MF_LOCKED_BLOCK.Y, lockedBlock.block.y)
+                .set(MF_LOCKED_BLOCK.Z, lockedBlock.block.z)
+                .set(MF_LOCKED_BLOCK.CHUNK_X, lockedBlock.chunkX)
+                .set(MF_LOCKED_BLOCK.CHUNK_Z, lockedBlock.chunkZ)
+                .set(MF_LOCKED_BLOCK.PLAYER_ID, lockedBlock.playerId.value)
+                .set(MF_LOCKED_BLOCK.VERSION, lockedBlock.version + 1)
+                .where(MF_LOCKED_BLOCK.ID.eq(lockedBlock.id.value))
+                .and(MF_LOCKED_BLOCK.VERSION.eq(lockedBlock.version))
+                .execute()
+        }
         if (rowCount == 0) throw OptimisticLockingFailureException("Invalid version: ${lockedBlock.version}")
         return dsl.selectFrom(MF_LOCKED_BLOCK)
             .where(MF_LOCKED_BLOCK.ID.eq(lockedBlock.id.value))
@@ -93,13 +99,16 @@ class JooqMfLockRepository(private val dsl: DSLContext) : MfLockRepository {
             .toDomain()
     }
 
-    override fun delete(block: MfBlockPosition) {
-        dsl.deleteFrom(MF_LOCKED_BLOCK)
-            .where(MF_LOCKED_BLOCK.WORLD_ID.eq(block.worldId.toString()))
-            .and(MF_LOCKED_BLOCK.X.eq(block.x))
-            .and(MF_LOCKED_BLOCK.Y.eq(block.y))
-            .and(MF_LOCKED_BLOCK.Z.eq(block.z))
+    override fun delete(lockedBlock: DomainMfLockedBlock) {
+        val rowCount = dsl.deleteFrom(MF_LOCKED_BLOCK)
+            .where(MF_LOCKED_BLOCK.ID.eq(lockedBlock.id.value))
+            .and(MF_LOCKED_BLOCK.VERSION.eq(lockedBlock.version))
             .execute()
+        if (rowCount == 0) {
+            throw OptimisticLockingFailureException(
+                "Locked block ${lockedBlock.id.value} is no longer at version ${lockedBlock.version}"
+            )
+        }
     }
 
     private fun deleteAccessors(dsl: DSLContext, lockedBlockId: MfLockedBlockId) {

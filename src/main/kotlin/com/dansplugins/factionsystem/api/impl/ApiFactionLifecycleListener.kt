@@ -4,17 +4,13 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.event.FactionCreateEvent
 import com.dansplugins.factionsystem.api.event.FactionDisbandedEvent
-import com.dansplugins.factionsystem.api.event.FactionMemberLeftEvent
-import com.dansplugins.factionsystem.api.event.FactionUnclaimedChunkEvent
 import org.bukkit.event.Event
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
 import java.util.UUID
 import com.dansplugins.factionsystem.event.faction.FactionCreateEvent as MfFactionCreateEvent
-import com.dansplugins.factionsystem.event.faction.FactionDisbandEvent as MfFactionDisbandEvent
-import com.dansplugins.factionsystem.event.faction.FactionLeaveEvent as MfFactionLeaveEvent
-import com.dansplugins.factionsystem.event.faction.FactionUnclaimEvent as MfFactionUnclaimEvent
+import com.dansplugins.factionsystem.event.faction.FactionDeletedEvent as MfFactionDeletedEvent
 
 /**
  * Bridges MedievalFactions' internal faction lifecycle events to the stable API equivalents, so
@@ -23,8 +19,7 @@ import com.dansplugins.factionsystem.event.faction.FactionUnclaimEvent as MfFact
  * Two shapes live here:
  * - **The create gate** — [FactionCreateEvent] is cancellable and fired *inline*, so a veto reaches MF
  *   before it persists the faction.
- * - **The notifications** — [FactionDisbandedEvent], [FactionMemberLeftEvent] and
- *   [FactionUnclaimedChunkEvent] are past-tense, non-cancellable, fired at MONITOR with
+ * - **The notification** — [FactionDisbandedEvent] is past-tense, non-cancellable, fired at MONITOR with
  *   `ignoreCancelled = true`, and re-fired on the next tick so consumers get a main-thread guarantee.
  *
  * The create bridge also does the awkward part on the consumer's behalf, described below.
@@ -61,37 +56,14 @@ class ApiFactionLifecycleListener(private val plugin: MedievalFactions) : Listen
         }
     }
 
-    // The three handlers below are notifications, not gates, so they are the mirror image of the
+    // The handlers below are notifications, not gates, so they are the mirror image of the
     // create bridge above: MONITOR + ignoreCancelled so they only report changes that actually took
     // effect, and re-fired on the next tick so consumers get a main-thread guarantee (MF fires these
     // asynchronously from the /f command handlers).
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    fun onFactionDisband(event: MfFactionDisbandEvent) {
+    @EventHandler(priority = EventPriority.MONITOR)
+    fun onFactionDeleted(event: MfFactionDeletedEvent) {
         fireNextTick(FactionDisbandedEvent(FactionId(event.factionId.value)))
-    }
-
-    // Bridged from the LEAVE event only, never the kick event. A single MF kick emits both — the kick
-    // command fires FactionKickEvent, then saves the faction, and the save diffs the member list and
-    // fires FactionLeaveEvent for each removed member — so mirroring both would double-fire on every
-    // kick. Leaving covers voluntary departures and kicks alike, exactly once.
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    fun onFactionLeave(event: MfFactionLeaveEvent) {
-        val playerId = runCatching { UUID.fromString(event.playerId.value) }.getOrNull() ?: return
-        fireNextTick(FactionMemberLeftEvent(FactionId(event.factionId.value), playerId))
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    fun onFactionUnclaim(event: MfFactionUnclaimEvent) {
-        val claim = event.claim
-        fireNextTick(
-            FactionUnclaimedChunkEvent(
-                FactionId(event.factionId.value),
-                claim.worldId,
-                claim.x,
-                claim.z
-            )
-        )
     }
 
     private fun fireNextTick(event: Event) {

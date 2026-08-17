@@ -6,6 +6,9 @@ import com.dansplugins.factionsystem.faction.permission.MfFactionPermissions
 import com.dansplugins.factionsystem.faction.role.MfFactionRoles
 import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.locks.MfLockService
+import com.dansplugins.factionsystem.locks.MfLockRepository
+import com.dansplugins.factionsystem.locks.MfLockedBlock
+import com.dansplugins.factionsystem.locks.MfLockedBlockId
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationship
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipId
@@ -74,9 +77,27 @@ class MfFactionVassalHeirSuccessionTest {
             rows[faction.id] = faction
             return faction
         }
+        override fun upsertAll(factions: List<MfFaction>): List<MfFaction> {
+            val snapshot = rows.toMap()
+            return try {
+                factions.map(::upsert)
+            } catch (failure: Throwable) {
+                rows.clear()
+                rows.putAll(snapshot)
+                throw failure
+            }
+        }
         override fun delete(factionId: MfFactionId) {
             rows.remove(factionId)
         }
+    }
+
+    private class EmptyLockRepository : MfLockRepository {
+        override fun getLockedBlock(id: MfLockedBlockId): MfLockedBlock? = null
+        override fun getLockedBlock(worldId: UUID, x: Int, y: Int, z: Int): MfLockedBlock? = null
+        override fun getLockedBlocks(): List<MfLockedBlock> = emptyList()
+        override fun upsert(lockedBlock: MfLockedBlock): MfLockedBlock = lockedBlock
+        override fun delete(lockedBlock: MfLockedBlock) = Unit
     }
 
     private class InMemoryRelationshipRepository : MfFactionRelationshipRepository {
@@ -133,9 +154,10 @@ class MfFactionVassalHeirSuccessionTest {
         relationshipService = MfFactionRelationshipService(plugin, InMemoryRelationshipRepository())
         factionService = MfFactionService(plugin, InMemoryFactionRepository())
         val services = mock(Services::class.java)
+        val lockService = MfLockService(plugin, EmptyLockRepository())
         `when`(services.factionService).thenReturn(factionService)
         `when`(services.factionRelationshipService).thenReturn(relationshipService)
-        `when`(services.lockService).thenReturn(mock(MfLockService::class.java))
+        `when`(services.lockService).thenReturn(lockService)
         `when`(plugin.services).thenReturn(services)
         `when`(plugin.servicesOrNull).thenReturn(services)
     }

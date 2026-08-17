@@ -78,16 +78,6 @@ class MfFactionDisbandCommand(private val plugin: MedievalFactions) : CommandExe
                     return@Runnable
                 }
                 sender.sendMessage("$GREEN${plugin.language["CommandFactionDisbandSuccess"]}")
-
-                val mapService = plugin.services.mapService
-                if (mapService != null && !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
-                    plugin.server.scheduler.runTask(
-                        plugin,
-                        Runnable {
-                            mapService.scheduleUpdateClaims(faction)
-                        }
-                    )
-                }
             }
         )
         return true

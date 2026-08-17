@@ -2,7 +2,6 @@ package com.dansplugins.factionsystem.command.faction.declareindependence
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.player.MfPlayer
-import com.dansplugins.factionsystem.relationship.MfFactionRelationship
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.AT_WAR
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.LIEGE
 import dev.forkhandles.result4k.onFailure
@@ -59,29 +58,21 @@ class MfFactionDeclareIndependenceCommand(private val plugin: MedievalFactions) 
                     sender.sendMessage("$RED${plugin.language["CommandFactionDeclareIndependenceNoLiege"]}")
                     return@Runnable
                 }
-                if (!faction.flags[plugin.flags.isNeutral] && !liege.flags[plugin.flags.isNeutral]) {
-                    val relationshipsWithLiege = factionRelationshipService.getRelationships(faction.id, liege.id)
-                    val reverseRelationshipsWithLiege = factionRelationshipService.getRelationships(liege.id, faction.id)
-                    for (relationship in relationshipsWithLiege + reverseRelationshipsWithLiege) {
-                        factionRelationshipService.delete(relationship.id).onFailure {
-                            sender.sendMessage("$RED${plugin.language["CommandFactionDeclareIndependenceFailedToDeleteRelationshipWithLiege"]}")
-                            plugin.logger.log(SEVERE, "Failed to delete relationship with liege: ${it.reason.message}", it.reason.cause)
-                            return@Runnable
+                val establishWar = !faction.flags[plugin.flags.isNeutral]
+                    && !liege.flags[plugin.flags.isNeutral]
+                factionRelationshipService.breakOath(faction.id, liege.id, establishWar)
+                    .onFailure {
+                        val key = if (establishWar) {
+                            "CommandFactionDeclareIndependenceFailedToSaveRelationship"
+                        } else {
+                            "CommandFactionDeclareIndependenceFailedToDeleteRelationshipWithLiege"
                         }
+                        sender.sendMessage("$RED${plugin.language[key]}")
+                        plugin.logger.log(SEVERE, "Failed to establish independence: ${it.reason.message}", it.reason.cause)
+                        return@Runnable
                     }
-                    factionRelationshipService.save(MfFactionRelationship(factionId = faction.id, targetId = liege.id, type = AT_WAR))
-                        .onFailure {
-                            sender.sendMessage("$RED${plugin.language["CommandFactionDeclareIndependenceFailedToSaveRelationship"]}")
-                            plugin.logger.log(SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
-                            return@Runnable
-                        }
-                    factionRelationshipService.save(MfFactionRelationship(factionId = liege.id, targetId = faction.id, type = AT_WAR))
-                        .onFailure {
-                            sender.sendMessage("$RED${plugin.language["CommandFactionDeclareIndependenceFailedToSaveReverseRelationship"]}")
-                            plugin.logger.log(SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
-                            return@Runnable
-                        }
 
+                if (establishWar) {
                     plugin.server.scheduler.runTask(
                         plugin,
                         Runnable {

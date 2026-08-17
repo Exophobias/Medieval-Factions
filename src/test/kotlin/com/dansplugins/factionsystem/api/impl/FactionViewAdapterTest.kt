@@ -168,6 +168,22 @@ class FactionViewAdapterTest {
     }
 
     @Test
+    fun primaryOwnerTermExposesTheRecordedTenureIdentity() {
+        val term = UUID.randomUUID()
+        `when`(faction.primaryOwnerId).thenReturn(MfPlayerId(leaderId.toString()))
+        `when`(faction.primaryOwnerTerm).thenReturn(term)
+
+        assertEquals(term, view().primaryOwnerTerm)
+    }
+
+    @Test
+    fun primaryOwnerTermIsNullWhenThereIsNoRecordedHead() {
+        `when`(faction.primaryOwnerId).thenReturn(null)
+
+        assertNull(view().primaryOwnerTerm)
+    }
+
+    @Test
     fun primaryOwnerIdIsNullWhenNoHeadIsRecorded() {
         membership(leaderId to leaderRole())
 

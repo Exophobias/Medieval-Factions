@@ -51,8 +51,9 @@ import java.util.UUID
  * as the fast path that lets you present a live decision, not as a complete ledger of ownership
  * changes.
  *
- * Disband specifically is still observable, because MF fires its disband event before wiping the
- * claims: see [FactionDisbandedEvent].
+ * Disband specifically is still observable as a cleanup notification through
+ * [FactionDisbandedEvent], but that event is deliberately post-commit and therefore arrives after
+ * the claims have gone. It cannot be used to take a last snapshot of them.
  *
  * ## Coordinates, not a Chunk
  *

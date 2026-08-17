@@ -2,10 +2,13 @@ package com.dansplugins.factionsystem.faction
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
+import com.dansplugins.factionsystem.api.event.FactionMemberLeftEvent
 import com.dansplugins.factionsystem.api.event.FactionPrimaryOwnerChangedEvent
+import com.dansplugins.factionsystem.api.impl.FactionViewAdapter
 import com.dansplugins.factionsystem.area.MfPosition
 import com.dansplugins.factionsystem.event.faction.FactionCreateEvent
 import com.dansplugins.factionsystem.event.faction.FactionDescriptionChangeEvent
+import com.dansplugins.factionsystem.event.faction.FactionDeletedEvent
 import com.dansplugins.factionsystem.event.faction.FactionDisbandEvent
 import com.dansplugins.factionsystem.event.faction.FactionJoinEvent
 import com.dansplugins.factionsystem.event.faction.FactionLeaveEvent
@@ -29,6 +32,11 @@ import dev.forkhandles.result4k.resultFrom
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.withLock
+import kotlin.concurrent.write
 
 /**
  * An [MfPlayerId] as a Bukkit UUID, or null if it does not parse as one.
@@ -42,8 +50,32 @@ private fun MfPlayerId.toUuidOrNull(): UUID? = runCatching { UUID.fromString(val
 class MfFactionService(private val plugin: MedievalFactions, private val repository: MfFactionRepository) {
 
     private val factionsById: MutableMap<MfFactionId, MfFaction> = ConcurrentHashMap()
+    /** A multi-faction database commit is exposed to lock-free callers as one cache generation. */
+    private val factionCacheLock = ReentrantReadWriteLock(true)
+    /** Deterministic package-local probe for the read-between-publications regression. */
+    @Volatile internal var cachePublicationHook: () -> Unit = {}
+    /** Prevents a re-entrant disband listener from publishing the same deletion twice. */
+    private val deletingFactions: MutableSet<MfFactionId> = ConcurrentHashMap.newKeySet()
+    /** Per-faction locks protecting commit/cache state and lifecycle reservation counters. */
+    private val commitLocks: MutableMap<MfFactionId, ReentrantLock> = ConcurrentHashMap()
+    private val activeSaveLifecycles: MutableMap<MfFactionId, Int> = ConcurrentHashMap()
+    private val lifecycleIdle = ConcurrentHashMap<MfFactionId, java.util.concurrent.locks.Condition>()
+
+    /**
+     * A synchronous callback must never wait for another save lifecycle while it still owns one.
+     * Otherwise callback A deleting B and callback B deleting A form a cross-faction deadlock even
+     * though neither callback is invoked under a JVM lock.
+     */
+    private val saveLifecycleDepth = ThreadLocal.withInitial { 0 }
+
+    private fun commitLock(factionId: MfFactionId): ReentrantLock =
+        commitLocks.computeIfAbsent(factionId) { ReentrantLock(true) }
+
+    private fun lifecycleIdle(factionId: MfFactionId) =
+        lifecycleIdle.computeIfAbsent(factionId) { commitLock(factionId).newCondition() }
+
     val factions: List<MfFaction>
-        get() = factionsById.values.toList()
+        get() = factionCacheLock.read { factionsById.values.toList() }
 
     private val _fields: MutableList<MfFactionField> = CopyOnWriteArrayList()
     val fields: List<MfFactionField>
@@ -61,8 +93,10 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
     init {
         plugin.logger.info("Loading factions...")
         var startTime = System.currentTimeMillis()
-        factionsById.putAll(repository.getFactions().associateBy(MfFaction::id))
-        plugin.logger.info("${factionsById.size} factions loaded (${System.currentTimeMillis() - startTime}ms)")
+        factionCacheLock.write {
+            factionsById.putAll(repository.getFactions().associateBy(MfFaction::id))
+        }
+        plugin.logger.info("${factions.size} factions loaded (${System.currentTimeMillis() - startTime}ms)")
         if (!plugin.config.getBoolean("factions.allowNeutrality")) {
             plugin.logger.info("Disabling neutrality for existing factions due to config setting...")
             startTime = System.currentTimeMillis()
@@ -70,7 +104,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                 save(faction.copy(flags = faction.flags + (plugin.flags.isNeutral to false))).onFailure { throw it.reason.cause }
             }.associateBy(MfFaction::id)
             if (updatedFactions.isNotEmpty()) {
-                factionsById.putAll(updatedFactions)
+                factionCacheLock.write { factionsById.putAll(updatedFactions) }
                 plugin.logger.info("Updated neutrality setting for ${updatedFactions.size} factions (${System.currentTimeMillis() - startTime}ms)")
             } else {
                 plugin.logger.info("No factions required updating.")
@@ -86,138 +120,385 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
     }
 
     @JvmName("getFactionByFactionId")
-    fun getFaction(factionId: MfFactionId): MfFaction? = factionsById[factionId]
+    fun getFaction(factionId: MfFactionId): MfFaction? = factionCacheLock.read { factionsById[factionId] }
 
     fun save(faction: MfFaction): Result4k<MfFaction, ServiceFailure> = resultFrom {
-        val previousState = getFaction(faction.id)
-        var factionToSave = faction
-        // A ruler may name the head of one of their vassals as heir, and a player belongs to exactly
-        // one faction, so that heir has to leave their own to take this one. Resolved before the
-        // events below so the heir's arrival is announced like any other, and before the succession
-        // rule below so it needs no special case: by then the heir is simply a member.
-        if (previousState != null) {
-            factionToSave = withVassalHeirAscended(factionToSave)
+        val plan = mutableListOf<SaveMutation>()
+        val lifecycle = SaveLifecycle()
+        var committed = false
+        try {
+            prepareSave(faction, emptySet(), plan, lifecycle)
+            val persisted = commit(plan)
+            committed = true
+            publishCommitted(plan, persisted)
+            return@resultFrom requireNotNull(persisted[faction.id])
+        } catch (throwable: Throwable) {
+            if (!committed) {
+                if (throwable is RepositoryCommitUncertain) {
+                    // Keep the MF-owned preparation fence for the remainder of this process. The
+                    // repository may have committed and then lost its acknowledgement, while this
+                    // service cache still shows the old owner. Releasing now would let the add-on
+                    // misclassify PREPARED as aborted. A restart clears the in-memory fence only
+                    // after MF reloads authoritative database state; an explicit later retry may
+                    // also commit an identical marker.
+                } else {
+                    abortPrepared(plan)
+                }
+            }
+            throw throwable
+        } finally {
+            releaseSaveLifecycle(lifecycle)
         }
-        if (previousState == null) {
-            val event = FactionCreateEvent(faction.id, faction, !plugin.server.isPrimaryThread)
-            plugin.server.pluginManager.callEvent(event)
-            if (event.isCancelled) {
-                throw EventCancelledException("Event cancelled")
-            }
-            factionToSave = event.faction
-        } else {
-            if (previousState.name != faction.name) {
-                val event = FactionRenameEvent(faction.id, faction.name, !plugin.server.isPrimaryThread)
-                plugin.server.pluginManager.callEvent(event)
-                if (event.isCancelled) {
-                    throw EventCancelledException("Event cancelled")
-                }
-            }
-            if (previousState.description != faction.description) {
-                val event = FactionDescriptionChangeEvent(faction.id, faction.description, !plugin.server.isPrimaryThread)
-                plugin.server.pluginManager.callEvent(event)
-                if (event.isCancelled) {
-                    throw EventCancelledException("Event cancelled")
-                }
-            }
-            if (previousState.prefix != faction.prefix) {
-                val event = FactionPrefixChangeEvent(faction.id, faction.prefix, !plugin.server.isPrimaryThread)
-                plugin.server.pluginManager.callEvent(event)
-                if (event.isCancelled) {
-                    throw EventCancelledException("Event cancelled")
-                }
-            }
-            val newMembers = faction.members.map(MfFactionMember::playerId) - previousState.members.map(MfFactionMember::playerId)
-            newMembers.forEach { newMember ->
-                val event = FactionJoinEvent(faction.id, newMember, !plugin.server.isPrimaryThread)
-                plugin.server.pluginManager.callEvent(event)
-                if (event.isCancelled) {
-                    throw EventCancelledException("Event cancelled")
-                }
-            }
-            val oldMembers = previousState.members.map(MfFactionMember::playerId) - faction.members.map(MfFactionMember::playerId)
-            oldMembers.forEach { oldMember ->
-                val event = FactionLeaveEvent(faction.id, oldMember, !plugin.server.isPrimaryThread)
-                plugin.server.pluginManager.callEvent(event)
-                if (event.isCancelled) {
-                    throw EventCancelledException("Event cancelled")
-                }
-                val lockService = plugin.services.lockService
-                lockService.getLockedBlocks(oldMember).forEach { lockedBlock ->
-                    lockService.delete(lockedBlock.block)
-                        .onFailure { failure -> throw failure.reason.cause }
-                }
-            }
-        }
-        // Every member-list change in MF funnels through here, so this is the one place that has to
-        // notice a departed head of House and hand the faction on. See
-        // MfFaction.withPrimaryOwnerSuccession.
-        val successor = factionToSave.withPrimaryOwnerSuccession()
-        // Stamp when the head came to the seat, here rather than at the five call sites that can move
-        // one (/f create, /f transfer, /f admin setleader, succession, and the API's
-        // setPrimaryOwner). One comparison in the write path cannot be forgotten by a sixth route
-        // added later; five scattered assignments can, and the failure would be silent -- a head
-        // whose recorded tenure dated from whenever the PREVIOUS one took over, which reads as a
-        // long-standing ruler and clears every gate that asks how long they have held it.
-        //
-        // AFTER withPrimaryOwnerSuccession and after the events, and both matter. Succession moves
-        // the head at this line, so a stamp taken earlier would miss the single most important case;
-        // and FactionCreateEvent assigns event.faction back over factionToSave, so anything set
-        // before it is discarded on the create path.
-        //
-        // Only when it actually changes. An ordinary save that leaves the head alone must not push
-        // the date forward, or every /f desc would reset the tenure of whoever is sitting there.
-        //
-        // EXCEPT for a faction that predates MF recording heads at all. V9 leaves every existing
-        // row's primary_owner_id null on purpose and V10 defaults primary_owner_since to 0, on the
-        // stated reasoning that "zero reads as held since the epoch, so every existing head clears
-        // every tenure gate immediately" -- the alternative being to freeze the whole server out of
-        // those gates for a week. But that protection could never apply: the first time an operator
-        // seated a head with /f admin setleader, null != <newOwner> was true and the stamp landed on
-        // "now", which is precisely the outcome the migration says it exists to avoid.
-        //
-        // A brand-new faction has no previousState. A pre-existing one has a previousState with no
-        // recorded owner and a zero date, and only that combination is left at zero. A faction that
-        // went headless later under allowLeaderlessFactions was stamped when it emptied, so its date
-        // is non-zero and it is still treated as taking a new head.
-        val firstHeadOfAPreV9Faction = previousState != null &&
-            previousState.primaryOwnerId == null &&
-            previousState.primaryOwnerSince == 0L
-        val stamped = if (successor.primaryOwnerId != previousState?.primaryOwnerId && !firstHeadOfAPreV9Faction) {
-            successor.copy(primaryOwnerSince = System.currentTimeMillis())
-        } else {
-            successor
-        }
-        val result = repository.upsert(stamped)
-        factionsById[result.id] = result
-        // Announced here rather than bridged from an internal event, because there is no internal
-        // event to bridge and adding one would be misleading: MF's internal faction events are
-        // cancellable gates fired BEFORE the write, and by this line the head has already changed
-        // and cannot be vetoed. A consumer that wants to decide the outcome registers a
-        // SuccessionPolicy instead, which is consulted a few lines above.
-        //
-        // Fired for existing factions only. A new faction's head going from nobody to the founder is
-        // reported by FactionCreateEvent, and firing both would make every consumer disambiguate.
-        if (previousState != null && previousState.primaryOwnerId != result.primaryOwnerId) {
-            val event = FactionPrimaryOwnerChangedEvent(
-                FactionId(result.id.value),
-                previousState.primaryOwnerId?.toUuidOrNull(),
-                result.primaryOwnerId?.toUuidOrNull()
-            )
-            fireOnMainThread(event)
-        }
-        val mapService = plugin.services.mapService
-        if (mapService != null && !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
-            plugin.server.scheduler.runTask(
-                plugin,
-                Runnable {
-                    mapService.scheduleUpdateClaims(result)
-                }
-            )
-        }
-        return@resultFrom result
     }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+    }
+
+    private data class SaveMutation(
+        val previous: MfFaction?,
+        val proposed: MfFaction,
+        val removedMembers: List<MfPlayerId>,
+        val preparedSuccession: SuccessionPolicyRegistry.PreparedDecision?
+    )
+
+    private class SaveLifecycle {
+        val factionIds = linkedSetOf<MfFactionId>()
+    }
+
+    /**
+     * Build a whole succession cascade without publishing any faction state.
+     *
+     * A vassal heir is planned recursively, deepest faction first. If that vassal cannot spare its
+     * head, its provisional policy tokens are aborted and the parent simply ignores the nomination,
+     * preserving the old best-effort contract. A path set turns malformed vassalage rings into that
+     * same harmless fallback.
+     */
+    private fun prepareSave(
+        requested: MfFaction,
+        path: Set<MfFactionId>,
+        plan: MutableList<SaveMutation>,
+        lifecycle: SaveLifecycle
+    ) {
+        // Reserve before reading the snapshot or invoking any precommit policy/event. Deletion may
+        // mark this faction as deleting while the save runs, but must then wait until every callback
+        // produced by this save has finished. Recursive vassal mutations receive the same boundary.
+        reserveSaveLifecycle(lifecycle, requested.id)
+        val previous = requireFreshSnapshot(requested)
+        var factionToSave = requested
+        val nextPath = path + requested.id
+
+        if (previous != null) {
+            val vassalId = factionToSave.vassalHeirAscensionDue
+            val heirId = factionToSave.heirId
+            if (vassalId != null && heirId != null && vassalId !in nextPath) {
+                val vassal = getFaction(vassalId)
+                if (vassal != null) {
+                    val checkpoint = plan.size
+                    try {
+                        prepareSave(
+                            vassal.copy(members = vassal.members.filter { it.playerId != heirId }),
+                            nextPath,
+                            plan,
+                            lifecycle
+                        )
+                        factionToSave = factionToSave.withVassalHeirAdmitted()
+                    } catch (failure: Exception) {
+                        abortPrepared(plan.subList(checkpoint, plan.size).toList())
+                        while (plan.size > checkpoint) plan.removeAt(plan.lastIndex)
+                        plugin.logger.warning(
+                            "Faction ${requested.id.value} could not take its heir from vassal " +
+                                "${vassalId.value}, so the nomination was passed over: " +
+                                (failure.message ?: failure.javaClass.simpleName)
+                        )
+                    }
+                }
+            }
+        }
+
+        factionToSave = fireSaveGates(previous, factionToSave)
+        val removed = previous?.members?.map(MfFactionMember::playerId).orEmpty() -
+            factionToSave.members.map(MfFactionMember::playerId)
+
+        val departing = factionToSave.primaryOwnerId
+            ?.takeIf { factionToSave.primaryOwnerHasDeparted }
+            ?.toUuidOrNull()
+        val view = FactionViewAdapter(plugin, factionToSave)
+        val decision = departing?.let { successionPolicies.decisionFor(view, it) }
+        var prepared: SuccessionPolicyRegistry.PreparedDecision? = null
+        try {
+            val successor = factionToSave.withPrimaryOwnerSuccession(
+                decision?.successor?.let { MfPlayerId(it.toString()) }
+            )
+            val firstHeadOfAPreV9Faction = previous != null &&
+                previous.primaryOwnerId == null && previous.primaryOwnerSince == 0L
+            val stamped = if (successor.primaryOwnerId != previous?.primaryOwnerId) {
+                successor.copy(
+                    primaryOwnerSince = if (firstHeadOfAPreV9Faction) 0L
+                    else System.currentTimeMillis(),
+                    primaryOwnerTerm = UUID.randomUUID()
+                )
+            } else {
+                successor
+            }
+            if (decision != null && departing != null) {
+                prepared = successionPolicies.prepare(
+                    decision, view, departing, stamped.primaryOwnerTerm
+                ) ?: throw IllegalStateException(
+                    "Succession policy could not durably prepare faction ${requested.id.value}"
+                )
+            }
+            plan += SaveMutation(previous, stamped, removed, prepared)
+        } catch (failure: Throwable) {
+            if (prepared != null) successionPolicies.aborted(prepared)
+            throw failure
+        }
+    }
+
+    private fun requireFreshSnapshot(requested: MfFaction): MfFaction? {
+        val previous = getFaction(requested.id)
+        if (previous == null && requested.version != 0) {
+            throw OptimisticLockingFailureException(
+                "Faction ${requested.id.value} no longer exists; version ${requested.version} cannot create it"
+            )
+        }
+        if (previous != null && (requested.version != previous.version ||
+                requested.primaryOwnerTerm != previous.primaryOwnerTerm)) {
+            throw OptimisticLockingFailureException(
+                "Stale faction snapshot ${requested.id.value}: version ${requested.version}, owner " +
+                    "term ${requested.primaryOwnerTerm}; current version ${previous.version}, " +
+                    "owner term ${previous.primaryOwnerTerm}"
+            )
+        }
+        return previous
+    }
+
+    private fun reserveSaveLifecycle(lifecycle: SaveLifecycle, factionId: MfFactionId) {
+        if (factionId in lifecycle.factionIds) return
+        commitLock(factionId).withLock {
+            require(factionId !in deletingFactions) {
+                "Faction ${factionId.value} is being deleted"
+            }
+            if (!lifecycle.factionIds.add(factionId)) return@withLock
+            activeSaveLifecycles.merge(factionId, 1, Int::plus)
+            saveLifecycleDepth.set(saveLifecycleDepth.get() + 1)
+        }
+    }
+
+    private fun releaseSaveLifecycle(lifecycle: SaveLifecycle) {
+        lifecycle.factionIds.sortedBy(MfFactionId::value).forEach { factionId ->
+            commitLock(factionId).withLock {
+                val remaining = requireNotNull(activeSaveLifecycles[factionId]) - 1
+                check(remaining >= 0) { "Faction ${factionId.value} save lifecycle underflow" }
+                if (remaining == 0) activeSaveLifecycles.remove(factionId)
+                else activeSaveLifecycles[factionId] = remaining
+
+                val threadDepth = saveLifecycleDepth.get() - 1
+                check(threadDepth >= 0) { "Save lifecycle thread depth underflow" }
+                if (threadDepth == 0) saveLifecycleDepth.remove()
+                else saveLifecycleDepth.set(threadDepth)
+                lifecycleIdle(factionId).signalAll()
+            }
+        }
+        lifecycle.factionIds.clear()
+    }
+
+    /**
+     * Claim exclusive deletion only after all previously-started save preparations and their
+     * postcommit callbacks finish. The condition releases the commit lock while waiting; callbacks
+     * therefore run without a lock inversion into third-party code.
+     */
+    private fun beginFactionDeletion(factionId: MfFactionId) {
+        check(saveLifecycleDepth.get() == 0) {
+            "Cannot delete a faction synchronously from inside faction-save publication"
+        }
+        check(!ChildMutationCallbackGuard.isActive()) {
+            "Cannot delete a faction synchronously from a child-service mutation callback; " +
+                "schedule deletion after the event returns"
+        }
+        commitLock(factionId).withLock {
+            check(deletingFactions.add(factionId)) {
+                "Faction ${factionId.value} is already being deleted"
+            }
+            try {
+                while ((activeSaveLifecycles[factionId] ?: 0) > 0) {
+                    lifecycleIdle(factionId).await()
+                }
+            } catch (failure: Throwable) {
+                deletingFactions.remove(factionId)
+                lifecycleIdle(factionId).signalAll()
+                throw failure
+            }
+        }
+    }
+
+    private fun endFactionDeletion(factionId: MfFactionId) {
+        commitLock(factionId).withLock {
+            deletingFactions.remove(factionId)
+            lifecycleIdle(factionId).signalAll()
+        }
+    }
+
+    /** Fire cancellable precommit gates only; irreversible cleanup happens after the batch commits. */
+    private fun fireSaveGates(previous: MfFaction?, requested: MfFaction): MfFaction {
+        if (previous == null) {
+            val event = FactionCreateEvent(requested.id, requested, !plugin.server.isPrimaryThread)
+            plugin.server.pluginManager.callEvent(event)
+            if (event.isCancelled) throw EventCancelledException("Event cancelled")
+            return event.faction
+        }
+        if (previous.name != requested.name) {
+            val event = FactionRenameEvent(requested.id, requested.name, !plugin.server.isPrimaryThread)
+            plugin.server.pluginManager.callEvent(event)
+            if (event.isCancelled) throw EventCancelledException("Event cancelled")
+        }
+        if (previous.description != requested.description) {
+            val event = FactionDescriptionChangeEvent(
+                requested.id, requested.description, !plugin.server.isPrimaryThread
+            )
+            plugin.server.pluginManager.callEvent(event)
+            if (event.isCancelled) throw EventCancelledException("Event cancelled")
+        }
+        if (previous.prefix != requested.prefix) {
+            val event = FactionPrefixChangeEvent(
+                requested.id, requested.prefix, !plugin.server.isPrimaryThread
+            )
+            plugin.server.pluginManager.callEvent(event)
+            if (event.isCancelled) throw EventCancelledException("Event cancelled")
+        }
+        val added = requested.members.map(MfFactionMember::playerId) -
+            previous.members.map(MfFactionMember::playerId)
+        for (member in added) {
+            val event = FactionJoinEvent(requested.id, member, !plugin.server.isPrimaryThread)
+            plugin.server.pluginManager.callEvent(event)
+            if (event.isCancelled) throw EventCancelledException("Event cancelled")
+        }
+        val removed = previous.members.map(MfFactionMember::playerId) -
+            requested.members.map(MfFactionMember::playerId)
+        for (member in removed) {
+            val event = FactionLeaveEvent(requested.id, member, !plugin.server.isPrimaryThread)
+            plugin.server.pluginManager.callEvent(event)
+            if (event.isCancelled) throw EventCancelledException("Event cancelled")
+        }
+        return requested
+    }
+
+    /** Version-check and persist every planned faction under one ordered lock/DB transaction. */
+    private fun commit(plan: List<SaveMutation>): Map<MfFactionId, MfFaction> {
+        val ids = plan.map { it.proposed.id }.distinct().sortedBy(MfFactionId::value)
+        return withCommitLocks(ids) {
+            validatePlan(plan)
+            val departedLockOwners = plan.flatMap(SaveMutation::removedMembers).toSet()
+            plugin.services.lockService.withMutationLock {
+                val persisted = try {
+                    repository.upsertAll(plan.map(SaveMutation::proposed), departedLockOwners)
+                } catch (conflict: OptimisticLockingFailureException) {
+                    throw conflict
+                } catch (failure: Throwable) {
+                    throw RepositoryCommitUncertain(failure)
+                }
+                check(persisted.size == plan.size) {
+                    "Faction repository returned a partial batch"
+                }
+                factionCacheLock.write {
+                    persisted.forEach { faction -> factionsById[faction.id] = faction }
+                }
+                // The same lock excludes a delayed lock save/new lock until both authoritative
+                // member state and the lock cache mirror the transaction.
+                plugin.services.lockService.unloadLockedBlocks(departedLockOwners)
+                persisted.associateBy(MfFaction::id)
+            }
+        }
+    }
+
+    private fun validatePlan(plan: List<SaveMutation>) {
+        for (mutation in plan) {
+            val id = mutation.proposed.id
+            val live = getFaction(id)
+            val previous = mutation.previous
+            if (previous == null) {
+                if (mutation.proposed.version != 0) {
+                    throw OptimisticLockingFailureException(
+                        "Faction ${id.value} no longer exists; version " +
+                            "${mutation.proposed.version} cannot create it"
+                    )
+                }
+                if (live != null) {
+                    throw OptimisticLockingFailureException(
+                        "Faction ${id.value} was created concurrently"
+                    )
+                }
+            } else if (live == null || live.version != previous.version ||
+                live.primaryOwnerTerm != previous.primaryOwnerTerm) {
+                throw OptimisticLockingFailureException(
+                    "Faction ${id.value} changed before its write could commit"
+                )
+            }
+        }
+    }
+
+    private fun <T> withCommitLocks(
+        ids: List<MfFactionId>,
+        index: Int = 0,
+        action: () -> T
+    ): T {
+        if (index == ids.size) return action()
+        return commitLock(ids[index]).withLock { withCommitLocks(ids, index + 1, action) }
+    }
+
+    /** Publish only facts known to have committed; every notification failure is contained. */
+    private fun publishCommitted(
+        plan: List<SaveMutation>,
+        persisted: Map<MfFactionId, MfFaction>
+    ) {
+        for (mutation in plan) {
+            val result = requireNotNull(persisted[mutation.proposed.id])
+            mutation.preparedSuccession?.let {
+                successionPolicies.committed(it, FactionViewAdapter(plugin, result))
+            }
+            publishMemberDepartures(result.id, mutation.removedMembers)
+            val previous = mutation.previous
+            if (previous != null && previous.primaryOwnerId != result.primaryOwnerId) {
+                fireOnMainThread(
+                    FactionPrimaryOwnerChangedEvent(
+                        FactionId(result.id.value),
+                        previous.primaryOwnerId?.toUuidOrNull(),
+                        result.primaryOwnerId?.toUuidOrNull()
+                    )
+                )
+            }
+            val mapService = plugin.services.mapService
+            if (mapService != null &&
+                !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
+                runCatching {
+                    plugin.server.scheduler.runTask(
+                        plugin,
+                        Runnable { mapService.scheduleUpdateClaims(result) }
+                    )
+                }.onFailure { failure ->
+                    plugin.logger.log(
+                        java.util.logging.Level.WARNING,
+                        "Could not schedule the map refresh for committed faction ${result.id.value}.",
+                        failure
+                    )
+                }
+            }
+        }
+    }
+
+    private fun publishMemberDepartures(factionId: MfFactionId, removed: List<MfPlayerId>) {
+        for (member in removed) {
+            member.toUuidOrNull()?.let { playerId ->
+                fireOnMainThread(FactionMemberLeftEvent(FactionId(factionId.value), playerId))
+            }
+        }
+    }
+
+    private class RepositoryCommitUncertain(cause: Throwable) :
+        RuntimeException("Faction repository commit outcome is uncertain", cause)
+
+    private fun abortPrepared(plan: List<SaveMutation>) {
+        plan.asReversed().forEach { mutation ->
+            mutation.preparedSuccession?.let(successionPolicies::aborted)
+        }
     }
 
     /**
@@ -249,69 +530,220 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
     }
 
     /**
-     * Factions part-way through handing themselves to a vassal's head, so a cascade cannot re-enter
-     * one and recurse forever.
+     * Admit an exact source roster to [destinationId] and dissolve [sourceId] in one transaction.
      *
-     * Each step of a cascade moves strictly down the vassal chain, because the heir must lead a
-     * faction sworn to the one being inherited, so a loop needs an actual ring in the liege
-     * relationships. Those are two rows apiece and nothing in the schema forbids a ring, and a
-     * succession that overflowed the stack would do so having already written to other factions. The
-     * guard costs one set insertion and turns that into a nomination that simply does not apply.
+     * This is intentionally narrower than a general member move. The source roster is a compare-and-
+     *-set token: if anybody joined or left after the caller took its snapshot, nothing changes. That
+     * is what lets a durable settlement retry safely without dissolving a realm around a member who
+     * was part of the frozen outcome but is no longer present.
      */
-    private val ascendingHeirs: MutableSet<MfFactionId> = ConcurrentHashMap.newKeySet()
+    fun transferAllMembers(
+        sourceId: MfFactionId,
+        destinationId: MfFactionId,
+        expectedSourceMembers: Collection<MfPlayerId>
+    ): Result4k<Unit, ServiceFailure> = resultFrom {
+        require(sourceId != destinationId) { "Source and destination are the same faction" }
+        val expectedRoster = expectedSourceMembers.toSet()
+        require(expectedRoster.isNotEmpty()) { "The expected source roster is empty" }
 
-    /**
-     * The given faction with its nominated vassal's head released from their own faction and admitted
-     * to this one, or the faction untouched if no such succession is due or it cannot be carried out.
-     *
-     * Releasing the heir is an ordinary save of the faction they are leaving, which is the point: it
-     * fires that faction's own succession, which may in turn be a nomination of ITS vassal's head, and
-     * so a single departure cascades down the chain. Nothing here special-cases the cascade; it falls
-     * out of the rule applying at every level.
-     *
-     * Best effort by design. If the vassal cannot spare its head - it would be emptied and the server
-     * forbids leaderless factions, say - the nomination is treated exactly as a stale one and the
-     * ordinary succession order applies, rather than the greater faction's save failing and a player
-     * being unable to leave.
-     */
-    private fun withVassalHeirAscended(faction: MfFaction): MfFaction {
-        val vassalFactionId = faction.vassalHeirAscensionDue ?: return faction
-        val heirId = faction.heirId ?: return faction
-        if (!ascendingHeirs.add(faction.id)) return faction
+        beginFactionDeletion(sourceId)
+        val lifecycle = SaveLifecycle()
+        val plan = mutableListOf<SaveMutation>()
+        var committed = false
+        var claimsBlocked = false
+        var gatesBlocked = false
+        var relationshipsBlocked = false
         try {
-            val vassalFaction = getFaction(vassalFactionId) ?: return faction
-            save(vassalFaction.copy(members = vassalFaction.members.filter { it.playerId != heirId }))
-                .onFailure {
-                    plugin.logger.warning(
-                        "Faction ${faction.id.value} could not take its heir from vassal ${vassalFactionId.value}, " +
-                            "so the nomination was passed over: ${it.reason.message}"
-                    )
-                    return faction
-                }
-            return faction.withVassalHeirAdmitted()
+            // Reserve the destination before its first snapshot/policy/event. New destination saves
+            // may still race and are arbitrated by its version, but a delete must wait through this
+            // operation's cache publication and callbacks.
+            reserveSaveLifecycle(lifecycle, destinationId)
+            val source = requireNotNull(getFaction(sourceId)) {
+                "No faction with id ${sourceId.value}"
+            }
+            val sourceRoster = source.members.map(MfFactionMember::playerId)
+            require(sourceRoster.size == expectedRoster.size && sourceRoster.toSet() == expectedRoster) {
+                "Faction ${sourceId.value} membership changed before the transfer"
+            }
+            val destination = requireNotNull(getFaction(destinationId)) {
+                "No faction with id ${destinationId.value}"
+            }
+
+            val disband = FactionDisbandEvent(sourceId, !plugin.server.isPrimaryThread)
+            plugin.server.pluginManager.callEvent(disband)
+            if (disband.isCancelled) throw EventCancelledException("Event cancelled")
+
+            // A legacy partial attempt may already have admitted one of these exact members. Keep
+            // the existing row and add only the missing ids; the atomic delete below repairs the
+            // duplicated cross-faction state without creating duplicate in-memory members.
+            val destinationMemberIds = destination.members.map(MfFactionMember::playerId).toMutableSet()
+            val arrivals = source.members
+                .filter { destinationMemberIds.add(it.playerId) }
+                .map { MfFactionMember(it.playerId, destination.roles.default) }
+            prepareSave(
+                destination.copy(members = destination.members + arrivals),
+                emptySet(),
+                plan,
+                lifecycle
+            )
+
+            val claimService = plugin.services.claimService
+            val gateService = plugin.services.gateService
+            val relationshipService = plugin.services.factionRelationshipService
+            // The same source-side fences as ordinary disband: they wait out a prior child write and
+            // prevent a new one from slipping between the parent-row cascade and cache eviction.
+            claimService.blockFactionDeletion(sourceId)
+            claimsBlocked = true
+            gateService.blockFactionDeletion(sourceId)
+            gatesBlocked = true
+            relationshipService.blockFactionDeletion(sourceId)
+            relationshipsBlocked = true
+
+            val persisted = commitAndDelete(plan, source)
+            committed = true
+
+            claimService.evictAllClaims(sourceId)
+            gateService.evictAllGates(sourceId)
+            relationshipService.evictForDeletedFaction(sourceId)
+            publishCommitted(plan, persisted)
+            plugin.server.pluginManager.callEvent(
+                FactionDeletedEvent(sourceId, !plugin.server.isPrimaryThread)
+            )
+            val mapService = plugin.services.mapService
+            if (mapService != null &&
+                !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
+                plugin.server.scheduler.runTask(
+                    plugin,
+                    Runnable { mapService.scheduleUpdateClaims(source) }
+                )
+            }
+            return@resultFrom Unit
+        } catch (throwable: Throwable) {
+            if (!committed && throwable !is RepositoryCommitUncertain) {
+                abortPrepared(plan)
+            }
+            throw throwable
         } finally {
-            ascendingHeirs.remove(faction.id)
+            if (relationshipsBlocked) {
+                plugin.services.factionRelationshipService.unblockFactionDeletion(sourceId)
+            }
+            if (gatesBlocked) plugin.services.gateService.unblockFactionDeletion(sourceId)
+            if (claimsBlocked) plugin.services.claimService.unblockFactionDeletion(sourceId)
+            releaseSaveLifecycle(lifecycle)
+            endFactionDeletion(sourceId)
+        }
+    }.mapFailure { exception ->
+        ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+    }
+
+    private fun commitAndDelete(
+        plan: List<SaveMutation>,
+        deletedFaction: MfFaction
+    ): Map<MfFactionId, MfFaction> {
+        require(plan.none { it.proposed.id == deletedFaction.id }) {
+            "A faction cannot be saved and deleted in the same mutation"
+        }
+        val ids = (plan.map { it.proposed.id } + deletedFaction.id)
+            .distinct()
+            .sortedBy(MfFactionId::value)
+        return withCommitLocks(ids) {
+            validatePlan(plan)
+            val liveDeleted = getFaction(deletedFaction.id)
+            if (liveDeleted == null || liveDeleted.version != deletedFaction.version ||
+                liveDeleted.primaryOwnerTerm != deletedFaction.primaryOwnerTerm) {
+                throw OptimisticLockingFailureException(
+                    "Faction ${deletedFaction.id.value} changed before it could be deleted"
+                )
+            }
+            val departedLockOwners = plan.flatMap(SaveMutation::removedMembers).toSet()
+            plugin.services.lockService.withMutationLock {
+                val persisted = try {
+                    repository.upsertAllAndDelete(
+                        plan.map(SaveMutation::proposed),
+                        listOf(deletedFaction),
+                        departedLockOwners
+                    )
+                } catch (conflict: OptimisticLockingFailureException) {
+                    throw conflict
+                } catch (failure: Throwable) {
+                    throw RepositoryCommitUncertain(failure)
+                }
+                check(persisted.size == plan.size) {
+                    "Faction repository returned a partial batch"
+                }
+                factionCacheLock.write {
+                    persisted.forEach { faction -> factionsById[faction.id] = faction }
+                    // Test hook lives inside the write boundary so a deterministic reader can prove
+                    // it cannot observe admitted members before their source disappears.
+                    cachePublicationHook()
+                    factionsById.remove(deletedFaction.id)
+                }
+                plugin.services.lockService.unloadLockedBlocks(departedLockOwners)
+                persisted.associateBy(MfFaction::id)
+            }
         }
     }
 
     @JvmName("deleteFactionByFactionId")
     fun delete(factionId: MfFactionId): Result4k<Unit, ServiceFailure> = resultFrom {
-        val event = FactionDisbandEvent(factionId, !plugin.server.isPrimaryThread)
-        plugin.server.pluginManager.callEvent(event)
-        if (event.isCancelled) {
-            throw EventCancelledException("Event cancelled")
+        beginFactionDeletion(factionId)
+        try {
+            val faction = requireNotNull(getFaction(factionId)) {
+                "No faction with id ${factionId.value}"
+            }
+            val event = FactionDisbandEvent(factionId, !plugin.server.isPrimaryThread)
+            plugin.server.pluginManager.callEvent(event)
+            if (event.isCancelled) {
+                throw EventCancelledException("Event cancelled")
+            }
+
+            val claimService = plugin.services.claimService
+            val gateService = plugin.services.gateService
+            val relationshipService = plugin.services.factionRelationshipService
+            var claimsBlocked = false
+            var gatesBlocked = false
+            var relationshipsBlocked = false
+            try {
+                // Each fence waits for an already-running repository+cache mutation, then rejects
+                // new writes involving this faction. No service lock is held while the next fence
+                // is obtained, avoiding a cross-service lock-order cycle through plugin events.
+                claimService.blockFactionDeletion(factionId)
+                claimsBlocked = true
+                gateService.blockFactionDeletion(factionId)
+                gatesBlocked = true
+                relationshipService.blockFactionDeletion(factionId)
+                relationshipsBlocked = true
+
+                // Delete the parent row FIRST. Claims, their locked blocks, gates and relationships
+                // all have ON DELETE CASCADE migrations, so the database commits the entire removal
+                // as one statement. The old order irreversibly deleted children before this final
+                // statement; a repository failure left a live faction stripped of every asset.
+                commitLock(factionId).withLock {
+                    repository.delete(factionId)
+                    factionCacheLock.write { factionsById.remove(factionId) }
+                }
+
+                // Only after that statement commits do the service caches mirror its cascades. A
+                // failed parent delete therefore leaves database and live indexes untouched.
+                claimService.evictAllClaims(factionId)
+                gateService.evictAllGates(factionId)
+                relationshipService.evictForDeletedFaction(factionId)
+                plugin.server.pluginManager.callEvent(
+                    FactionDeletedEvent(factionId, !plugin.server.isPrimaryThread)
+                )
+                val mapService = plugin.services.mapService
+                if (mapService != null && !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
+                    plugin.server.scheduler.runTask(plugin, Runnable { mapService.scheduleUpdateClaims(faction) })
+                }
+                return@resultFrom Unit
+            } finally {
+                if (relationshipsBlocked) relationshipService.unblockFactionDeletion(factionId)
+                if (gatesBlocked) gateService.unblockFactionDeletion(factionId)
+                if (claimsBlocked) claimService.unblockFactionDeletion(factionId)
+            }
+        } finally {
+            endFactionDeletion(factionId)
         }
-        val claimService = plugin.services.claimService
-        claimService.deleteAllClaims(factionId).onFailure {
-            throw it.reason.cause
-        }
-        val gateService = plugin.services.gateService
-        gateService.deleteAllGates(factionId).onFailure {
-            throw it.reason.cause
-        }
-        val result = repository.delete(factionId)
-        factionsById.remove(factionId)
-        return@resultFrom result
     }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
     }

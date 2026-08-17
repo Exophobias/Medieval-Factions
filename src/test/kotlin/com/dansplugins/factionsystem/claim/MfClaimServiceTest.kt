@@ -4,12 +4,14 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.event.ClaimOwnerChangedEvent
 import com.dansplugins.factionsystem.api.event.FactionClaimAttemptEvent
+import com.dansplugins.factionsystem.api.event.FactionUnclaimedChunkEvent
 import com.dansplugins.factionsystem.event.faction.FactionClaimEvent
 import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
 import com.dansplugins.factionsystem.failure.ServiceFailure
+import com.dansplugins.factionsystem.locks.MfLockRepository
 import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.service.Services
 import dev.forkhandles.result4k.Failure
@@ -29,8 +31,15 @@ import org.junit.jupiter.api.TestInstance
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.spy
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.logging.Logger
 
 /**
@@ -46,6 +55,7 @@ class MfClaimServiceTest {
 
     private lateinit var plugin: MedievalFactions
     private lateinit var factionService: MfFactionService
+    private lateinit var lockService: MfLockService
     private lateinit var world: UUID
 
     /** Every event handed to the plugin manager, internal and API alike, in the order fired. */
@@ -102,7 +112,8 @@ class MfClaimServiceTest {
         factionService = mock(MfFactionService::class.java)
         `when`(services.factionService).thenReturn(factionService)
         `when`(services.mapService).thenReturn(null)
-        `when`(services.lockService).thenReturn(mock(MfLockService::class.java))
+        lockService = spy(MfLockService(plugin, mock(MfLockRepository::class.java)))
+        `when`(services.lockService).thenReturn(lockService)
 
         // save()/delete() require the claim's faction to resolve to a non-null faction.
         val faction = mock(MfFaction::class.java)
@@ -147,7 +158,8 @@ class MfClaimServiceTest {
 
     @Test
     fun overclaimReassignsChunkBetweenFactions() {
-        val service = serviceWith(claim(0, 0, factionA))
+        val previous = claim(0, 0, factionA)
+        val service = serviceWith(previous)
         // Same chunk, different faction (an at-war overclaim).
         service.save(claim(0, 0, factionB))
 
@@ -156,6 +168,81 @@ class MfClaimServiceTest {
         assertEquals(1, service.getClaimCount(factionB))
         assertEquals(setOf(claim(0, 0, factionB)), service.getClaims(factionB).toSet())
         assertEquals(factionB, service.getClaim(world, 0, 0)?.factionId)
+        verify(lockService).unloadLockedBlocks(previous)
+    }
+
+    @Test
+    fun compareTransferRefusesLandThatChangedHandsAfterTheSnapshot() {
+        val position = claim(0, 0, factionA)
+        val service = serviceWith(position)
+        service.save(position.copy(factionId = factionB))
+
+        val result = service.transferOwnership(factionA, position)
+
+        assertTrue(result is Failure)
+        assertEquals(factionB, service.getClaim(world, 0, 0)?.factionId)
+    }
+
+    @Test
+    fun repositoryCommitAndCachePublicationCannotOvertakeEachOther() {
+        val repository = BlockingClaimRepository()
+        val service = MfClaimService(plugin, repository)
+        val first = claim(0, 0, factionA)
+        val second = claim(0, 0, factionB)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val firstWrite = executor.submit { service.save(first) }
+            assertTrue(repository.firstCommitted.await(5, TimeUnit.SECONDS))
+            val secondWrite = executor.submit { service.save(second) }
+
+            // The second repository write cannot begin while the first committed row has not yet
+            // been published to the service cache.
+            assertFalse(repository.secondEntered.await(200, TimeUnit.MILLISECONDS))
+            repository.releaseFirst.countDown()
+            assertTrue(firstWrite.get(5, TimeUnit.SECONDS) !is Failure<*>)
+            assertTrue(secondWrite.get(5, TimeUnit.SECONDS) !is Failure<*>)
+
+            assertEquals(factionB, repository.current()?.factionId)
+            assertEquals(factionB, service.getClaim(world, 0, 0)?.factionId)
+            assertEquals(0, service.getClaimCount(factionA))
+            assertEquals(1, service.getClaimCount(factionB))
+        } finally {
+            repository.releaseFirst.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun factionDeleteFenceWaitsForLateClaimPublicationThenEvictsIt() {
+        val repository = BlockingClaimRepository()
+        val service = MfClaimService(plugin, repository)
+        val doomed = claim(0, 0, factionA)
+        val executor = Executors.newFixedThreadPool(2)
+        var blocked = false
+        try {
+            val write = executor.submit { service.save(doomed) }
+            assertTrue(repository.firstCommitted.await(5, TimeUnit.SECONDS))
+            val fenceEntered = CountDownLatch(1)
+            val fence = executor.submit {
+                fenceEntered.countDown()
+                service.blockFactionDeletion(factionA)
+            }
+            assertTrue(fenceEntered.await(5, TimeUnit.SECONDS))
+            assertFalse(fence.isDone)
+
+            repository.releaseFirst.countDown()
+            assertTrue(write.get(5, TimeUnit.SECONDS) !is Failure<*>)
+            fence.get(5, TimeUnit.SECONDS)
+            blocked = true
+            service.evictAllClaims(factionA)
+
+            assertNull(service.getClaim(world, 0, 0))
+            assertEquals(0, service.getClaimCount(factionA))
+        } finally {
+            repository.releaseFirst.countDown()
+            if (blocked) service.unblockFactionDeletion(factionA)
+            executor.shutdownNow()
+        }
     }
 
     @Test
@@ -174,6 +261,19 @@ class MfClaimServiceTest {
     }
 
     @Test
+    fun staleOwnerCannotUnclaimLandThatChangedHands() {
+        val oldSnapshot = claim(0, 0, factionA)
+        val service = serviceWith(oldSnapshot)
+        service.transferOwnership(factionA, oldSnapshot.copy(factionId = factionB))
+
+        val result = service.delete(oldSnapshot)
+
+        assertTrue(result is Failure)
+        assertEquals(factionB, service.getClaim(world, 0, 0)?.factionId)
+        assertEquals(1, service.getClaimCount(factionB))
+    }
+
+    @Test
     fun deleteAllClaimsClearsOnlyThatFaction() {
         val service = serviceWith(claim(0, 0, factionA), claim(1, 0, factionA), claim(2, 0, factionB))
 
@@ -182,6 +282,19 @@ class MfClaimServiceTest {
         assertEquals(0, service.getClaimCount(factionA))
         assertFalse(service.hasClaims(factionA))
         assertEquals(1, service.getClaimCount(factionB))
+    }
+
+    @Test
+    fun deleteAllClaimsEvictsCascadedLocksFromMemory() {
+        val first = claim(0, 0, factionA)
+        val second = claim(1, 0, factionA)
+        val untouched = claim(2, 0, factionB)
+        val service = serviceWith(first, second, untouched)
+
+        service.deleteAllClaims(factionA)
+
+        verify(lockService).unloadLockedBlocks(listOf(first, second))
+        org.mockito.Mockito.verify(lockService, org.mockito.Mockito.never()).unloadLockedBlocks(untouched)
     }
 
     // --- ClaimOwnerChangedEvent ---
@@ -353,6 +466,26 @@ class MfClaimServiceTest {
         assertEquals(FactionId(factionA.value), change.previousOwner)
         assertNull(change.newOwner)
         assertFalse(change.isConquest)
+        val unclaimed = firedEvents.filterIsInstance<FactionUnclaimedChunkEvent>().single()
+        assertEquals(FactionId(factionA.value), unclaimed.faction)
+        assertEquals(world, unclaimed.worldId)
+        assertEquals(0, unclaimed.chunkX)
+        assertEquals(0, unclaimed.chunkZ)
+    }
+
+    @Test
+    fun failedUnclaimPublishesNoPastTenseStableEvent() {
+        val a00 = claim(0, 0, factionA)
+        val repository = FakeClaimRepository(listOf(a00)).also { it.failDelete = true }
+        val service = MfClaimService(plugin, repository)
+        firedEvents.clear()
+
+        val result = service.delete(a00)
+
+        assertTrue(result is Failure)
+        assertEquals(a00, service.getClaim(world, 0, 0))
+        assertTrue(ownerChanges().isEmpty())
+        assertTrue(firedEvents.none { it is FactionUnclaimedChunkEvent })
     }
 
     /**
@@ -369,6 +502,7 @@ class MfClaimServiceTest {
         service.deleteAllClaims(factionA)
 
         assertEquals(emptyList<ClaimOwnerChangedEvent>(), ownerChanges())
+        assertTrue(firedEvents.none { it is FactionUnclaimedChunkEvent })
     }
 
     /** One event per chunk, and each carries its own coordinates rather than the last one's. */
@@ -394,6 +528,7 @@ class MfClaimServiceTest {
 private class FakeClaimRepository(initial: List<MfClaimedChunk>) : MfClaimedChunkRepository {
 
     private val store = LinkedHashMap<Triple<UUID, Int, Int>, MfClaimedChunk>()
+    var failDelete = false
 
     init {
         initial.forEach { store[Triple(it.worldId, it.x, it.z)] = it }
@@ -409,10 +544,45 @@ private class FakeClaimRepository(initial: List<MfClaimedChunk>) : MfClaimedChun
     }
 
     override fun delete(worldId: UUID, x: Int, z: Int) {
+        if (failDelete) error("injected claim delete failure")
         store.remove(Triple(worldId, x, z))
     }
 
     override fun deleteAll(factionId: MfFactionId) {
         store.entries.removeIf { it.value.factionId == factionId }
     }
+}
+
+/** Pauses the first upsert after its durable write but before returning to the service. */
+private class BlockingClaimRepository : MfClaimedChunkRepository {
+    private val rows = ConcurrentHashMap<Triple<UUID, Int, Int>, MfClaimedChunk>()
+    val firstCommitted = CountDownLatch(1)
+    val releaseFirst = CountDownLatch(1)
+    val secondEntered = CountDownLatch(1)
+    private val writes = AtomicInteger()
+
+    override fun getClaim(worldId: UUID, x: Int, z: Int) = rows[Triple(worldId, x, z)]
+    override fun getClaims(factionId: MfFactionId) = rows.values.filter { it.factionId == factionId }
+    override fun getClaims() = rows.values.toList()
+
+    override fun upsert(claim: MfClaimedChunk): MfClaimedChunk {
+        val number = writes.incrementAndGet()
+        if (number == 2) secondEntered.countDown()
+        rows[Triple(claim.worldId, claim.x, claim.z)] = claim
+        if (number == 1) {
+            firstCommitted.countDown()
+            check(releaseFirst.await(5, TimeUnit.SECONDS))
+        }
+        return claim
+    }
+
+    override fun delete(worldId: UUID, x: Int, z: Int) {
+        rows.remove(Triple(worldId, x, z))
+    }
+
+    override fun deleteAll(factionId: MfFactionId) {
+        rows.entries.removeIf { it.value.factionId == factionId }
+    }
+
+    fun current(): MfClaimedChunk? = rows.values.singleOrNull()
 }

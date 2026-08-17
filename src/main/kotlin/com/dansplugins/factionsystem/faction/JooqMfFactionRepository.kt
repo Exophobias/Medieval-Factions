@@ -11,6 +11,7 @@ import com.dansplugins.factionsystem.jooq.Tables.MF_FACTION
 import com.dansplugins.factionsystem.jooq.Tables.MF_FACTION_APPLICATION
 import com.dansplugins.factionsystem.jooq.Tables.MF_FACTION_INVITE
 import com.dansplugins.factionsystem.jooq.Tables.MF_FACTION_MEMBER
+import com.dansplugins.factionsystem.jooq.Tables.MF_LOCKED_BLOCK
 import com.dansplugins.factionsystem.jooq.tables.records.MfFactionApplicationRecord
 import com.dansplugins.factionsystem.jooq.tables.records.MfFactionInviteRecord
 import com.dansplugins.factionsystem.jooq.tables.records.MfFactionMemberRecord
@@ -102,84 +103,143 @@ class JooqMfFactionRepository(
 
     override fun upsert(faction: MfFaction): MfFaction {
         return dsl.transactionResult { config ->
-            val transactionalDsl = config.dsl()
-            val newState = upsertFaction(transactionalDsl, faction)
-
-            deleteMembers(transactionalDsl, faction.id)
-            val newMembers = faction.members.map { upsertMember(transactionalDsl, faction.id, it, newState.roles) }
-            deleteInvites(transactionalDsl, faction.id)
-            val newInvites = faction.invites.map { upsertInvite(transactionalDsl, faction.id, it) }
-            deleteApplications(transactionalDsl, faction.id)
-            val newApplications = faction.applications.map { upsertApplication(transactionalDsl, faction.id, it) }
-
-            return@transactionResult newState.copy(
-                members = newMembers,
-                invites = newInvites,
-                applications = newApplications
-            )
+            upsert(config.dsl(), faction)
         }
     }
 
+    override fun upsertAll(factions: List<MfFaction>): List<MfFaction> =
+        upsertAll(factions, emptySet())
+
+    override fun upsertAll(
+        factions: List<MfFaction>,
+        departedLockOwners: Set<MfPlayerId>
+    ): List<MfFaction> = persistBatch(factions, emptyList(), departedLockOwners)
+
+    override fun upsertAllAndDelete(
+        factions: List<MfFaction>,
+        deletedFactions: List<MfFaction>,
+        departedLockOwners: Set<MfPlayerId>
+    ): List<MfFaction> = persistBatch(factions, deletedFactions, departedLockOwners)
+
+    private fun persistBatch(
+        factions: List<MfFaction>,
+        deletedFactions: List<MfFaction>,
+        departedLockOwners: Set<MfPlayerId>
+    ): List<MfFaction> =
+        dsl.transactionResult { config ->
+            val transactionalDsl = config.dsl()
+            val persisted = factions.map { faction -> upsert(transactionalDsl, faction) }
+            if (departedLockOwners.isNotEmpty()) {
+                transactionalDsl.deleteFrom(MF_LOCKED_BLOCK)
+                    .where(MF_LOCKED_BLOCK.PLAYER_ID.`in`(departedLockOwners.map(MfPlayerId::value)))
+                    .execute()
+            }
+            deletedFactions.forEach { faction ->
+                val deleted = transactionalDsl.deleteFrom(MF_FACTION)
+                    .where(MF_FACTION.ID.eq(faction.id.value))
+                    .and(MF_FACTION.VERSION.eq(faction.version))
+                    .execute()
+                if (deleted == 0) {
+                    throw OptimisticLockingFailureException(
+                        "Faction ${faction.id.value} changed before it could be deleted"
+                    )
+                }
+            }
+            persisted
+        }
+
+    private fun upsert(transactionalDsl: DSLContext, faction: MfFaction): MfFaction {
+        val newState = upsertFaction(transactionalDsl, faction)
+
+        deleteMembers(transactionalDsl, faction.id)
+        val newMembers = faction.members.map {
+            upsertMember(transactionalDsl, faction.id, it, newState.roles)
+        }
+        deleteInvites(transactionalDsl, faction.id)
+        val newInvites = faction.invites.map {
+            upsertInvite(transactionalDsl, faction.id, it)
+        }
+        deleteApplications(transactionalDsl, faction.id)
+        val newApplications = faction.applications.map {
+            upsertApplication(transactionalDsl, faction.id, it)
+        }
+
+        return newState.copy(
+            members = newMembers,
+            invites = newInvites,
+            applications = newApplications
+        )
+    }
+
     private fun upsertFaction(dsl: DSLContext, faction: MfFaction): MfFaction {
-        val rowCount = dsl.insertInto(MF_FACTION)
-            .set(MF_FACTION.ID, faction.id.value)
-            .set(MF_FACTION.VERSION, 1)
-            .set(MF_FACTION.NAME, faction.name)
-            .set(MF_FACTION.DESCRIPTION, faction.description)
-            .set(MF_FACTION.FLAGS, JSON.valueOf(gson.toJson(faction.flags.valuesByName)))
-            .set(MF_FACTION.PREFIX, faction.prefix)
-            .set(MF_FACTION.HOME_WORLD_ID, faction.home?.worldId?.toString())
-            .set(MF_FACTION.HOME_X, faction.home?.x)
-            .set(MF_FACTION.HOME_Y, faction.home?.y)
-            .set(MF_FACTION.HOME_Z, faction.home?.z)
-            .set(MF_FACTION.HOME_YAW, faction.home?.yaw)
-            .set(MF_FACTION.HOME_PITCH, faction.home?.pitch)
-            .set(MF_FACTION.BONUS_POWER, faction.bonusPower)
-            .set(MF_FACTION.AUTOCLAIM, faction.autoclaim)
-            .set(
-                MF_FACTION.ROLES,
-                JSON.valueOf(
-                    gson.toJson(faction.roles.map(MfFactionRole::serialize))
+        // Creation and update are intentionally different SQL statements. INSERT .. ON CONFLICT
+        // could resurrect a versioned snapshot after another plugin instance deleted the row: an
+        // old service passes only its own cache/lock checks, finds no conflict in the database, and
+        // the INSERT arm silently recreates the faction at version 1. Version zero is the sole
+        // creation authority; every existing save is strict UPDATE WHERE id/version and affects
+        // nothing once the row has disappeared.
+        val rowCount = if (faction.version == 0) {
+            dsl.insertInto(MF_FACTION)
+                .set(MF_FACTION.ID, faction.id.value)
+                .set(MF_FACTION.VERSION, 1)
+                .set(MF_FACTION.NAME, faction.name)
+                .set(MF_FACTION.DESCRIPTION, faction.description)
+                .set(MF_FACTION.FLAGS, JSON.valueOf(gson.toJson(faction.flags.valuesByName)))
+                .set(MF_FACTION.PREFIX, faction.prefix)
+                .set(MF_FACTION.HOME_WORLD_ID, faction.home?.worldId?.toString())
+                .set(MF_FACTION.HOME_X, faction.home?.x)
+                .set(MF_FACTION.HOME_Y, faction.home?.y)
+                .set(MF_FACTION.HOME_Z, faction.home?.z)
+                .set(MF_FACTION.HOME_YAW, faction.home?.yaw)
+                .set(MF_FACTION.HOME_PITCH, faction.home?.pitch)
+                .set(MF_FACTION.BONUS_POWER, faction.bonusPower)
+                .set(MF_FACTION.AUTOCLAIM, faction.autoclaim)
+                .set(
+                    MF_FACTION.ROLES,
+                    JSON.valueOf(gson.toJson(faction.roles.map(MfFactionRole::serialize)))
                 )
-            )
-            .set(MF_FACTION.DEFAULT_ROLE_ID, faction.roles.default.id.value)
-            .set(
-                MF_FACTION.DEFAULT_PERMISSIONS,
-                JSON.valueOf(
-                    gson.toJson(faction.defaultPermissions.mapKeys { it.key.name })
+                .set(MF_FACTION.DEFAULT_ROLE_ID, faction.roles.default.id.value)
+                .set(
+                    MF_FACTION.DEFAULT_PERMISSIONS,
+                    JSON.valueOf(gson.toJson(faction.defaultPermissions.mapKeys { it.key.name }))
                 )
-            )
-            .set(MF_FACTION.PRIMARY_OWNER_ID, faction.primaryOwnerId?.value)
-            .set(MF_FACTION.PRIMARY_OWNER_SINCE, faction.primaryOwnerSince)
-            .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
-            .onConflict(MF_FACTION.ID).doUpdate()
-            .set(MF_FACTION.NAME, faction.name)
-            .set(MF_FACTION.DESCRIPTION, faction.description)
-            .set(MF_FACTION.FLAGS, JSON.valueOf(gson.toJson(faction.flags.valuesByName)))
-            .set(MF_FACTION.PREFIX, faction.prefix)
-            .set(MF_FACTION.HOME_WORLD_ID, faction.home?.worldId?.toString())
-            .set(MF_FACTION.HOME_X, faction.home?.x)
-            .set(MF_FACTION.HOME_Y, faction.home?.y)
-            .set(MF_FACTION.HOME_Z, faction.home?.z)
-            .set(MF_FACTION.HOME_YAW, faction.home?.yaw)
-            .set(MF_FACTION.HOME_PITCH, faction.home?.pitch)
-            .set(MF_FACTION.BONUS_POWER, faction.bonusPower)
-            .set(MF_FACTION.AUTOCLAIM, faction.autoclaim)
-            .set(MF_FACTION.ROLES, JSON.valueOf(gson.toJson(faction.roles.map(MfFactionRole::serialize))))
-            .set(MF_FACTION.DEFAULT_ROLE_ID, faction.roles.default.id.value)
-            .set(
-                MF_FACTION.DEFAULT_PERMISSIONS,
-                JSON.valueOf(
-                    gson.toJson(faction.defaultPermissions.mapKeys { it.key.name })
+                .set(MF_FACTION.PRIMARY_OWNER_ID, faction.primaryOwnerId?.value)
+                .set(MF_FACTION.PRIMARY_OWNER_SINCE, faction.primaryOwnerSince)
+                .set(MF_FACTION.PRIMARY_OWNER_TERM, faction.primaryOwnerTerm.toString())
+                .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
+                .execute()
+        } else {
+            dsl.update(MF_FACTION)
+                .set(MF_FACTION.NAME, faction.name)
+                .set(MF_FACTION.DESCRIPTION, faction.description)
+                .set(MF_FACTION.FLAGS, JSON.valueOf(gson.toJson(faction.flags.valuesByName)))
+                .set(MF_FACTION.PREFIX, faction.prefix)
+                .set(MF_FACTION.HOME_WORLD_ID, faction.home?.worldId?.toString())
+                .set(MF_FACTION.HOME_X, faction.home?.x)
+                .set(MF_FACTION.HOME_Y, faction.home?.y)
+                .set(MF_FACTION.HOME_Z, faction.home?.z)
+                .set(MF_FACTION.HOME_YAW, faction.home?.yaw)
+                .set(MF_FACTION.HOME_PITCH, faction.home?.pitch)
+                .set(MF_FACTION.BONUS_POWER, faction.bonusPower)
+                .set(MF_FACTION.AUTOCLAIM, faction.autoclaim)
+                .set(
+                    MF_FACTION.ROLES,
+                    JSON.valueOf(gson.toJson(faction.roles.map(MfFactionRole::serialize)))
                 )
-            )
-            .set(MF_FACTION.PRIMARY_OWNER_ID, faction.primaryOwnerId?.value)
-            .set(MF_FACTION.PRIMARY_OWNER_SINCE, faction.primaryOwnerSince)
-            .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
-            .set(MF_FACTION.VERSION, faction.version + 1)
-            .where(MF_FACTION.ID.eq(faction.id.value))
-            .and(MF_FACTION.VERSION.eq(faction.version))
-            .execute()
+                .set(MF_FACTION.DEFAULT_ROLE_ID, faction.roles.default.id.value)
+                .set(
+                    MF_FACTION.DEFAULT_PERMISSIONS,
+                    JSON.valueOf(gson.toJson(faction.defaultPermissions.mapKeys { it.key.name }))
+                )
+                .set(MF_FACTION.PRIMARY_OWNER_ID, faction.primaryOwnerId?.value)
+                .set(MF_FACTION.PRIMARY_OWNER_SINCE, faction.primaryOwnerSince)
+                .set(MF_FACTION.PRIMARY_OWNER_TERM, faction.primaryOwnerTerm.toString())
+                .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
+                .set(MF_FACTION.VERSION, faction.version + 1)
+                .where(MF_FACTION.ID.eq(faction.id.value))
+                .and(MF_FACTION.VERSION.eq(faction.version))
+                .execute()
+        }
         if (rowCount == 0) throw OptimisticLockingFailureException("Invalid version: ${faction.version}")
         return dsl.selectFrom(MF_FACTION)
             .where(MF_FACTION.ID.eq(faction.id.value))
@@ -257,9 +317,10 @@ class JooqMfFactionRepository(
     }
 
     override fun delete(factionId: MfFactionId) {
-        dsl.deleteFrom(MF_FACTION)
+        val deleted = dsl.deleteFrom(MF_FACTION)
             .where(MF_FACTION.ID.eq(factionId.value))
             .execute()
+        check(deleted == 1) { "No faction row was deleted for ${factionId.value}" }
     }
 
     private fun MfFactionRecord.toDomain(members: List<MfFactionMember> = emptyList(), invites: List<MfFactionInvite> = emptyList(), roles: List<MfFactionRole>? = null, applications: List<MfFactionApplication> = emptyList()): MfFaction {
@@ -321,7 +382,8 @@ class JooqMfFactionRepository(
             applications = applications,
             primaryOwnerId = primaryOwnerId?.let(::MfPlayerId),
             heirId = heirId?.let(::MfPlayerId),
-            primaryOwnerSince = primaryOwnerSince
+            primaryOwnerSince = primaryOwnerSince,
+            primaryOwnerTerm = UUID.fromString(primaryOwnerTerm)
         )
     }
 

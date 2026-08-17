@@ -135,6 +135,16 @@ interface FactionView {
         get() = 0L
 
     /**
+     * Opaque identity of the current primary-owner tenure, or null when no owner is recorded.
+     *
+     * Unlike [primaryOwnerSince], this changes on every actual transition, including an away-and-back
+     * transition within one clock tick. Consumers that defer a destructive action must retain this
+     * value and use [MedievalFactionsApi.replacePrimaryOwnerIf] rather than acting on UUID alone.
+     */
+    val primaryOwnerTerm: UUID?
+        get() = null
+
+    /**
      * Whether this player may exercise the faction's highest authority.
      *
      * A CAPABILITY question - "may this player do the most powerful thing there is" - which any

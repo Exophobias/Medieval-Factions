@@ -9,6 +9,7 @@ import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.FactionView
 import com.dansplugins.factionsystem.api.MedievalFactionsApi
 import com.dansplugins.factionsystem.api.PeaceOutcome
+import com.dansplugins.factionsystem.api.PrimaryOwnerReplaceOutcome
 import com.dansplugins.factionsystem.api.SuccessionPolicy
 import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.area.MfPosition
@@ -167,16 +168,39 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     override fun claim(faction: FactionId, chunk: Chunk): ApiResult =
         plugin.services.claimService.save(MfClaimedChunk(chunk, MfFactionId(faction.value))).toApiResult()
 
-    // Constructs MfClaimedChunk from coordinates rather than from a Chunk, which is what the internal
-    // model holds anyway. The world is resolved only to confirm it exists -- getWorld is a map lookup
-    // over loaded worlds and loads nothing.
     override fun claim(faction: FactionId, worldId: UUID, chunkX: Int, chunkZ: Int): ApiResult {
-        if (plugin.server.getWorld(worldId) == null) {
-            return ApiResult.failure("No loaded world with id $worldId")
+        val claims = plugin.services.claimService
+        val requested = MfClaimedChunk(worldId, chunkX, chunkZ, MfFactionId(faction.value))
+        // Existing land is an ownership transfer, which is entirely data-backed and safe on the
+        // API's required worker thread. A genuinely new claim still takes the ordinary path and its
+        // blocked-world rule; rebellion recovery only ever supplies frozen, existing claims.
+        return if (claims.getClaim(worldId, chunkX, chunkZ) == null) {
+            claims.save(requested).toApiResult()
+        } else {
+            claims.transferOwnership(requested).toApiResult()
         }
-        return plugin.services.claimService
-            .save(MfClaimedChunk(worldId, chunkX, chunkZ, MfFactionId(faction.value)))
-            .toApiResult()
+    }
+
+    override fun transferClaim(
+        expectedOwner: FactionId,
+        to: FactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
+    ): ApiResult {
+        val factions = plugin.services.factionService
+        val expectedId = MfFactionId(expectedOwner.value)
+        val destinationId = MfFactionId(to.value)
+        if (factions.getFaction(expectedId) == null) {
+            return ApiResult.failure("No faction with id ${expectedOwner.value}")
+        }
+        if (factions.getFaction(destinationId) == null) {
+            return ApiResult.failure("No faction with id ${to.value}")
+        }
+        return plugin.services.claimService.transferOwnership(
+            expectedId,
+            MfClaimedChunk(worldId, chunkX, chunkZ, destinationId)
+        ).toApiResult()
     }
 
     override fun unclaim(chunk: Chunk): ApiResult {
@@ -272,6 +296,42 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         return plugin.services.factionService
             .save(mfFaction.copy(primaryOwnerId = newOwner, heirId = if (consumedHeir) null else mfFaction.heirId))
             .toApiResult()
+    }
+
+    override fun replacePrimaryOwnerIf(
+        faction: FactionId,
+        expectedOwner: UUID,
+        expectedTerm: UUID,
+        replacement: UUID?
+    ): ApiOutcome<PrimaryOwnerReplaceOutcome> {
+        val factionService = plugin.services.factionService
+        val mfFaction = factionService.getFaction(MfFactionId(faction.value))
+            ?: return ApiOutcome.failure("No faction with id ${faction.value}")
+        val expected = MfPlayerId(expectedOwner.toString())
+        if (mfFaction.primaryOwnerId != expected || mfFaction.primaryOwnerTerm != expectedTerm) {
+            return ApiOutcome.success(PrimaryOwnerReplaceOutcome.MISMATCH)
+        }
+        val newOwner = replacement?.let { MfPlayerId(it.toString()) }
+        if (newOwner != null && mfFaction.members.none { it.playerId == newOwner }) {
+            return ApiOutcome.failure(
+                "Player $replacement is not a member of faction ${faction.value}"
+            )
+        }
+        if (newOwner == mfFaction.primaryOwnerId) {
+            return ApiOutcome.success(PrimaryOwnerReplaceOutcome.UNCHANGED)
+        }
+        val consumedHeir = mfFaction.heirId == newOwner
+        return when (
+            val saved = factionService.save(
+                mfFaction.copy(
+                    primaryOwnerId = newOwner,
+                    heirId = if (consumedHeir) null else mfFaction.heirId
+                )
+            )
+        ) {
+            is Success -> ApiOutcome.success(PrimaryOwnerReplaceOutcome.REPLACED)
+            is Failure -> ApiOutcome.failure(saved.reason.message)
+        }
     }
 
     // Mirrors MfFactionCreateCommand rather than sharing code with it, because that command is a
@@ -474,8 +534,6 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         }
         val movingSet = movable.toSet()
         val remaining = source.members.filterNot { it.playerId in movingSet }
-        val role = destination.roles.default
-        val arrivals = movable.map { MfFactionMember(it, role) }
 
         // Moving EVERY member dissolves the source rather than saving it empty, and without this the
         // whole call failed. An empty faction cannot be saved: MfFactionService runs succession on
@@ -484,17 +542,26 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         // failure and left everybody where they were.
         //
         // This is what /f leave already does when the last member walks out; see
-        // MfFactionLeaveCommand. Arrivals are saved FIRST here, because the source is about to stop
-        // existing and a failure after its deletion would strand them.
+        // MfFactionLeaveCommand. Unlike an ordinary partial move, admission and disband are one
+        // repository transaction. The exact requested roster is also a CAS token: a durable caller
+        // can retry after a cancellation/failure without dissolving the source around somebody who
+        // disappeared from its frozen settlement roster.
         if (remaining.isEmpty()) {
-            val arrived = factionService.save(destination.copy(members = destination.members + arrivals))
-            if (arrived is Failure) return arrived.toApiResult()
-            return factionService.delete(source.id).toApiResult()
+            val sourceRoster = source.members.map(MfFactionMember::playerId)
+            if (sourceRoster.size != moving.size || sourceRoster.toSet() != moving.toSet()) {
+                return ApiResult.failure(
+                    "Moving every member requires the requested ids to exactly match faction " +
+                        "${from.value}'s current roster"
+                )
+            }
+            return factionService.transferAllMembers(source.id, destination.id, moving).toApiResult()
         }
 
         // Removed first otherwise. See the contract note on MedievalFactionsApi.transferMembers: the
         // window between these two saves must leave a player factionless rather than in two
         // factions, since MF resolves a player in two factions to neither.
+        val role = destination.roles.default
+        val arrivals = movable.map { MfFactionMember(it, role) }
         val departed = factionService.save(source.copy(members = remaining))
         if (departed is Failure) return departed.toApiResult()
         return factionService.save(destination.copy(members = destination.members + arrivals)).toApiResult()
@@ -520,7 +587,10 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
             // A cancelled FactionClaimEvent surfaces as a GENERAL failure and is indistinguishable
             // from a database error here, so both stop the run. Reporting a prefix is honest; carrying
             // on past a database failure would report a number nobody could act on.
-            val result = claimService.save(claim.copy(factionId = destinationId))
+            val result = claimService.transferOwnership(
+                MfFactionId(from.value),
+                claim.copy(factionId = destinationId)
+            )
             if (result is Failure) {
                 return if (moved == 0) {
                     ApiOutcome.failure(result.reason.message)
@@ -630,15 +700,14 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         if (factionService.getFaction(a) == null) return ApiResult.failure("No faction with id ${faction.value}")
         if (factionService.getFaction(b) == null) return ApiResult.failure("No faction with id ${otherFaction.value}")
         val relationshipService = plugin.services.factionRelationshipService
-        val existing = relationshipService.getRelationships(a, b) + relationshipService.getRelationships(b, a)
-        if (existing.any { it.type == AT_WAR }) {
+        val ours = relationshipService.getRelationships(a, b).any { it.type == AT_WAR }
+        val theirs = relationshipService.getRelationships(b, a).any { it.type == AT_WAR }
+        if (ours && theirs) {
             return ApiResult.failure("Factions are already at war")
         }
-        // Both directions, as /f declarewar writes them. ApiRelationshipListener collapses the pair
-        // into one FactionWarStartedEvent, so a consumer sees a single declaration.
-        val declared = relationshipService.save(MfFactionRelationship(factionId = a, targetId = b, type = AT_WAR))
-        if (declared is Failure) return declared.toApiResult()
-        return relationshipService.save(MfFactionRelationship(factionId = b, targetId = a, type = AT_WAR)).toApiResult()
+        // Repair either half of an interrupted two-row declaration. The same mutation-locked seam
+        // backs MF's commands, so an API retry cannot race a command into duplicate first rows.
+        return relationshipService.ensureWarPair(a, b, a).toApiResult()
     }
 
     override fun registerSuccessionPolicy(policy: SuccessionPolicy) {

@@ -9,12 +9,9 @@ import java.util.UUID
  * Fired (on the main thread) after a player has stopped being a member of a faction — whether they
  * left voluntarily or were kicked. Part of the stable API.
  *
- * **Why there is no separate "kicked" event.** MedievalFactions emits *both* `FactionKickEvent` and
- * `FactionLeaveEvent` for a single kick: the kick command fires the former, then saves the faction,
- * and the save diffs the member list and fires the latter for each removed member. A stable API that
- * mirrored both 1:1 would therefore double-fire on every kick, which is exactly the kind of trap this
- * API layer exists to absorb. So this event is bridged from the *leave* event only, which covers both
- * paths exactly once.
+ * **Why there is no separate "kicked" event.** MedievalFactions publishes this once from the
+ * committed member-list diff. Both a voluntary leave and a kick end in that same save, so exposing
+ * the command's earlier kick gate as a second notification would double-fire.
  *
  * If a consumer ever genuinely needs to distinguish the two, add a reason to this event rather than a
  * second event — one notification per departure is the contract.

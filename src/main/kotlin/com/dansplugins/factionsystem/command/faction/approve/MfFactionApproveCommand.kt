@@ -48,16 +48,8 @@ class MfFactionApproveCommand(private val plugin: MedievalFactions) : CommandExe
                 val factionRelationshipService = plugin.services.factionRelationshipService
                 when (request.type) {
                     WAR -> {
-                        factionRelationshipService.save(
-                            MfFactionRelationship(factionId = faction.id, targetId = target.id, type = MfFactionRelationshipType.AT_WAR)
-                        ).onFailure {
-                            sender.sendMessage("$RED${plugin.language["CommandFactionApproveFailedToSaveRelationship"]}")
-                            plugin.logger.log(SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
-                            return@Runnable
-                        }
-                        factionRelationshipService.save(
-                            MfFactionRelationship(factionId = target.id, targetId = faction.id, type = MfFactionRelationshipType.AT_WAR)
-                        ).onFailure {
+                        factionRelationshipService.ensureWarPair(faction.id, target.id, faction.id)
+                            .onFailure {
                             sender.sendMessage("$RED${plugin.language["CommandFactionApproveFailedToSaveRelationship"]}")
                             plugin.logger.log(SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
                             return@Runnable

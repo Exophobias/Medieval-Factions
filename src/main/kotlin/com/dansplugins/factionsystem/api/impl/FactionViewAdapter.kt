@@ -45,6 +45,9 @@ class FactionViewAdapter(
     override val primaryOwnerSince: Long
         get() = faction.primaryOwnerSince
 
+    override val primaryOwnerTerm: UUID?
+        get() = faction.primaryOwnerId?.let { faction.primaryOwnerTerm }
+
     override fun roleOf(playerId: UUID): FactionRoleView? =
         faction.getRole(MfPlayerId(playerId.toString()))?.let { role ->
             FactionRoleViewAdapter(plugin, faction, role)

@@ -169,6 +169,55 @@ class DefaultMedievalFactionsApiTest {
     }
 
     @Test
+    fun positionalClaimWritesDurableWorldIdentityWithoutBukkitLookup() {
+        val worldId = UUID.randomUUID()
+        val expected = MfClaimedChunk(worldId, 3, 7, MfFactionId("f1"))
+        `when`(claimService.save(expected)).thenReturn(Success(expected))
+
+        val result = api.claim(FactionId("f1"), worldId, 3, 7)
+
+        assertTrue(result.isSuccess)
+        verify(claimService).save(expected)
+    }
+
+    @Test
+    fun positionalClaimUsesDataOnlyTransferForExistingLand() {
+        val worldId = UUID.randomUUID()
+        val existing = MfClaimedChunk(worldId, 3, 7, MfFactionId("old"))
+        val requested = existing.copy(factionId = MfFactionId("new"))
+        `when`(claimService.getClaim(worldId, 3, 7)).thenReturn(existing)
+        `when`(claimService.transferOwnership(requested)).thenReturn(Success(requested))
+
+        val result = api.claim(FactionId("new"), worldId, 3, 7)
+
+        assertTrue(result.isSuccess)
+        verify(claimService).transferOwnership(requested)
+        verify(claimService, never()).save(requested)
+    }
+
+    @Test
+    fun compareTransferPassesTheExpectedOwnerToTheClaimService() {
+        val worldId = UUID.randomUUID()
+        val expectedOwner = MfFactionId("old")
+        val destination = MfFactionId("new")
+        val requested = MfClaimedChunk(worldId, 3, 7, destination)
+        `when`(factionService.getFaction(expectedOwner)).thenReturn(mock(MfFaction::class.java))
+        `when`(factionService.getFaction(destination)).thenReturn(mock(MfFaction::class.java))
+        `when`(claimService.transferOwnership(expectedOwner, requested)).thenReturn(Success(requested))
+
+        val result = api.transferClaim(
+            FactionId(expectedOwner.value),
+            FactionId(destination.value),
+            worldId,
+            3,
+            7
+        )
+
+        assertTrue(result.isSuccess)
+        verify(claimService).transferOwnership(expectedOwner, requested)
+    }
+
+    @Test
     fun getPowerReturnsThePlayersPower() {
         val playerId = UUID.randomUUID()
         val player = mock(MfPlayer::class.java)
@@ -205,6 +254,36 @@ class DefaultMedievalFactionsApiTest {
         val result = api.forcePeace(FactionId("a"), FactionId("b"))
         assertTrue(result.isFailure)
         assertEquals("Factions are not at war", result.errorMessage)
+    }
+
+    @Test
+    fun declareWarRepairsAMissingReverseRow() {
+        acceptingRelationshipWrites()
+        atWar("a", "b")
+        `when`(relationshipService.ensureWarPair(
+            MfFactionId("a"), MfFactionId("b"), MfFactionId("a")))
+            .thenReturn(Success(Unit))
+
+        val result = api.declareWar(FactionId("a"), FactionId("b"))
+
+        assertTrue(result.isSuccess)
+        verify(relationshipService).ensureWarPair(
+            MfFactionId("a"), MfFactionId("b"), MfFactionId("a"))
+    }
+
+    @Test
+    fun declareWarRepairsAMissingOwnRow() {
+        acceptingRelationshipWrites()
+        atWar("b", "a")
+        `when`(relationshipService.ensureWarPair(
+            MfFactionId("a"), MfFactionId("b"), MfFactionId("a")))
+            .thenReturn(Success(Unit))
+
+        val result = api.declareWar(FactionId("a"), FactionId("b"))
+
+        assertTrue(result.isSuccess)
+        verify(relationshipService).ensureWarPair(
+            MfFactionId("a"), MfFactionId("b"), MfFactionId("a"))
     }
 
     /**
@@ -398,6 +477,22 @@ class DefaultMedievalFactionsApiTest {
         val faction = mock(MfFaction::class.java)
         `when`(factionService.getFaction(MfFactionId(id))).thenReturn(faction)
         return faction
+    }
+
+    /** A relationship service whose save seam records rows without matching Kotlin value classes. */
+    private fun acceptingRelationshipWrites(): MutableList<MfFactionRelationship> {
+        val saved = mutableListOf<MfFactionRelationship>()
+        relationshipService = mock(MfFactionRelationshipService::class.java) { invocation ->
+            if (invocation.method.name.startsWith("save")) {
+                val row = invocation.getArgument<MfFactionRelationship>(0)
+                saved += row
+                Success(row)
+            } else {
+                org.mockito.Answers.RETURNS_DEFAULTS.answer(invocation)
+            }
+        }
+        `when`(plugin.services.factionRelationshipService).thenReturn(relationshipService)
+        return saved
     }
 
     /**

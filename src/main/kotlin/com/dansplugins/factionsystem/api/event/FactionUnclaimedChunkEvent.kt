@@ -14,9 +14,9 @@ import java.util.UUID
  *
  * **Does NOT cover bulk unclaims.** `MfClaimService.deleteAllClaims` — the path used when a faction is
  * disbanded and by `/f unclaimall` — deletes rows without firing MF's per-claim internal event, so this
- * event is not emitted for them. Disband is still covered, because MF fires its disband event *before*
- * wiping the claims: listen to [FactionDisbandedEvent] for that case. `/f unclaimall` on a faction that
- * stays alive is genuinely unobserved; a consumer that must be exact should revalidate lazily against
+ * event is not emitted for them. Disband is still covered by [FactionDisbandedEvent], which is a
+ * post-commit cleanup notification after the faction and its claims are gone. `/f unclaimall` on a
+ * faction that stays alive is genuinely unobserved; a consumer that must be exact should revalidate against
  * [com.dansplugins.factionsystem.api.MedievalFactionsApi.isClaimed] rather than trusting event history.
  *
  * See [FactionDisbandedEvent] for the same next-tick timing caveat.

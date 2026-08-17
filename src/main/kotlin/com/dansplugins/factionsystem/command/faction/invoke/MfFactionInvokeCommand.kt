@@ -4,7 +4,6 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.command.unquote
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.player.MfPlayer
-import com.dansplugins.factionsystem.relationship.MfFactionRelationship
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.ALLY
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.AT_WAR
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.LIEGE
@@ -90,7 +89,8 @@ class MfFactionInvokeCommand(private val plugin: MedievalFactions) : CommandExec
                 }
                 val existingAllyEnemyRelationships = factionRelationshipService.getRelationships(ally.id, enemy.id)
                 val existingEnemyAllyRelationships = factionRelationshipService.getRelationships(enemy.id, ally.id)
-                if (existingAllyEnemyRelationships.any { it.type == AT_WAR } || existingEnemyAllyRelationships.any { it.type == AT_WAR }) {
+                if (existingAllyEnemyRelationships.any { it.type == AT_WAR }
+                    && existingEnemyAllyRelationships.any { it.type == AT_WAR }) {
                     sender.sendMessage("$RED${plugin.language["CommandFactionInvokeAllyAlreadyAtWarWithEnemy"]}")
                     return@Runnable
                 }
@@ -100,15 +100,9 @@ class MfFactionInvokeCommand(private val plugin: MedievalFactions) : CommandExec
                     sender.sendMessage("$RED${plugin.language["CommandFactionInvokeAllyAlliedToEnemy"]}")
                     return@Runnable
                 }
-                factionRelationshipService.save(MfFactionRelationship(factionId = ally.id, targetId = enemy.id, type = AT_WAR))
+                factionRelationshipService.ensureWarPair(ally.id, enemy.id, faction.id)
                     .onFailure {
                         sender.sendMessage("$RED${plugin.language["CommandFactionInvokeFailedToSaveRelationship"]}")
-                        plugin.logger.log(Level.SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
-                        return@Runnable
-                    }
-                factionRelationshipService.save(MfFactionRelationship(factionId = enemy.id, targetId = ally.id, type = AT_WAR))
-                    .onFailure {
-                        sender.sendMessage("$RED${plugin.language["CommandFactionInvokeFailedToSaveReverseRelationship"]}")
                         plugin.logger.log(Level.SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
                         return@Runnable
                     }

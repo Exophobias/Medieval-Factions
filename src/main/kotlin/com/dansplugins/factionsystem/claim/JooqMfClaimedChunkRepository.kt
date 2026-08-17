@@ -2,6 +2,7 @@ package com.dansplugins.factionsystem.claim
 
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.jooq.Tables.MF_CLAIMED_CHUNK
+import com.dansplugins.factionsystem.jooq.Tables.MF_LOCKED_BLOCK
 import com.dansplugins.factionsystem.jooq.tables.records.MfClaimedChunkRecord
 import org.jooq.DSLContext
 import java.util.*
@@ -30,24 +31,40 @@ class JooqMfClaimedChunkRepository(private val dsl: DSLContext) : MfClaimedChunk
     }
 
     override fun upsert(claim: MfClaimedChunk): MfClaimedChunk {
-        dsl.insertInto(MF_CLAIMED_CHUNK)
-            .set(MF_CLAIMED_CHUNK.WORLD_ID, claim.worldId.toString())
-            .set(MF_CLAIMED_CHUNK.X, claim.x)
-            .set(MF_CLAIMED_CHUNK.Z, claim.z)
-            .set(MF_CLAIMED_CHUNK.FACTION_ID, claim.factionId.value)
-            .onConflict(MF_CLAIMED_CHUNK.WORLD_ID, MF_CLAIMED_CHUNK.X, MF_CLAIMED_CHUNK.Z).doUpdate()
-            .set(MF_CLAIMED_CHUNK.FACTION_ID, claim.factionId.value)
-            .where(MF_CLAIMED_CHUNK.WORLD_ID.eq(claim.worldId.toString()))
-            .and(MF_CLAIMED_CHUNK.X.eq(claim.x))
-            .and(MF_CLAIMED_CHUNK.Z.eq(claim.z))
-            .execute()
-        return dsl.selectFrom(MF_CLAIMED_CHUNK)
-            .where(MF_CLAIMED_CHUNK.WORLD_ID.eq(claim.worldId.toString()))
-            .and(MF_CLAIMED_CHUNK.X.eq(claim.x))
-            .and(MF_CLAIMED_CHUNK.Z.eq(claim.z))
-            .fetchOne()
-            .let(::requireNotNull)
-            .toDomain()
+        return dsl.transactionResult { configuration ->
+            val tx = configuration.dsl()
+            val coordinates = MF_CLAIMED_CHUNK.WORLD_ID.eq(claim.worldId.toString())
+                .and(MF_CLAIMED_CHUNK.X.eq(claim.x))
+                .and(MF_CLAIMED_CHUNK.Z.eq(claim.z))
+            val previousOwner = tx.select(MF_CLAIMED_CHUNK.FACTION_ID)
+                .from(MF_CLAIMED_CHUNK)
+                .where(coordinates)
+                .fetchOne(MF_CLAIMED_CHUNK.FACTION_ID)
+
+            tx.insertInto(MF_CLAIMED_CHUNK)
+                .set(MF_CLAIMED_CHUNK.WORLD_ID, claim.worldId.toString())
+                .set(MF_CLAIMED_CHUNK.X, claim.x)
+                .set(MF_CLAIMED_CHUNK.Z, claim.z)
+                .set(MF_CLAIMED_CHUNK.FACTION_ID, claim.factionId.value)
+                .onConflict(MF_CLAIMED_CHUNK.WORLD_ID, MF_CLAIMED_CHUNK.X, MF_CLAIMED_CHUNK.Z).doUpdate()
+                .set(MF_CLAIMED_CHUNK.FACTION_ID, claim.factionId.value)
+                .where(coordinates)
+                .execute()
+
+            if (previousOwner != null && previousOwner != claim.factionId.value) {
+                tx.deleteFrom(MF_LOCKED_BLOCK)
+                    .where(MF_LOCKED_BLOCK.WORLD_ID.eq(claim.worldId.toString()))
+                    .and(MF_LOCKED_BLOCK.CHUNK_X.eq(claim.x))
+                    .and(MF_LOCKED_BLOCK.CHUNK_Z.eq(claim.z))
+                    .execute()
+            }
+
+            tx.selectFrom(MF_CLAIMED_CHUNK)
+                .where(coordinates)
+                .fetchOne()
+                .let(::requireNotNull)
+                .toDomain()
+        }
     }
 
     override fun delete(worldId: UUID, x: Int, z: Int) {

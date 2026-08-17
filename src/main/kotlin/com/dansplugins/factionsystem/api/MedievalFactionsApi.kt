@@ -48,16 +48,18 @@ import java.util.UUID
  *
  * ### Events do not follow the same rule as calls, and the exception matters
  *
- * Every event in the `event` package is delivered on the **main thread**, scheduled onto the next
- * tick, so a handler may touch the world freely — with one deliberate exception.
- * [event.FactionCreateEvent] is fired **inline and may be asynchronous**, because it is cancellable
- * and a veto has to reach MF before it persists anything. `/f create` runs its whole chain on an
- * async task, so in ordinary play that event *is* async.
+ * Past-tense notification events in the `event` package are delivered on the **main thread**, on
+ * the next tick, so their handlers may touch the world freely. Cancellable pre-commit gates are the
+ * deliberate exception: [event.FactionCreateEvent], [event.FactionClaimAttemptEvent] and
+ * [event.FactionWarStartEvent] are fired **inline and may be asynchronous**, because a veto has to
+ * reach MF before it persists anything. MF's command chains perform these writes on async tasks, so
+ * in ordinary play those events *are* async.
  *
- * Two consequences for anything handling it. A handler must not assume it can touch the world. And
- * **the faction does not exist yet**: the event is fired before the row is written and before the
- * cache is populated, so [getFaction] with the new id answers `null` and any write keyed on it
- * fails. React to a creation *after* the fact by other means; use this event only to allow or refuse.
+ * Two consequences for anything handling a pre-commit gate. A handler must not assume it can touch
+ * the world, and the proposed change does not exist yet. For faction creation specifically, the row
+ * has not been written and the cache is not populated, so [getFaction] with the new id answers
+ * `null` and any write keyed on it fails. React after the fact through a notification event; use a
+ * gate only to allow or refuse.
  *
  * [ClaimOverrideProvider] and [SuccessionPolicy] are the mirror image — they are consumer callbacks
  * that MF invokes **inline on whatever thread MF is on**, so they must be fast and must not block.
@@ -297,10 +299,34 @@ interface MedievalFactionsApi {
      * MF stores claims by `(worldId, x, z)` internally and never needs the [Chunk] object, so this
      * is the shape the write always wanted.
      *
-     * Fails if no world with that id is loaded. Everything else about it matches [claim], including
-     * the events fired and the fact that it is not transactional.
+     * The UUID is durable world identity. Reassigning an existing persisted claim does not resolve
+     * it through Bukkit, so cross-faction recovery can move unloaded-world land from its database
+     * worker. Creating a genuinely new claim still applies the ordinary blocked-world validation.
+     * Callers are trusted plugin code and must supply an id obtained from real server/world data.
+     * Everything else about it matches [claim], including the events fired and the fact that it is
+     * not transactional.
      */
     fun claim(faction: FactionId, worldId: UUID, chunkX: Int, chunkZ: Int): ApiResult
+
+    /**
+     * Re-own one persisted claim only if [expectedOwner] still holds it.
+     *
+     * This is the compare-and-transfer counterpart to positional [claim]. It never creates land:
+     * wilderness or a claim since acquired by another faction is a failure, leaving that current
+     * state untouched. Use it when applying a frozen conquest or secession snapshot, where an
+     * unconditional positional claim could otherwise recreate an unclaimed chunk or steal a third
+     * faction's newer acquisition.
+     *
+     * The lookup, comparison, repository write, and cache publication are one serialised claim
+     * mutation. Like every mutation in this API it blocks on JDBC and belongs off the main thread.
+     */
+    fun transferClaim(
+        expectedOwner: FactionId,
+        to: FactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
+    ): ApiResult
 
     fun unclaim(chunk: Chunk): ApiResult
 
@@ -345,12 +371,10 @@ interface MedievalFactionsApi {
      *
      * ## Events, and what is fired before what
      *
-     * On [PeaceOutcome.PEACE_MADE], **[event.FactionWarEndedEvent] is fired from the relationship
-     * delete, which happens BEFORE the row is removed from the database**, so a consumer can see a war
-     * ended that then fails to save. That is the mirror of the caveat on [declareWar] and it has the
-     * same consequence: a consumer that must not act on a peace that did not happen should re-read on
-     * the next tick, and a retry after a failure is *silent*, because the bridge has already forgotten
-     * the row and fires nothing the second time.
+     * On [PeaceOutcome.PEACE_MADE], [event.FactionWarEndedEvent] is a post-commit notification. The
+     * relationship row is removed from the repository and live index first; only when neither
+     * direction remains does the bridge queue one ended event for the next main-thread turn. A failed
+     * delete therefore emits no stable event and remains retryable.
      *
      * On [PeaceOutcome.PEACE_REQUESTED] **nothing is fired at all.** MF publishes no event for a peace
      * request -- `/f makepeace` announces one with two chat messages sent from the command body, and
@@ -394,6 +418,26 @@ interface MedievalFactionsApi {
      * API does not offer a way around it.
      */
     fun setPrimaryOwner(faction: FactionId, playerId: UUID): ApiResult
+
+    /**
+     * Replace or clear one exact primary-owner tenure.
+     *
+     * The write occurs only while both [expectedOwner] and [expectedTerm] still match the persisted
+     * faction snapshot. [replacement] must be a faction member when non-null. A null replacement
+     * deliberately clears only the office; members, roles, relationships, and claims are untouched.
+     * This narrow nullable path exists for an externally certified death, where retaining a dead
+     * character in the seat is not a valid fallback even on a server that ordinarily forbids
+     * leaderless factions.
+     *
+     * A successful [PrimaryOwnerReplaceOutcome.MISMATCH] is a rejected comparison, not an I/O
+     * failure. Re-read before deciding whether another tenure superseded the deferred work.
+     */
+    fun replacePrimaryOwnerIf(
+        faction: FactionId,
+        expectedOwner: UUID,
+        expectedTerm: UUID,
+        replacement: UUID?
+    ): ApiOutcome<PrimaryOwnerReplaceOutcome>
 
     // --- Founding, dissolution, and moving people and land between factions ---
     //
@@ -478,12 +522,17 @@ interface MedievalFactionsApi {
      * genuinely needs all-or-nothing should compare the count it asked for against the membership it
      * finds afterwards.
      *
-     * **Two writes, and a failure between them leaves the players factionless.** They are removed
-     * from [from] first and admitted to [to] second, deliberately in that order: the other order
-     * would put them in two factions at once during the window, and a player in two factions reads
-     * as being in *none* everywhere in MF, which is both wrong and invisible. Factionless is wrong
-     * too, but it is the state a player can be in legitimately, so it is the recoverable one. A
-     * caller doing something it cares about should re-read afterwards and retry the second half.
+     * The skip rule applies to a partial move. **When the move consumes the whole faction, the named
+     * ids must exactly equal its live roster.** That exact roster is checked again inside the atomic
+     * mutation, so a durable settlement cannot dissolve a faction after one of its frozen members
+     * has independently left.
+     *
+     * **A partial move remains two writes, and a failure between them leaves the players
+     * factionless.** They are removed from [from] first and admitted to [to] second, deliberately in
+     * that order: the other order would put them in two factions at once during the window, and a
+     * player in two factions reads as being in *none* everywhere in MF. Moving the entire exact
+     * roster is different: destination admission and source deletion commit in one database
+     * transaction, and a cancelled disband or failed transaction changes neither faction.
      *
      * **Roles do not survive the move**, including the top one. A faction's roles belong to that
      * faction, and there is no general mapping between two factions' role sets; carrying a role
@@ -565,17 +614,14 @@ interface MedievalFactionsApi {
      * Put two factions at war, as `/f declarewar` does, without asking either of them.
      *
      * The mirror of [forcePeace], and the reason it exists: a plugin that can end a war it did not
-     * start could not start one it intends to end. Fails if the two are already at war, if either
-     * does not exist, or if they are the same faction.
+     * start could not start one it intends to end. Fails if both mirrored rows already exist, if
+     * either faction does not exist, or if they are the same faction. If an earlier attempt saved
+     * only one direction, a retry writes exactly the missing mirror and repairs the war.
      *
-     * **[event.FactionWarStartedEvent] is fired from the relationship write, which happens BEFORE the
-     * row is persisted**, so a consumer can see a war announced that then fails to save. It is fired
-     * once per pair either way -- the bridge collapses the two rows into one event -- but "once on
-     * success" would be a promise this cannot keep. A consumer that must not act on a war that did
-     * not happen should re-read [FactionView.isAtWarWith] on the next tick.
-     *
-     * The same ordering means a retry after a failure is *silent*: the bridge has already recorded
-     * the pair as warring, so the second attempt fires nothing.
+     * [event.FactionWarStartedEvent] is a post-commit notification. The first successfully persisted
+     * `AT_WAR` direction establishes the pair in the live relationship index; the bridge collapses
+     * the mirror into one event and queues it for the next main-thread turn. A failed repository
+     * write emits nothing.
      */
     fun declareWar(faction: FactionId, otherFaction: FactionId): ApiResult
 

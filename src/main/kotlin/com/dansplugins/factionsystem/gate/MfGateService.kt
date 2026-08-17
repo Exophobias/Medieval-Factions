@@ -14,13 +14,21 @@ import dev.forkhandles.result4k.resultFrom
 import org.bukkit.Material
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
 import java.util.logging.Level.SEVERE
+import kotlin.concurrent.withLock
 
 class MfGateService(
     private val plugin: MedievalFactions,
     private val gateRepo: MfGateRepository,
     private val gateCreationContextRepo: MfGateCreationContextRepository
 ) {
+
+    /** Serialises repository writes with publication to every gate index. */
+    private val mutationLock = ReentrantLock(true)
+
+    /** Factions whose parent row is being cascade-deleted; guarded by [mutationLock]. */
+    private val deletingFactions = HashSet<MfFactionId>()
 
     private data class GateChunkKey(val worldId: UUID, val chunkX: Int, val chunkZ: Int)
 
@@ -84,7 +92,13 @@ class MfGateService(
      * @param maxRetries Maximum number of retry attempts (default: 3)
      * @return Result containing the saved gate or a ServiceFailure
      */
-    fun save(gate: MfGate, maxRetries: Int = 3) = resultFrom {
+    fun save(gate: MfGate, maxRetries: Int = 3) = mutationLock.withLock {
+        resultFrom {
+        require(gate.factionId !in deletingFactions) { "Faction ${gate.factionId.value} is being deleted" }
+        val previousOwner = gatesById[gate.id]?.factionId
+        require(previousOwner == null || previousOwner !in deletingFactions) {
+            "Faction ${previousOwner?.value} is being deleted"
+        }
         var lastException: Exception? = null
         var currentGate = gate
         val targetStatus = gate.status // Preserve the intended status change
@@ -109,34 +123,61 @@ class MfGateService(
         }
 
         throw lastException ?: IllegalStateException("Retry failed without exception")
-    }.mapFailure { exception ->
-        ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+        }
     }
 
     @JvmName("deleteGateByGateId")
-    fun delete(gateId: MfGateId) = resultFrom {
-        val result = gateRepo.delete(gateId)
-        val removedGate = gatesById.remove(gateId)
-        if (removedGate != null) {
-            unindexGate(removedGate)
+    fun delete(gateId: MfGateId) = mutationLock.withLock {
+        resultFrom {
+            val live = gatesById[gateId]
+            require(live == null || live.factionId !in deletingFactions) {
+                "Faction ${live?.factionId?.value} is being deleted"
+            }
+            val result = gateRepo.delete(gateId)
+            val removedGate = gatesById.remove(gateId)
+            if (removedGate != null) {
+                unindexGate(removedGate)
+            }
+            return@resultFrom result
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-        return@resultFrom result
-    }.mapFailure { exception ->
-        ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
     }
 
     @JvmName("deleteAllGatesByFactionId")
-    fun deleteAllGates(factionId: MfFactionId) = resultFrom {
-        val result = gateRepo.deleteAll(factionId)
+    fun deleteAllGates(factionId: MfFactionId) = mutationLock.withLock {
+        resultFrom {
+            require(factionId !in deletingFactions) { "Faction ${factionId.value} is being deleted" }
+            val result = gateRepo.deleteAll(factionId)
+            evictAllGatesLocked(factionId)
+            return@resultFrom result
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+        }
+    }
+
+    /** Mirror the gate rows removed by a successful faction-delete cascade. */
+    internal fun evictAllGates(factionId: MfFactionId) = mutationLock.withLock {
+        evictAllGatesLocked(factionId)
+    }
+
+    private fun evictAllGatesLocked(factionId: MfFactionId) {
         val gatesToDelete = gatesById.filterValues { it.factionId == factionId }
         gatesToDelete.forEach { (key, value) ->
             if (gatesById.remove(key, value)) {
                 unindexGate(value)
             }
         }
-        return@resultFrom result
-    }.mapFailure { exception ->
-        ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+    }
+
+    internal fun blockFactionDeletion(factionId: MfFactionId) = mutationLock.withLock {
+        check(deletingFactions.add(factionId)) { "Faction ${factionId.value} is already being deleted" }
+    }
+
+    internal fun unblockFactionDeletion(factionId: MfFactionId) = mutationLock.withLock {
+        deletingFactions.remove(factionId)
     }
 
     @JvmName("getGateCreationContextByPlayerId")

@@ -12,6 +12,7 @@ import com.dansplugins.factionsystem.event.faction.FactionUnclaimEvent
 import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.exception.WorldClaimBlockedException
 import com.dansplugins.factionsystem.faction.MfFactionId
+import com.dansplugins.factionsystem.faction.ChildMutationCallbackGuard
 import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.failure.ServiceFailureType
@@ -28,8 +29,16 @@ import org.bukkit.World
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 class MfClaimService(private val plugin: MedievalFactions, private val repository: MfClaimedChunkRepository) {
+
+    /** Serialises each repository mutation with publication to the in-memory claim indexes. */
+    private val mutationLock = ReentrantLock(true)
+
+    /** Factions whose parent row is being deleted; guarded by [mutationLock]. */
+    private val deletingFactions = HashSet<MfFactionId>()
 
     private data class ClaimKey(val worldId: UUID, val x: Int, val z: Int) {
         constructor(claimedChunk: MfClaimedChunk) : this(claimedChunk.worldId, claimedChunk.x, claimedChunk.z)
@@ -217,10 +226,58 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         }
     }
 
-    fun save(claim: MfClaimedChunk) = resultFrom {
-        val world = plugin.server.getWorld(claim.worldId)
-        if (world != null && isClaimingBlockedInWorld(world)) {
-            throw WorldClaimBlockedException("Claims are not allowed in this world")
+    fun save(claim: MfClaimedChunk) = persist(claim, validateNewClaimWorld = true, requireExisting = false)
+
+    /**
+     * Change the owner of a claim that is already present, without consulting Bukkit's world
+     * registry. Recovery workers move persisted land by UUID and coordinates off the server thread;
+     * blocked-world validation is a rule for creating new land, not for changing who owns an
+     * existing database row.
+     */
+    fun transferOwnership(claim: MfClaimedChunk) =
+        persist(claim, validateNewClaimWorld = false, requireExisting = true)
+
+    /**
+     * Change an existing claim only while it is still held by [expectedOwner].
+     *
+     * Multi-step recovery code works from a frozen land snapshot. The comparison prevents an
+     * unclaim or third-party overclaim between that snapshot and this write from being overwritten.
+     */
+    fun transferOwnership(expectedOwner: MfFactionId, claim: MfClaimedChunk) =
+        persist(
+            claim,
+            validateNewClaimWorld = false,
+            requireExisting = true,
+            expectedOwner = expectedOwner
+        )
+
+    private fun persist(
+        claim: MfClaimedChunk,
+        validateNewClaimWorld: Boolean,
+        requireExisting: Boolean,
+        expectedOwner: MfFactionId? = null
+    ) = mutationLock.withLock {
+        resultFrom {
+            val prior = claimsByKey[ClaimKey(claim)]
+            if (requireExisting) {
+                requireNotNull(prior) { "No existing claim at ${claim.worldId}:${claim.x},${claim.z}" }
+            }
+            if (expectedOwner != null) {
+                require(prior?.factionId == expectedOwner) {
+                    "Claim at ${claim.worldId}:${claim.x},${claim.z} is no longer owned by ${expectedOwner.value}"
+                }
+            }
+            require(claim.factionId !in deletingFactions) {
+                "Faction ${claim.factionId.value} is being deleted"
+            }
+            require(prior == null || prior.factionId !in deletingFactions) {
+                "Faction ${prior?.factionId?.value} is being deleted"
+            }
+        if (validateNewClaimWorld && prior == null) {
+            val world = plugin.server.getWorld(claim.worldId)
+            if (world != null && isClaimingBlockedInWorld(world)) {
+                throw WorldClaimBlockedException("Claims are not allowed in this world")
+            }
         }
         val factionService = plugin.services.factionService
         val faction = factionService.getFaction(claim.factionId).let(::requireNotNull)
@@ -239,7 +296,7 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         //
         // Reading `claim` rather than `event.claim` is safe and necessary: FactionClaimEvent.claim
         // is a val, so no handler could have changed it anyway, and it does not exist yet here.
-        val previousOwner = claimsByKey[ClaimKey(claim)]?.factionId
+        val previousOwner = prior?.factionId
         val apiEvent = FactionClaimAttemptEvent(
             FactionId(claim.factionId.value),
             claim.worldId,
@@ -248,14 +305,17 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             previousOwner?.let { FactionId(it.value) },
             !plugin.server.isPrimaryThread
         )
-        plugin.server.pluginManager.callEvent(apiEvent)
+        ChildMutationCallbackGuard.callEvent(plugin, apiEvent)
         if (apiEvent.isCancelled) throw EventCancelledException("Claim refused by a plugin")
         val event = FactionClaimEvent(claim.factionId, claim, !plugin.server.isPrimaryThread)
-        plugin.server.pluginManager.callEvent(event)
+        ChildMutationCallbackGuard.callEvent(plugin, event)
         if (event.isCancelled) throw EventCancelledException("Event cancelled")
-        val result = repository.upsert(event.claim)
-        // The map write and the secondary index MUST move together, under the map's own per-key
-        // lock, and a plain put() followed by the index calls does not do that.
+        val lockService = plugin.services.lockService
+        val changesOwner = prior != null && prior.factionId != event.claim.factionId
+        val commit = {
+            val result = repository.upsert(event.claim)
+            // The map write and the secondary index MUST move together, under the map's own per-key
+            // lock, and a plain put() followed by the index calls does not do that.
         //
         // The race it permits is not theoretical and it does not heal. Take an unclaimed chunk that
         // two threads claim at once, A for faction F and B for faction G. A's put returns null, so A
@@ -272,18 +332,30 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         // compute() is used purely for the atomicity of the whole block; the value returned is
         // always the new claim. The index maps are different maps, which is what makes updating
         // them inside the remapping function legal.
-        val previous = AtomicReference<MfClaimedChunk?>()
-        claimsByKey.compute(ClaimKey(result)) { _, existing ->
-            previous.set(existing)
-            if (existing == null) {
-                indexClaim(result)
-            } else if (existing.factionId != result.factionId) {
-                unindexClaim(existing)
-                indexClaim(result)
+            val previous = AtomicReference<MfClaimedChunk?>()
+            claimsByKey.compute(ClaimKey(result)) { _, existing ->
+                previous.set(existing)
+                if (existing == null) {
+                    indexClaim(result)
+                } else if (existing.factionId != result.factionId) {
+                    unindexClaim(existing)
+                    indexClaim(result)
+                }
+                result
             }
-            result
+            if (changesOwner) {
+                // The repository deleted these rows in the same transaction as the owner update.
+                // The shared lock boundary keeps readers and a stale lock creator out until both
+                // the claim and lock caches mirror that durable state.
+                lockService.unloadLockedBlocks(prior!!)
+            }
+            result to previous.get()
         }
-        val previousClaim = previous.get()
+        val (result, previousClaim) = if (changesOwner) {
+            lockService.withMutationLock(commit)
+        } else {
+            commit()
+        }
         // The one place in MF where the outgoing and incoming owners of a chunk are both known, and
         // the write has already succeeded. The stable API's ClaimOwnerChangedEvent needs both, and
         // MF's own FactionClaimEvent above carries neither the old owner nor a guarantee that the
@@ -331,14 +403,25 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
                 }
             )
         }
-        return@resultFrom result
-    }.mapFailure { exception ->
-        ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+            return@resultFrom result
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+        }
     }
 
-    fun delete(claim: MfClaimedChunk) = resultFrom {
-        val event = FactionUnclaimEvent(claim.factionId, claim, !plugin.server.isPrimaryThread)
-        plugin.server.pluginManager.callEvent(event)
+    fun delete(claim: MfClaimedChunk) = mutationLock.withLock {
+        resultFrom {
+            val live = requireNotNull(claimsByKey[ClaimKey(claim)]) {
+                "No existing claim at ${claim.worldId}:${claim.x},${claim.z}"
+            }
+            require(live.factionId == claim.factionId) {
+                "Claim at ${claim.worldId}:${claim.x},${claim.z} is no longer owned by ${claim.factionId.value}"
+            }
+            require(live.factionId !in deletingFactions) {
+                "Faction ${live.factionId.value} is being deleted"
+            }
+            val event = FactionUnclaimEvent(live.factionId, live, !plugin.server.isPrimaryThread)
+        ChildMutationCallbackGuard.callEvent(plugin, event)
         if (event.isCancelled) throw EventCancelledException("Event cancelled")
         val result = repository.delete(event.claim.worldId, event.claim.x, event.claim.z)
         val removedClaim = claimsByKey.remove(ClaimKey(event.claim))
@@ -350,6 +433,7 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         // covers the same moment in the shape a consumer tracking tenancy wants, with a null new
         // owner. A chunk that was not in the cache yields previous == new == null and fires nothing.
         ApiClaimEventBridge.ownerChanged(plugin, event.claim.worldId, event.claim.x, event.claim.z, removedClaim?.factionId, null)
+        removedClaim?.let { ApiClaimEventBridge.unclaimed(plugin, it) }
         plugin.server.scheduler.runTask(
             plugin,
             Runnable {
@@ -397,6 +481,7 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
     }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
     }
+    }
 
     // Deliberately fires nothing, neither MF's own FactionUnclaimEvent nor the API's
     // ClaimOwnerChangedEvent. This is the disband and /f unclaimall path, and a large faction can put
@@ -405,17 +490,46 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
     // reconciliation sweep as a backstop. Do not "fix" this by adding a per-claim event without
     // measuring what it does to a disband of a realm-sized faction.
     @JvmName("deleteAllClaimsByFactionId")
-    fun deleteAllClaims(factionId: MfFactionId) = resultFrom {
-        val result = repository.deleteAll(factionId)
-        val claimsToDelete = claimsByKey.filterValues { it.factionId == factionId }
+    fun deleteAllClaims(factionId: MfFactionId) = mutationLock.withLock {
+        resultFrom {
+            require(factionId !in deletingFactions) { "Faction ${factionId.value} is being deleted" }
+            val result = repository.deleteAll(factionId)
+            evictAllClaimsLocked(factionId)
+            return@resultFrom result
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+        }
+    }
+
+    /** Mirror a successful database cascade without issuing another delete. */
+    internal fun evictAllClaims(factionId: MfFactionId) = mutationLock.withLock {
+        evictAllClaimsLocked(factionId)
+    }
+
+    private fun evictAllClaimsLocked(factionId: MfFactionId) {
+        val claimsToDelete = claimsByKey.entries
+            .filter { it.value.factionId == factionId }
+            .sortedWith(compareBy({ it.value.worldId.toString() }, { it.value.x }, { it.value.z }))
+        val lockService = plugin.services.lockService
+        val removed = ArrayList<MfClaimedChunk>(claimsToDelete.size)
         claimsToDelete.forEach { (key, value) ->
             if (claimsByKey.remove(key, value)) {
                 unindexClaim(value)
+                removed.add(value)
             }
         }
-        return@resultFrom result
-    }.mapFailure { exception ->
-        ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
+        // The database removes mf_locked_block rows through the claim foreign-key cascade. Mirror
+        // that in memory with one lock-cache pass, rather than one full scan per deleted chunk.
+        lockService.unloadLockedBlocks(removed)
+    }
+
+    /** Fence new claim writes before a faction's parent row is cascade-deleted. */
+    internal fun blockFactionDeletion(factionId: MfFactionId) = mutationLock.withLock {
+        check(deletingFactions.add(factionId)) { "Faction ${factionId.value} is already being deleted" }
+    }
+
+    internal fun unblockFactionDeletion(factionId: MfFactionId) = mutationLock.withLock {
+        deletingFactions.remove(factionId)
     }
 
     private fun indexClaim(claim: MfClaimedChunk) {
