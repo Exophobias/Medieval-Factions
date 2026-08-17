@@ -6,8 +6,8 @@ import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.claim.MfClaimedChunkRepository
 import com.dansplugins.factionsystem.event.relationship.RelationshipCreateEvent
-import com.dansplugins.factionsystem.gate.MfGateService
 import com.dansplugins.factionsystem.failure.ServiceFailure
+import com.dansplugins.factionsystem.gate.MfGateService
 import com.dansplugins.factionsystem.locks.MfLockRepository
 import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.locks.MfLockedBlock

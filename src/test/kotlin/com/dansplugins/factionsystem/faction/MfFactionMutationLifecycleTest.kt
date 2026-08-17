@@ -66,8 +66,11 @@ class MfFactionMutationLifecycleTest {
     private lateinit var mapService: MapService
     private val events = CopyOnWriteArrayList<Event>()
     private val publicationOrder = CopyOnWriteArrayList<String>()
+
     @Volatile private var cancelDisband = false
+
     @Volatile private var callbackDeletes: Map<MfFactionId, MfFactionId> = emptyMap()
+
     @Volatile private var callbackBarrier: CountDownLatch? = null
     private val callbackDeleteResults = ConcurrentHashMap<MfFactionId, Result4k<Unit, *>>()
 
@@ -361,10 +364,15 @@ class MfFactionMutationLifecycleTest {
 
     private class InMemoryFactionRepository : MfFactionRepository {
         val rows = ConcurrentHashMap<MfFactionId, MfFaction>()
+
         @Volatile var failAtomicMutation = false
+
         @Volatile var atomicMutationCalls = 0
+
         @Volatile private var blockedSaveId: MfFactionId? = null
+
         @Volatile var saveCommitted = CountDownLatch(1)
+
         @Volatile var releaseSave = CountDownLatch(1)
 
         override fun getFaction(id: MfFactionId) = rows[id]

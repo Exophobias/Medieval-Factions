@@ -94,35 +94,35 @@ class MfGateService(
      */
     fun save(gate: MfGate, maxRetries: Int = 3) = mutationLock.withLock {
         resultFrom {
-        require(gate.factionId !in deletingFactions) { "Faction ${gate.factionId.value} is being deleted" }
-        val previousOwner = gatesById[gate.id]?.factionId
-        require(previousOwner == null || previousOwner !in deletingFactions) {
-            "Faction ${previousOwner?.value} is being deleted"
-        }
-        var lastException: Exception? = null
-        var currentGate = gate
-        val targetStatus = gate.status // Preserve the intended status change
+            require(gate.factionId !in deletingFactions) { "Faction ${gate.factionId.value} is being deleted" }
+            val previousOwner = gatesById[gate.id]?.factionId
+            require(previousOwner == null || previousOwner !in deletingFactions) {
+                "Faction ${previousOwner?.value} is being deleted"
+            }
+            var lastException: Exception? = null
+            var currentGate = gate
+            val targetStatus = gate.status // Preserve the intended status change
 
-        repeat(maxRetries) { attempt ->
-            try {
-                val result = gateRepo.upsert(currentGate)
-                val previousGate = gatesById.put(result.id, result)
-                reindexGate(previousGate, result)
-                return@resultFrom result
-            } catch (e: OptimisticLockingFailureException) {
-                lastException = e
-                if (attempt < maxRetries - 1) {
-                    // Re-fetch the current state from the database for next retry
-                    val freshGate = gateRepo.getGate(currentGate.id) ?: throw e
-                    // Apply the intended status change to the fresh gate state
-                    currentGate = freshGate.copy(status = targetStatus)
-                    // Small delay before retry to reduce contention (runs in async context)
-                    Thread.sleep(50L * (attempt + 1))
+            repeat(maxRetries) { attempt ->
+                try {
+                    val result = gateRepo.upsert(currentGate)
+                    val previousGate = gatesById.put(result.id, result)
+                    reindexGate(previousGate, result)
+                    return@resultFrom result
+                } catch (e: OptimisticLockingFailureException) {
+                    lastException = e
+                    if (attempt < maxRetries - 1) {
+                        // Re-fetch the current state from the database for next retry
+                        val freshGate = gateRepo.getGate(currentGate.id) ?: throw e
+                        // Apply the intended status change to the fresh gate state
+                        currentGate = freshGate.copy(status = targetStatus)
+                        // Small delay before retry to reduce contention (runs in async context)
+                        Thread.sleep(50L * (attempt + 1))
+                    }
                 }
             }
-        }
 
-        throw lastException ?: IllegalStateException("Retry failed without exception")
+            throw lastException ?: IllegalStateException("Retry failed without exception")
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }

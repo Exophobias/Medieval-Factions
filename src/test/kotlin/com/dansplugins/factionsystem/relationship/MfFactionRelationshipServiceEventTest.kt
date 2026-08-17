@@ -70,25 +70,33 @@ class MfFactionRelationshipServiceEventTest {
         assertEquals(1, created.size)
         assertEquals(invoker, created.single().initiatingFaction)
         assertEquals(relationship, created.single().relationship)
-        assertEquals(FactionId(invoker.value),
-            events.filterIsInstance<FactionWarStartEvent>().single().initiatingFaction)
+        assertEquals(
+            FactionId(invoker.value),
+            events.filterIsInstance<FactionWarStartEvent>().single().initiatingFaction
+        )
 
         events.clear()
         repository.failDelete = true
         service.delete(relationship.id)
-        assertTrue(events.none { it is RelationshipDeletedEvent },
-            "a failed repository delete must not publish a committed deletion")
+        assertTrue(
+            events.none { it is RelationshipDeletedEvent },
+            "a failed repository delete must not publish a committed deletion"
+        )
 
         repository.failDelete = false
         service.delete(relationship.id)
-        assertEquals(listOf(relationship),
-            events.filterIsInstance<RelationshipDeletedEvent>().map { it.relationship })
+        assertEquals(
+            listOf(relationship),
+            events.filterIsInstance<RelationshipDeletedEvent>().map { it.relationship }
+        )
 
         events.clear()
         repository.failUpsert = true
         service.save(war("another", "enemy"), MfFactionId("another"))
-        assertTrue(events.none { it is RelationshipCreatedEvent },
-            "a failed repository upsert must not publish a committed creation")
+        assertTrue(
+            events.none { it is RelationshipCreatedEvent },
+            "a failed repository upsert must not publish a committed creation"
+        )
     }
 
     @Test
@@ -147,10 +155,16 @@ class MfFactionRelationshipServiceEventTest {
         service.evictForDeletedFaction(MfFactionId("doomed"))
 
         assertTrue(service.getRelationships(MfFactionId("doomed")).isEmpty())
-        assertTrue(service.getRelationships(
-            MfFactionId("survivor"), MfFactionId("doomed")).isEmpty())
-        assertEquals(setOf(ours, theirs),
-            events.filterIsInstance<RelationshipDeletedEvent>().map { it.relationship }.toSet())
+        assertTrue(
+            service.getRelationships(
+                MfFactionId("survivor"),
+                MfFactionId("doomed")
+            ).isEmpty()
+        )
+        assertEquals(
+            setOf(ours, theirs),
+            events.filterIsInstance<RelationshipDeletedEvent>().map { it.relationship }.toSet()
+        )
     }
 
     @Test
@@ -176,15 +190,31 @@ class MfFactionRelationshipServiceEventTest {
         events.clear()
 
         val result = service.ensureWarPair(
-            MfFactionId("first"), MfFactionId("second"), MfFactionId("first"))
+            MfFactionId("first"),
+            MfFactionId("second"),
+            MfFactionId("first")
+        )
 
         assertTrue(result is dev.forkhandles.result4k.Success)
-        assertEquals(1, service.getRelationships(
-            MfFactionId("first"), MfFactionId("second")).count { it.type == MfFactionRelationshipType.AT_WAR })
-        assertEquals(1, service.getRelationships(
-            MfFactionId("second"), MfFactionId("first")).count { it.type == MfFactionRelationshipType.AT_WAR })
-        assertEquals(1, events.filterIsInstance<RelationshipCreatedEvent>().size,
-            "only the missing mirror should be written")
+        assertEquals(
+            1,
+            service.getRelationships(
+                MfFactionId("first"),
+                MfFactionId("second")
+            ).count { it.type == MfFactionRelationshipType.AT_WAR }
+        )
+        assertEquals(
+            1,
+            service.getRelationships(
+                MfFactionId("second"),
+                MfFactionId("first")
+            ).count { it.type == MfFactionRelationshipType.AT_WAR }
+        )
+        assertEquals(
+            1,
+            events.filterIsInstance<RelationshipCreatedEvent>().size,
+            "only the missing mirror should be written"
+        )
 
         events.clear()
         service.ensureWarPair(MfFactionId("first"), MfFactionId("second"), MfFactionId("first"))
@@ -195,34 +225,60 @@ class MfFactionRelationshipServiceEventTest {
     fun refusedIndependenceWarLeavesBothOathRowsIntact() {
         val vassal = MfFactionId("vassal")
         val liege = MfFactionId("liege")
-        service.save(MfFactionRelationship(
-            factionId = vassal, targetId = liege, type = MfFactionRelationshipType.LIEGE))
-        service.save(MfFactionRelationship(
-            factionId = liege, targetId = vassal, type = MfFactionRelationshipType.VASSAL))
+        service.save(
+            MfFactionRelationship(
+                factionId = vassal,
+                targetId = liege,
+                type = MfFactionRelationshipType.LIEGE
+            )
+        )
+        service.save(
+            MfFactionRelationship(
+                factionId = liege,
+                targetId = vassal,
+                type = MfFactionRelationshipType.VASSAL
+            )
+        )
         cancelWarStart = true
 
         val result = service.breakOath(vassal, liege, establishWar = true)
 
         assertTrue(result is dev.forkhandles.result4k.Failure)
-        assertTrue(service.getRelationships(vassal, liege).any {
-            it.type == MfFactionRelationshipType.LIEGE
-        })
-        assertTrue(service.getRelationships(liege, vassal).any {
-            it.type == MfFactionRelationshipType.VASSAL
-        })
-        assertTrue(service.getRelationships(vassal, liege).none {
-            it.type == MfFactionRelationshipType.AT_WAR
-        })
+        assertTrue(
+            service.getRelationships(vassal, liege).any {
+                it.type == MfFactionRelationshipType.LIEGE
+            }
+        )
+        assertTrue(
+            service.getRelationships(liege, vassal).any {
+                it.type == MfFactionRelationshipType.VASSAL
+            }
+        )
+        assertTrue(
+            service.getRelationships(vassal, liege).none {
+                it.type == MfFactionRelationshipType.AT_WAR
+            }
+        )
     }
 
     @Test
     fun peacefulIndependenceActuallyRemovesTheOath() {
         val vassal = MfFactionId("neutral-vassal")
         val liege = MfFactionId("neutral-liege")
-        service.save(MfFactionRelationship(
-            factionId = vassal, targetId = liege, type = MfFactionRelationshipType.LIEGE))
-        service.save(MfFactionRelationship(
-            factionId = liege, targetId = vassal, type = MfFactionRelationshipType.VASSAL))
+        service.save(
+            MfFactionRelationship(
+                factionId = vassal,
+                targetId = liege,
+                type = MfFactionRelationshipType.LIEGE
+            )
+        )
+        service.save(
+            MfFactionRelationship(
+                factionId = liege,
+                targetId = vassal,
+                type = MfFactionRelationshipType.VASSAL
+            )
+        )
 
         service.breakOath(vassal, liege, establishWar = false)
 
@@ -238,17 +294,23 @@ class MfFactionRelationshipServiceEventTest {
         val result = service.breakOath(vassal, former, establishWar = true)
 
         assertTrue(result is dev.forkhandles.result4k.Failure)
-        assertTrue(service.getRelationships(vassal, former).none {
-            it.type == MfFactionRelationshipType.AT_WAR
-        })
-        assertTrue(service.getRelationships(former, vassal).none {
-            it.type == MfFactionRelationshipType.AT_WAR
-        })
+        assertTrue(
+            service.getRelationships(vassal, former).none {
+                it.type == MfFactionRelationshipType.AT_WAR
+            }
+        )
+        assertTrue(
+            service.getRelationships(former, vassal).none {
+                it.type == MfFactionRelationshipType.AT_WAR
+            }
+        )
     }
 
     private fun war(holder: String, target: String) = MfFactionRelationship(
-        factionId = MfFactionId(holder), targetId = MfFactionId(target),
-        type = MfFactionRelationshipType.AT_WAR)
+        factionId = MfFactionId(holder),
+        targetId = MfFactionId(target),
+        type = MfFactionRelationshipType.AT_WAR
+    )
 
     private class RecordingRepository : MfFactionRelationshipRepository {
         private val rows = linkedMapOf<MfFactionRelationshipId, MfFactionRelationship>()

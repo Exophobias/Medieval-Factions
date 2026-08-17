@@ -87,24 +87,42 @@ class ApiRelationshipListenerTest {
     @Test
     fun createThenDeleteBeforeMainTurnStillEmitsStartThenEnd() {
         val relationship = war("new-realm", "neighbour")
-        `when`(relationshipService.getRelationships(
-            relationship.factionId, relationship.targetId)).thenReturn(emptyList())
-        `when`(relationshipService.getRelationships(
-            relationship.targetId, relationship.factionId)).thenReturn(emptyList())
+        `when`(
+            relationshipService.getRelationships(
+                relationship.factionId,
+                relationship.targetId
+            )
+        ).thenReturn(emptyList())
+        `when`(
+            relationshipService.getRelationships(
+                relationship.targetId,
+                relationship.factionId
+            )
+        ).thenReturn(emptyList())
 
-        listener.onRelationshipCreated(RelationshipCreatedEvent(
-            relationship, relationship.factionId, false))
+        listener.onRelationshipCreated(
+            RelationshipCreatedEvent(
+                relationship,
+                relationship.factionId,
+                false
+            )
+        )
         listener.onRelationshipDeleted(RelationshipDeletedEvent(relationship, false))
         runScheduled()
 
-        assertEquals(listOf(FactionWarStartedEvent::class, FactionWarEndedEvent::class),
+        assertEquals(
+            listOf(FactionWarStartedEvent::class, FactionWarEndedEvent::class),
             fired.map { it::class },
-            "post-commit transitions must survive both changes happening before the main relay")
+            "post-commit transitions must survive both changes happening before the main relay"
+        )
     }
 
     private fun war(holder: String, target: String): MfFactionRelationship =
-        MfFactionRelationship(factionId = MfFactionId(holder), targetId = MfFactionId(target),
-            type = AT_WAR)
+        MfFactionRelationship(
+            factionId = MfFactionId(holder),
+            targetId = MfFactionId(target),
+            type = AT_WAR
+        )
 
     private fun runScheduled() {
         while (scheduled.isNotEmpty()) {

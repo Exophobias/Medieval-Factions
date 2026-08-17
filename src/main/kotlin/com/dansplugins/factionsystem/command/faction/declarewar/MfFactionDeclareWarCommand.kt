@@ -71,8 +71,9 @@ class MfFactionDeclareWarCommand(private val plugin: MedievalFactions) : Command
                 val factionRelationshipService = plugin.services.factionRelationshipService
                 val existingRelationships = factionRelationshipService.getRelationships(faction.id, target.id)
                 val reverseRelationships = factionRelationshipService.getRelationships(target.id, faction.id)
-                if (existingRelationships.any { it.type == AT_WAR }
-                    && reverseRelationships.any { it.type == AT_WAR }) {
+                if (existingRelationships.any { it.type == AT_WAR } &&
+                    reverseRelationships.any { it.type == AT_WAR }
+                ) {
                     sender.sendMessage("$RED${plugin.language["CommandFactionDeclareWarAlreadyAtWar", target.name]}")
                     return@Runnable
                 }

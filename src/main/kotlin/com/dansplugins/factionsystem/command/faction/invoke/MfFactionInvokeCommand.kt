@@ -89,8 +89,9 @@ class MfFactionInvokeCommand(private val plugin: MedievalFactions) : CommandExec
                 }
                 val existingAllyEnemyRelationships = factionRelationshipService.getRelationships(ally.id, enemy.id)
                 val existingEnemyAllyRelationships = factionRelationshipService.getRelationships(enemy.id, ally.id)
-                if (existingAllyEnemyRelationships.any { it.type == AT_WAR }
-                    && existingEnemyAllyRelationships.any { it.type == AT_WAR }) {
+                if (existingAllyEnemyRelationships.any { it.type == AT_WAR } &&
+                    existingEnemyAllyRelationships.any { it.type == AT_WAR }
+                ) {
                     sender.sendMessage("$RED${plugin.language["CommandFactionInvokeAllyAlreadyAtWarWithEnemy"]}")
                     return@Runnable
                 }

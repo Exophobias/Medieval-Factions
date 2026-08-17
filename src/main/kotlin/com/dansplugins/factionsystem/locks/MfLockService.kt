@@ -30,6 +30,7 @@ import kotlin.concurrent.withLock
 class MfLockService(private val plugin: MedievalFactions, private val repository: MfLockRepository) {
 
     private val lockedBlocks: MutableMap<MfBlockPosition, MfLockedBlock> = ConcurrentHashMap()
+
     /** Serialises repository writes with cache publication and claim-cascade eviction. */
     private val mutationLock = ReentrantLock(true)
 

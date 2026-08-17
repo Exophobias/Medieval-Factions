@@ -140,7 +140,11 @@ class SuccessionPolicyRegistry(private val logger: Logger) {
         SuccessionPreparationFence.activate(preparationId)
         val preparation = try {
             transactional.prepareSuccession(
-                preparationId, faction, departingHead, decision.successor, successorTerm
+                preparationId,
+                faction,
+                departingHead,
+                decision.successor,
+                successorTerm
             )
         } catch (throwable: Throwable) {
             logger.log(

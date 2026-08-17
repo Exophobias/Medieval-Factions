@@ -14,8 +14,8 @@ import com.dansplugins.factionsystem.faction.permission.MfFactionPermissions
 import com.dansplugins.factionsystem.faction.role.MfFactionRoles
 import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.lang.Language
-import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.locks.MfLockRepository
+import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.locks.MfLockedBlock
 import com.dansplugins.factionsystem.locks.MfLockedBlockId
 import com.dansplugins.factionsystem.player.MfPlayerId
@@ -84,6 +84,7 @@ class MfFactionSuccessionPolicyTest {
         override fun getFaction(name: String) = rows.values.firstOrNull { it.name == name }
         override fun getFaction(playerId: MfPlayerId) = rows.values.firstOrNull { it.isMember(playerId) }
         override fun getFactions() = rows.values.toList()
+
         @Synchronized
         override fun upsert(faction: MfFaction): MfFaction {
             val current = rows[faction.id]
@@ -657,14 +658,19 @@ class MfFactionSuccessionPolicyTest {
             casStarted.countDown()
             casOutcome.set(
                 api.replacePrimaryOwnerIf(
-                    FactionId(faction.id.value), uuid(ruler), staleTerm, null
+                    FactionId(faction.id.value),
+                    uuid(ruler),
+                    staleTerm,
+                    null
                 )
             )
             casFinished.countDown()
         }
         assertTrue(casStarted.await(5, TimeUnit.SECONDS))
-        assertTrue(casFinished.await(5, TimeUnit.SECONDS),
-            "the exact CAS was blocked behind a pre-commit callback")
+        assertTrue(
+            casFinished.await(5, TimeUnit.SECONDS),
+            "the exact CAS was blocked behind a pre-commit callback"
+        )
         assertEquals(PrimaryOwnerReplaceOutcome.REPLACED, casOutcome.get().get())
 
         releaseSave.countDown()
@@ -686,7 +692,10 @@ class MfFactionSuccessionPolicyTest {
         val staleDescriptionEdit = before.copy(description = "prepared before the CAS")
 
         val outcome = api.replacePrimaryOwnerIf(
-            FactionId(faction.id.value), uuid(ruler), before.primaryOwnerTerm, uuid(marshal)
+            FactionId(faction.id.value),
+            uuid(ruler),
+            before.primaryOwnerTerm,
+            uuid(marshal)
         )
         val staleSave = factionService.save(staleDescriptionEdit)
 

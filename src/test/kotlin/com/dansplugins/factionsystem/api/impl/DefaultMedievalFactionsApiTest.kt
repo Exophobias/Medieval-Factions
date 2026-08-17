@@ -260,30 +260,46 @@ class DefaultMedievalFactionsApiTest {
     fun declareWarRepairsAMissingReverseRow() {
         acceptingRelationshipWrites()
         atWar("a", "b")
-        `when`(relationshipService.ensureWarPair(
-            MfFactionId("a"), MfFactionId("b"), MfFactionId("a")))
+        `when`(
+            relationshipService.ensureWarPair(
+                MfFactionId("a"),
+                MfFactionId("b"),
+                MfFactionId("a")
+            )
+        )
             .thenReturn(Success(Unit))
 
         val result = api.declareWar(FactionId("a"), FactionId("b"))
 
         assertTrue(result.isSuccess)
         verify(relationshipService).ensureWarPair(
-            MfFactionId("a"), MfFactionId("b"), MfFactionId("a"))
+            MfFactionId("a"),
+            MfFactionId("b"),
+            MfFactionId("a")
+        )
     }
 
     @Test
     fun declareWarRepairsAMissingOwnRow() {
         acceptingRelationshipWrites()
         atWar("b", "a")
-        `when`(relationshipService.ensureWarPair(
-            MfFactionId("a"), MfFactionId("b"), MfFactionId("a")))
+        `when`(
+            relationshipService.ensureWarPair(
+                MfFactionId("a"),
+                MfFactionId("b"),
+                MfFactionId("a")
+            )
+        )
             .thenReturn(Success(Unit))
 
         val result = api.declareWar(FactionId("a"), FactionId("b"))
 
         assertTrue(result.isSuccess)
         verify(relationshipService).ensureWarPair(
-            MfFactionId("a"), MfFactionId("b"), MfFactionId("a"))
+            MfFactionId("a"),
+            MfFactionId("b"),
+            MfFactionId("a")
+        )
     }
 
     /**

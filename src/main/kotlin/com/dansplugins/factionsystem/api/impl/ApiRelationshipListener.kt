@@ -65,8 +65,12 @@ class ApiRelationshipListener(private val plugin: MedievalFactions) : Listener {
         val pair = WarPair.of(relationship.factionId, relationship.targetId)
         relationshipsById[relationship.id] = relationship
         if (warringPairs.add(pair)) {
-            fireWarEvent(relationship.factionId, relationship.targetId, started = true,
-                initiatingFaction = event.initiatingFaction)
+            fireWarEvent(
+                relationship.factionId,
+                relationship.targetId,
+                started = true,
+                initiatingFaction = event.initiatingFaction
+            )
         }
     }
 

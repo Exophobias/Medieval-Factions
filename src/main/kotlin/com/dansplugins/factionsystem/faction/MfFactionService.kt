@@ -7,8 +7,8 @@ import com.dansplugins.factionsystem.api.event.FactionPrimaryOwnerChangedEvent
 import com.dansplugins.factionsystem.api.impl.FactionViewAdapter
 import com.dansplugins.factionsystem.area.MfPosition
 import com.dansplugins.factionsystem.event.faction.FactionCreateEvent
-import com.dansplugins.factionsystem.event.faction.FactionDescriptionChangeEvent
 import com.dansplugins.factionsystem.event.faction.FactionDeletedEvent
+import com.dansplugins.factionsystem.event.faction.FactionDescriptionChangeEvent
 import com.dansplugins.factionsystem.event.faction.FactionDisbandEvent
 import com.dansplugins.factionsystem.event.faction.FactionJoinEvent
 import com.dansplugins.factionsystem.event.faction.FactionLeaveEvent
@@ -50,12 +50,16 @@ private fun MfPlayerId.toUuidOrNull(): UUID? = runCatching { UUID.fromString(val
 class MfFactionService(private val plugin: MedievalFactions, private val repository: MfFactionRepository) {
 
     private val factionsById: MutableMap<MfFactionId, MfFaction> = ConcurrentHashMap()
+
     /** A multi-faction database commit is exposed to lock-free callers as one cache generation. */
     private val factionCacheLock = ReentrantReadWriteLock(true)
+
     /** Deterministic package-local probe for the read-between-publications regression. */
     @Volatile internal var cachePublicationHook: () -> Unit = {}
+
     /** Prevents a re-entrant disband listener from publishing the same deletion twice. */
     private val deletingFactions: MutableSet<MfFactionId> = ConcurrentHashMap.newKeySet()
+
     /** Per-faction locks protecting commit/cache state and lifecycle reservation counters. */
     private val commitLocks: MutableMap<MfFactionId, ReentrantLock> = ConcurrentHashMap()
     private val activeSaveLifecycles: MutableMap<MfFactionId, Int> = ConcurrentHashMap()
@@ -232,8 +236,11 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                 previous.primaryOwnerId == null && previous.primaryOwnerSince == 0L
             val stamped = if (successor.primaryOwnerId != previous?.primaryOwnerId) {
                 successor.copy(
-                    primaryOwnerSince = if (firstHeadOfAPreV9Faction) 0L
-                    else System.currentTimeMillis(),
+                    primaryOwnerSince = if (firstHeadOfAPreV9Faction) {
+                        0L
+                    } else {
+                        System.currentTimeMillis()
+                    },
                     primaryOwnerTerm = UUID.randomUUID()
                 )
             } else {
@@ -241,7 +248,10 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             }
             if (decision != null && departing != null) {
                 prepared = successionPolicies.prepare(
-                    decision, view, departing, stamped.primaryOwnerTerm
+                    decision,
+                    view,
+                    departing,
+                    stamped.primaryOwnerTerm
                 ) ?: throw IllegalStateException(
                     "Succession policy could not durably prepare faction ${requested.id.value}"
                 )
@@ -260,8 +270,11 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                 "Faction ${requested.id.value} no longer exists; version ${requested.version} cannot create it"
             )
         }
-        if (previous != null && (requested.version != previous.version ||
-                requested.primaryOwnerTerm != previous.primaryOwnerTerm)) {
+        if (previous != null && (
+            requested.version != previous.version ||
+                requested.primaryOwnerTerm != previous.primaryOwnerTerm
+            )
+        ) {
             throw OptimisticLockingFailureException(
                 "Stale faction snapshot ${requested.id.value}: version ${requested.version}, owner " +
                     "term ${requested.primaryOwnerTerm}; current version ${previous.version}, " +
@@ -288,13 +301,19 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             commitLock(factionId).withLock {
                 val remaining = requireNotNull(activeSaveLifecycles[factionId]) - 1
                 check(remaining >= 0) { "Faction ${factionId.value} save lifecycle underflow" }
-                if (remaining == 0) activeSaveLifecycles.remove(factionId)
-                else activeSaveLifecycles[factionId] = remaining
+                if (remaining == 0) {
+                    activeSaveLifecycles.remove(factionId)
+                } else {
+                    activeSaveLifecycles[factionId] = remaining
+                }
 
                 val threadDepth = saveLifecycleDepth.get() - 1
                 check(threadDepth >= 0) { "Save lifecycle thread depth underflow" }
-                if (threadDepth == 0) saveLifecycleDepth.remove()
-                else saveLifecycleDepth.set(threadDepth)
+                if (threadDepth == 0) {
+                    saveLifecycleDepth.remove()
+                } else {
+                    saveLifecycleDepth.set(threadDepth)
+                }
                 lifecycleIdle(factionId).signalAll()
             }
         }
@@ -352,14 +371,18 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         }
         if (previous.description != requested.description) {
             val event = FactionDescriptionChangeEvent(
-                requested.id, requested.description, !plugin.server.isPrimaryThread
+                requested.id,
+                requested.description,
+                !plugin.server.isPrimaryThread
             )
             plugin.server.pluginManager.callEvent(event)
             if (event.isCancelled) throw EventCancelledException("Event cancelled")
         }
         if (previous.prefix != requested.prefix) {
             val event = FactionPrefixChangeEvent(
-                requested.id, requested.prefix, !plugin.server.isPrimaryThread
+                requested.id,
+                requested.prefix,
+                !plugin.server.isPrimaryThread
             )
             plugin.server.pluginManager.callEvent(event)
             if (event.isCancelled) throw EventCancelledException("Event cancelled")
@@ -427,7 +450,8 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                     )
                 }
             } else if (live == null || live.version != previous.version ||
-                live.primaryOwnerTerm != previous.primaryOwnerTerm) {
+                live.primaryOwnerTerm != previous.primaryOwnerTerm
+            ) {
                 throw OptimisticLockingFailureException(
                     "Faction ${id.value} changed before its write could commit"
                 )
@@ -467,7 +491,8 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             }
             val mapService = plugin.services.mapService
             if (mapService != null &&
-                !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
+                !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")
+            ) {
                 runCatching {
                     plugin.server.scheduler.runTask(
                         plugin,
@@ -611,7 +636,8 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             )
             val mapService = plugin.services.mapService
             if (mapService != null &&
-                !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
+                !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")
+            ) {
                 plugin.server.scheduler.runTask(
                     plugin,
                     Runnable { mapService.scheduleUpdateClaims(source) }
@@ -650,7 +676,8 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             validatePlan(plan)
             val liveDeleted = getFaction(deletedFaction.id)
             if (liveDeleted == null || liveDeleted.version != deletedFaction.version ||
-                liveDeleted.primaryOwnerTerm != deletedFaction.primaryOwnerTerm) {
+                liveDeleted.primaryOwnerTerm != deletedFaction.primaryOwnerTerm
+            ) {
                 throw OptimisticLockingFailureException(
                     "Faction ${deletedFaction.id.value} changed before it could be deleted"
                 )

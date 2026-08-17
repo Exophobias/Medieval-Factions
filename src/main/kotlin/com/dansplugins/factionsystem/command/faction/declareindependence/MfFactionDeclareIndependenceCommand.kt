@@ -2,7 +2,6 @@ package com.dansplugins.factionsystem.command.faction.declareindependence
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.player.MfPlayer
-import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.AT_WAR
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.LIEGE
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor
@@ -58,8 +57,8 @@ class MfFactionDeclareIndependenceCommand(private val plugin: MedievalFactions) 
                     sender.sendMessage("$RED${plugin.language["CommandFactionDeclareIndependenceNoLiege"]}")
                     return@Runnable
                 }
-                val establishWar = !faction.flags[plugin.flags.isNeutral]
-                    && !liege.flags[plugin.flags.isNeutral]
+                val establishWar = !faction.flags[plugin.flags.isNeutral] &&
+                    !liege.flags[plugin.flags.isNeutral]
                 factionRelationshipService.breakOath(faction.id, liege.id, establishWar)
                     .onFailure {
                         val key = if (establishWar) {

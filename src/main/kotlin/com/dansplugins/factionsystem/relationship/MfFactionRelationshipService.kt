@@ -8,8 +8,8 @@ import com.dansplugins.factionsystem.event.relationship.RelationshipCreatedEvent
 import com.dansplugins.factionsystem.event.relationship.RelationshipDeleteEvent
 import com.dansplugins.factionsystem.event.relationship.RelationshipDeletedEvent
 import com.dansplugins.factionsystem.exception.EventCancelledException
-import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.ChildMutationCallbackGuard
+import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.failure.ServiceFailureType
@@ -29,6 +29,7 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
 
     private val relationshipsById: MutableMap<MfFactionRelationshipId, MfFactionRelationship> = ConcurrentHashMap()
     private val mutationLock = ReentrantLock()
+
     /** Factions whose parent row is being cascade-deleted; guarded by [mutationLock]. */
     private val deletingFactions = HashSet<MfFactionId>()
 
@@ -167,12 +168,16 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
     ): Result4k<Unit, ServiceFailure> = mutationLock.withLock {
         resultFrom {
             if (getRelationships(first, second).none { it.type == AT_WAR }) {
-                save(MfFactionRelationship(factionId = first, targetId = second, type = AT_WAR),
-                    initiatingFaction).onFailure { throw it.reason.cause }
+                save(
+                    MfFactionRelationship(factionId = first, targetId = second, type = AT_WAR),
+                    initiatingFaction
+                ).onFailure { throw it.reason.cause }
             }
             if (getRelationships(second, first).none { it.type == AT_WAR }) {
-                save(MfFactionRelationship(factionId = second, targetId = first, type = AT_WAR),
-                    initiatingFaction).onFailure { throw it.reason.cause }
+                save(
+                    MfFactionRelationship(factionId = second, targetId = first, type = AT_WAR),
+                    initiatingFaction
+                ).onFailure { throw it.reason.cause }
             }
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)

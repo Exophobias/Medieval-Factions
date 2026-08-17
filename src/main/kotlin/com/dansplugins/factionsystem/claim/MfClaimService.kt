@@ -11,8 +11,8 @@ import com.dansplugins.factionsystem.event.faction.FactionClaimEvent
 import com.dansplugins.factionsystem.event.faction.FactionUnclaimEvent
 import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.exception.WorldClaimBlockedException
-import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.ChildMutationCallbackGuard
+import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.failure.ServiceFailureType
@@ -273,136 +273,136 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             require(prior == null || prior.factionId !in deletingFactions) {
                 "Faction ${prior?.factionId?.value} is being deleted"
             }
-        if (validateNewClaimWorld && prior == null) {
-            val world = plugin.server.getWorld(claim.worldId)
-            if (world != null && isClaimingBlockedInWorld(world)) {
-                throw WorldClaimBlockedException("Claims are not allowed in this world")
-            }
-        }
-        val factionService = plugin.services.factionService
-        val faction = factionService.getFaction(claim.factionId).let(::requireNotNull)
-        // The stable-API event, and it fires BEFORE MedievalFactions' own.
-        //
-        // The order is the point. Whichever event is checked last is the real gate, and everything
-        // after it observes a decision it can no longer influence -- so with this one second, a
-        // MONITOR handler of FactionClaimEvent (the event every existing third-party plugin binds
-        // to, and the one whose contract says MONITOR sees the outcome) was being told about claims
-        // that then never happened. MF's own event stays the final word; this one is an earlier gate.
-        //
-        // It exists because a consumer with a rule that has to FORBID a claim had nothing on the
-        // stable API to bind to: ClaimOverrideProvider is additive only, and refusing the command
-        // misses autoclaim entirely, which needs no command at all. Fired inside save() so it sits
-        // underneath every route into a claim.
-        //
-        // Reading `claim` rather than `event.claim` is safe and necessary: FactionClaimEvent.claim
-        // is a val, so no handler could have changed it anyway, and it does not exist yet here.
-        val previousOwner = prior?.factionId
-        val apiEvent = FactionClaimAttemptEvent(
-            FactionId(claim.factionId.value),
-            claim.worldId,
-            claim.x,
-            claim.z,
-            previousOwner?.let { FactionId(it.value) },
-            !plugin.server.isPrimaryThread
-        )
-        ChildMutationCallbackGuard.callEvent(plugin, apiEvent)
-        if (apiEvent.isCancelled) throw EventCancelledException("Claim refused by a plugin")
-        val event = FactionClaimEvent(claim.factionId, claim, !plugin.server.isPrimaryThread)
-        ChildMutationCallbackGuard.callEvent(plugin, event)
-        if (event.isCancelled) throw EventCancelledException("Event cancelled")
-        val lockService = plugin.services.lockService
-        val changesOwner = prior != null && prior.factionId != event.claim.factionId
-        val commit = {
-            val result = repository.upsert(event.claim)
-            // The map write and the secondary index MUST move together, under the map's own per-key
-            // lock, and a plain put() followed by the index calls does not do that.
-        //
-        // The race it permits is not theoretical and it does not heal. Take an unclaimed chunk that
-        // two threads claim at once, A for faction F and B for faction G. A's put returns null, so A
-        // is going to index F. B's put then returns A's value, so B unindexes F and indexes G. A,
-        // still behind, now indexes F. The map ends up saying G while claimKeysByFaction holds keys
-        // for BOTH -- F keeps a phantom claim it does not own, and nothing ever removes it, because
-        // every later correction is keyed on what the map says.
-        //
-        // Reachable because MF's own command layer calls this off the main thread from ~119 async
-        // task sites, and because the stable API exposes claim() to consumers with no ordering of
-        // its own. Unlike faction saves, claims have no version column and so no optimistic lock to
-        // catch the second writer.
-        //
-        // compute() is used purely for the atomicity of the whole block; the value returned is
-        // always the new claim. The index maps are different maps, which is what makes updating
-        // them inside the remapping function legal.
-            val previous = AtomicReference<MfClaimedChunk?>()
-            claimsByKey.compute(ClaimKey(result)) { _, existing ->
-                previous.set(existing)
-                if (existing == null) {
-                    indexClaim(result)
-                } else if (existing.factionId != result.factionId) {
-                    unindexClaim(existing)
-                    indexClaim(result)
+            if (validateNewClaimWorld && prior == null) {
+                val world = plugin.server.getWorld(claim.worldId)
+                if (world != null && isClaimingBlockedInWorld(world)) {
+                    throw WorldClaimBlockedException("Claims are not allowed in this world")
                 }
-                result
             }
-            if (changesOwner) {
-                // The repository deleted these rows in the same transaction as the owner update.
-                // The shared lock boundary keeps readers and a stale lock creator out until both
-                // the claim and lock caches mirror that durable state.
-                lockService.unloadLockedBlocks(prior!!)
-            }
-            result to previous.get()
-        }
-        val (result, previousClaim) = if (changesOwner) {
-            lockService.withMutationLock(commit)
-        } else {
-            commit()
-        }
-        // The one place in MF where the outgoing and incoming owners of a chunk are both known, and
-        // the write has already succeeded. The stable API's ClaimOwnerChangedEvent needs both, and
-        // MF's own FactionClaimEvent above carries neither the old owner nor a guarantee that the
-        // upsert happened. The bridge is silent when the owner has not actually changed.
-        ApiClaimEventBridge.ownerChanged(plugin, result.worldId, result.x, result.z, previousClaim?.factionId, result.factionId)
-        plugin.server.scheduler.runTask(
-            plugin,
-            Runnable {
-                val world = plugin.server.getWorld(event.claim.worldId)
-                if (world != null) {
-                    val players = world.players.filter { it.location.chunk.x == claim.x && it.location.chunk.z == claim.z }
-                    if (players.isNotEmpty()) {
-                        plugin.server.scheduler.runTask(
-                            plugin,
-                            Runnable {
-                                players.forEach { player ->
-                                    val title = "${ChatColor.of(faction.flags[plugin.flags.color])}${faction.name}"
-                                    val subtitle = "${ChatColor.of(faction.flags[plugin.flags.color])}${faction.description}"
-                                    if (plugin.config.getBoolean("factions.titleTerritoryIndicator")) {
-                                        player.resetTitle()
-                                        player.sendTitle(
-                                            title,
-                                            subtitle,
-                                            plugin.config.getInt("factions.titleTerritoryFadeInLength"),
-                                            plugin.config.getInt("factions.titleTerritoryDuration"),
-                                            plugin.config.getInt("factions.titleTerritoryFadeOutLength")
-                                        )
-                                    }
-                                    if (plugin.config.getBoolean("factions.actionBarTerritoryIndicator")) {
-                                        player.spigot().sendMessage(ACTION_BAR, *TextComponent.fromLegacyText(title))
-                                    }
-                                }
-                            }
-                        )
+            val factionService = plugin.services.factionService
+            val faction = factionService.getFaction(claim.factionId).let(::requireNotNull)
+            // The stable-API event, and it fires BEFORE MedievalFactions' own.
+            //
+            // The order is the point. Whichever event is checked last is the real gate, and everything
+            // after it observes a decision it can no longer influence -- so with this one second, a
+            // MONITOR handler of FactionClaimEvent (the event every existing third-party plugin binds
+            // to, and the one whose contract says MONITOR sees the outcome) was being told about claims
+            // that then never happened. MF's own event stays the final word; this one is an earlier gate.
+            //
+            // It exists because a consumer with a rule that has to FORBID a claim had nothing on the
+            // stable API to bind to: ClaimOverrideProvider is additive only, and refusing the command
+            // misses autoclaim entirely, which needs no command at all. Fired inside save() so it sits
+            // underneath every route into a claim.
+            //
+            // Reading `claim` rather than `event.claim` is safe and necessary: FactionClaimEvent.claim
+            // is a val, so no handler could have changed it anyway, and it does not exist yet here.
+            val previousOwner = prior?.factionId
+            val apiEvent = FactionClaimAttemptEvent(
+                FactionId(claim.factionId.value),
+                claim.worldId,
+                claim.x,
+                claim.z,
+                previousOwner?.let { FactionId(it.value) },
+                !plugin.server.isPrimaryThread
+            )
+            ChildMutationCallbackGuard.callEvent(plugin, apiEvent)
+            if (apiEvent.isCancelled) throw EventCancelledException("Claim refused by a plugin")
+            val event = FactionClaimEvent(claim.factionId, claim, !plugin.server.isPrimaryThread)
+            ChildMutationCallbackGuard.callEvent(plugin, event)
+            if (event.isCancelled) throw EventCancelledException("Event cancelled")
+            val lockService = plugin.services.lockService
+            val changesOwner = prior != null && prior.factionId != event.claim.factionId
+            val commit = {
+                val result = repository.upsert(event.claim)
+                // The map write and the secondary index MUST move together, under the map's own per-key
+                // lock, and a plain put() followed by the index calls does not do that.
+                //
+                // The race it permits is not theoretical and it does not heal. Take an unclaimed chunk that
+                // two threads claim at once, A for faction F and B for faction G. A's put returns null, so A
+                // is going to index F. B's put then returns A's value, so B unindexes F and indexes G. A,
+                // still behind, now indexes F. The map ends up saying G while claimKeysByFaction holds keys
+                // for BOTH -- F keeps a phantom claim it does not own, and nothing ever removes it, because
+                // every later correction is keyed on what the map says.
+                //
+                // Reachable because MF's own command layer calls this off the main thread from ~119 async
+                // task sites, and because the stable API exposes claim() to consumers with no ordering of
+                // its own. Unlike faction saves, claims have no version column and so no optimistic lock to
+                // catch the second writer.
+                //
+                // compute() is used purely for the atomicity of the whole block; the value returned is
+                // always the new claim. The index maps are different maps, which is what makes updating
+                // them inside the remapping function legal.
+                val previous = AtomicReference<MfClaimedChunk?>()
+                claimsByKey.compute(ClaimKey(result)) { _, existing ->
+                    previous.set(existing)
+                    if (existing == null) {
+                        indexClaim(result)
+                    } else if (existing.factionId != result.factionId) {
+                        unindexClaim(existing)
+                        indexClaim(result)
                     }
+                    result
                 }
+                if (changesOwner) {
+                    // The repository deleted these rows in the same transaction as the owner update.
+                    // The shared lock boundary keeps readers and a stale lock creator out until both
+                    // the claim and lock caches mirror that durable state.
+                    lockService.unloadLockedBlocks(prior!!)
+                }
+                result to previous.get()
             }
-        )
-        val mapService = plugin.services.mapService
-        if (mapService != null && !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
+            val (result, previousClaim) = if (changesOwner) {
+                lockService.withMutationLock(commit)
+            } else {
+                commit()
+            }
+            // The one place in MF where the outgoing and incoming owners of a chunk are both known, and
+            // the write has already succeeded. The stable API's ClaimOwnerChangedEvent needs both, and
+            // MF's own FactionClaimEvent above carries neither the old owner nor a guarantee that the
+            // upsert happened. The bridge is silent when the owner has not actually changed.
+            ApiClaimEventBridge.ownerChanged(plugin, result.worldId, result.x, result.z, previousClaim?.factionId, result.factionId)
             plugin.server.scheduler.runTask(
                 plugin,
                 Runnable {
-                    mapService.scheduleUpdateClaims(faction)
+                    val world = plugin.server.getWorld(event.claim.worldId)
+                    if (world != null) {
+                        val players = world.players.filter { it.location.chunk.x == claim.x && it.location.chunk.z == claim.z }
+                        if (players.isNotEmpty()) {
+                            plugin.server.scheduler.runTask(
+                                plugin,
+                                Runnable {
+                                    players.forEach { player ->
+                                        val title = "${ChatColor.of(faction.flags[plugin.flags.color])}${faction.name}"
+                                        val subtitle = "${ChatColor.of(faction.flags[plugin.flags.color])}${faction.description}"
+                                        if (plugin.config.getBoolean("factions.titleTerritoryIndicator")) {
+                                            player.resetTitle()
+                                            player.sendTitle(
+                                                title,
+                                                subtitle,
+                                                plugin.config.getInt("factions.titleTerritoryFadeInLength"),
+                                                plugin.config.getInt("factions.titleTerritoryDuration"),
+                                                plugin.config.getInt("factions.titleTerritoryFadeOutLength")
+                                            )
+                                        }
+                                        if (plugin.config.getBoolean("factions.actionBarTerritoryIndicator")) {
+                                            player.spigot().sendMessage(ACTION_BAR, *TextComponent.fromLegacyText(title))
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
             )
-        }
+            val mapService = plugin.services.mapService
+            if (mapService != null && !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
+                plugin.server.scheduler.runTask(
+                    plugin,
+                    Runnable {
+                        mapService.scheduleUpdateClaims(faction)
+                    }
+                )
+            }
             return@resultFrom result
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
@@ -421,66 +421,66 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
                 "Faction ${live.factionId.value} is being deleted"
             }
             val event = FactionUnclaimEvent(live.factionId, live, !plugin.server.isPrimaryThread)
-        ChildMutationCallbackGuard.callEvent(plugin, event)
-        if (event.isCancelled) throw EventCancelledException("Event cancelled")
-        val result = repository.delete(event.claim.worldId, event.claim.x, event.claim.z)
-        val removedClaim = claimsByKey.remove(ClaimKey(event.claim))
-        if (removedClaim != null) {
-            unindexClaim(removedClaim)
-        }
-        // Land returning to wilderness is an ownership change like any other, so the API reports it
-        // here too. FactionUnclaimedChunkEvent already covers "faction X gave up a chunk"; this
-        // covers the same moment in the shape a consumer tracking tenancy wants, with a null new
-        // owner. A chunk that was not in the cache yields previous == new == null and fires nothing.
-        ApiClaimEventBridge.ownerChanged(plugin, event.claim.worldId, event.claim.x, event.claim.z, removedClaim?.factionId, null)
-        removedClaim?.let { ApiClaimEventBridge.unclaimed(plugin, it) }
-        plugin.server.scheduler.runTask(
-            plugin,
-            Runnable {
-                val world = plugin.server.getWorld(event.claim.worldId)
-                if (world != null) {
-                    val players = world.players.filter { it.location.chunk.x == claim.x && it.location.chunk.z == claim.z }
-                    if (players.isNotEmpty()) {
-                        players.forEach { player ->
-                            val title =
-                                "${ChatColor.of(plugin.config.getString("wilderness.color"))}${plugin.language["Wilderness"]}"
-                            if (plugin.config.getBoolean("factions.titleTerritoryIndicator")) {
-                                player.resetTitle()
-                                player.sendTitle(
-                                    title,
-                                    null,
-                                    plugin.config.getInt("factions.titleTerritoryFadeInLength"),
-                                    plugin.config.getInt("factions.titleTerritoryDuration"),
-                                    plugin.config.getInt("factions.titleTerritoryFadeOutLength")
-                                )
-                            }
-                            if (plugin.config.getBoolean("factions.actionBarTerritoryIndicator")) {
-                                player.spigot().sendMessage(ACTION_BAR, *TextComponent.fromLegacyText(title))
+            ChildMutationCallbackGuard.callEvent(plugin, event)
+            if (event.isCancelled) throw EventCancelledException("Event cancelled")
+            val result = repository.delete(event.claim.worldId, event.claim.x, event.claim.z)
+            val removedClaim = claimsByKey.remove(ClaimKey(event.claim))
+            if (removedClaim != null) {
+                unindexClaim(removedClaim)
+            }
+            // Land returning to wilderness is an ownership change like any other, so the API reports it
+            // here too. FactionUnclaimedChunkEvent already covers "faction X gave up a chunk"; this
+            // covers the same moment in the shape a consumer tracking tenancy wants, with a null new
+            // owner. A chunk that was not in the cache yields previous == new == null and fires nothing.
+            ApiClaimEventBridge.ownerChanged(plugin, event.claim.worldId, event.claim.x, event.claim.z, removedClaim?.factionId, null)
+            removedClaim?.let { ApiClaimEventBridge.unclaimed(plugin, it) }
+            plugin.server.scheduler.runTask(
+                plugin,
+                Runnable {
+                    val world = plugin.server.getWorld(event.claim.worldId)
+                    if (world != null) {
+                        val players = world.players.filter { it.location.chunk.x == claim.x && it.location.chunk.z == claim.z }
+                        if (players.isNotEmpty()) {
+                            players.forEach { player ->
+                                val title =
+                                    "${ChatColor.of(plugin.config.getString("wilderness.color"))}${plugin.language["Wilderness"]}"
+                                if (plugin.config.getBoolean("factions.titleTerritoryIndicator")) {
+                                    player.resetTitle()
+                                    player.sendTitle(
+                                        title,
+                                        null,
+                                        plugin.config.getInt("factions.titleTerritoryFadeInLength"),
+                                        plugin.config.getInt("factions.titleTerritoryDuration"),
+                                        plugin.config.getInt("factions.titleTerritoryFadeOutLength")
+                                    )
+                                }
+                                if (plugin.config.getBoolean("factions.actionBarTerritoryIndicator")) {
+                                    player.spigot().sendMessage(ACTION_BAR, *TextComponent.fromLegacyText(title))
+                                }
                             }
                         }
                     }
                 }
+            )
+            val mapService = plugin.services.mapService
+            if (mapService != null) {
+                val factionService = plugin.services.factionService
+                val faction = factionService.getFaction(claim.factionId)
+                if (faction != null && !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
+                    plugin.server.scheduler.runTask(
+                        plugin,
+                        Runnable {
+                            mapService.scheduleUpdateClaims(faction)
+                        }
+                    )
+                }
             }
-        )
-        val mapService = plugin.services.mapService
-        if (mapService != null) {
-            val factionService = plugin.services.factionService
-            val faction = factionService.getFaction(claim.factionId)
-            if (faction != null && !plugin.config.getBoolean("dynmap.onlyRenderTerritoriesUponStartup")) {
-                plugin.server.scheduler.runTask(
-                    plugin,
-                    Runnable {
-                        mapService.scheduleUpdateClaims(faction)
-                    }
-                )
-            }
+            val lockService = plugin.services.lockService
+            lockService.unloadLockedBlocks(claim)
+            return@resultFrom result
+        }.mapFailure { exception ->
+            ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-        val lockService = plugin.services.lockService
-        lockService.unloadLockedBlocks(claim)
-        return@resultFrom result
-    }.mapFailure { exception ->
-        ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
-    }
     }
 
     // Deliberately fires nothing, neither MF's own FactionUnclaimEvent nor the API's
