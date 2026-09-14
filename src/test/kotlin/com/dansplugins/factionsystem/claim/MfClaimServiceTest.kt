@@ -2,6 +2,8 @@ package com.dansplugins.factionsystem.claim
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
+import com.dansplugins.factionsystem.api.WildernessReservationStatus
+import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.api.event.ClaimOwnerChangedEvent
 import com.dansplugins.factionsystem.api.event.FactionClaimAttemptEvent
 import com.dansplugins.factionsystem.api.event.FactionUnclaimedChunkEvent
@@ -123,6 +125,47 @@ class MfClaimServiceTest {
 
     private fun serviceWith(vararg claims: MfClaimedChunk): MfClaimService =
         MfClaimService(plugin, FakeClaimRepository(claims.toList()))
+
+    @Test
+    fun wildernessReservationBlocksEveryClaimWriteUntilReleased() {
+        val service = serviceWith(claim(9, 9, factionA))
+        val token = service.wildernessReservations.tryReserve(world, setOf(ChunkPos(0, 0)), 60_000).token!!
+        assertTrue(service.save(claim(0, 0, factionA)) is Failure)
+        assertTrue(service.transferOwnership(claim(0, 0, factionB)) is Failure)
+        assertTrue(service.transferOwnership(factionA, claim(0, 0, factionB)) is Failure)
+        assertTrue(firedEvents.isEmpty(), "A reserved claim must be refused before exposing a claim attempt")
+        // Bulk removals and disband cache eviction cannot remove unrelated reservations.
+        service.deleteAllClaims(factionA)
+        service.evictAllClaims(factionA)
+        assertTrue(service.save(claim(0, 0, factionA)) is Failure)
+        assertNull(service.getClaim(world, 0, 0))
+        assertTrue(service.wildernessReservations.release(token))
+        assertTrue(service.save(claim(0, 0, factionA)) !is Failure)
+        assertEquals(factionA, service.getClaim(world, 0, 0)?.factionId)
+    }
+
+    @Test
+    fun reservationCannotPassAClaimAlreadyCommittedButNotYetPublished() {
+        val repository = BlockingClaimRepository()
+        val service = MfClaimService(plugin, repository)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val write = executor.submit { service.save(claim(0, 0, factionA)) }
+            assertTrue(repository.firstCommitted.await(5, TimeUnit.SECONDS))
+            val attempt = executor.submit<com.dansplugins.factionsystem.api.WildernessReservationResult> {
+                service.wildernessReservations.tryReserve(world, setOf(ChunkPos(0, 0)), 5000)
+            }.get(1, TimeUnit.SECONDS)
+            assertEquals(WildernessReservationStatus.BUSY, attempt.status)
+            assertNull(attempt.token)
+            repository.releaseFirst.countDown()
+            write.get(5, TimeUnit.SECONDS)
+            assertEquals(WildernessReservationStatus.CLAIMED,
+                service.wildernessReservations.tryReserve(world, setOf(ChunkPos(0, 0)), 5000).status)
+        } finally {
+            repository.releaseFirst.countDown()
+            executor.shutdownNow()
+        }
+    }
 
     @Test
     fun initBuildsPerFactionIndexFromLoadedClaims() {

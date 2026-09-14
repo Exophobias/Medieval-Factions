@@ -567,6 +567,18 @@ class MedievalFactions : JavaPlugin() {
             syncIntervalTicks,
             syncIntervalTicks
         )
+
+        // Publish only after every startup phase succeeded; a half-enabled plugin is unavailable.
+        server.servicesManager.register(
+            com.dansplugins.factionsystem.api.WildernessReservationApi::class.java,
+            claimService.wildernessReservations,
+            this,
+            org.bukkit.plugin.ServicePriority.Normal
+        )
+    }
+
+    override fun onDisable() {
+        servicesOrNull?.claimService?.wildernessReservations?.close()
     }
 
     /**

@@ -51,6 +51,10 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
     // (count/existence/list) cost O(claims owned by the faction) instead of O(all claims on the server).
     private val claimKeysByFaction: MutableMap<MfFactionId, MutableSet<ClaimKey>> = ConcurrentHashMap()
 
+    internal val wildernessReservations = WildernessReservations(mutationLock, { world, x, z ->
+        getClaim(world, x, z) != null
+    })
+
     init {
         plugin.logger.info("Loading claims...")
         val startTime = System.currentTimeMillis()
@@ -258,6 +262,9 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         expectedOwner: MfFactionId? = null
     ) = mutationLock.withLock {
         resultFrom {
+            if (wildernessReservations.isReserved(claim.worldId, claim.x, claim.z)) {
+                throw EventCancelledException("Land is temporarily reserved; retry shortly")
+            }
             val prior = claimsByKey[ClaimKey(claim)]
             if (requireExisting) {
                 requireNotNull(prior) { "No existing claim at ${claim.worldId}:${claim.x},${claim.z}" }
