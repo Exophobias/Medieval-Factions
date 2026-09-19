@@ -24,6 +24,7 @@ internal class WildernessReservations(
     private val tokens = ConcurrentHashMap<UUID, Lease>()
     // Only read or modified under the owner's lock. Token reads and releases need no lock.
     private val byCell = HashMap<Cell, Lease>()
+
     @Volatile private var available = true
 
     override fun tryReserve(worldId: UUID?, chunks: Set<ChunkPos?>?, durationMillis: Long): WildernessReservationResult {
@@ -31,7 +32,9 @@ internal class WildernessReservations(
         if (worldId == null || chunks == null || chunks.isEmpty() ||
             chunks.size > WildernessReservationApi.MAX_CHUNKS_PER_RESERVATION ||
             durationMillis !in 1..WildernessReservationApi.MAX_DURATION_MILLIS
-        ) return result(WildernessReservationStatus.INVALID_REQUEST)
+        ) {
+            return result(WildernessReservationStatus.INVALID_REQUEST)
+        }
 
         val cells = LinkedHashSet<Cell>()
         for (chunk in chunks) {
@@ -53,14 +56,17 @@ internal class WildernessReservations(
             if (cells.any { byCell[it]?.active(now) == true }) return result(WildernessReservationStatus.RESERVED)
             if (tokens.size >= WildernessReservationApi.MAX_ACTIVE_RESERVATIONS ||
                 byCell.size + cells.size > WildernessReservationApi.MAX_RESERVED_CHUNKS
-            ) return result(WildernessReservationStatus.CAPACITY)
+            ) {
+                return result(WildernessReservationStatus.CAPACITY)
+            }
             val token = UUID.randomUUID()
             val lease = Lease(cells, now + durationMillis * 1_000_000)
             cells.forEach { byCell[it] = lease }
             tokens[token] = lease
             // Disable may race with acquisition; it invalidates all tokens without waiting for JDBC.
-            return if (available) WildernessReservationResult(WildernessReservationStatus.ACQUIRED, token)
-            else {
+            return if (available) {
+                WildernessReservationResult(WildernessReservationStatus.ACQUIRED, token)
+            } else {
                 lease.released.set(true)
                 result(WildernessReservationStatus.UNAVAILABLE)
             }
@@ -94,7 +100,9 @@ internal class WildernessReservations(
 
     private fun purgeExpired(now: Long) {
         tokens.entries.removeIf { (_, lease) ->
-            if (lease.active(now)) false else {
+            if (lease.active(now)) {
+                false
+            } else {
                 lease.cells.forEach { byCell.remove(it, lease) }
                 true
             }

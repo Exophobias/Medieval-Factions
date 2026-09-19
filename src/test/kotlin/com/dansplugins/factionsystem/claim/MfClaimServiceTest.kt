@@ -3,10 +3,10 @@ package com.dansplugins.factionsystem.claim
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.WildernessReservationStatus
-import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.api.event.ClaimOwnerChangedEvent
 import com.dansplugins.factionsystem.api.event.FactionClaimAttemptEvent
 import com.dansplugins.factionsystem.api.event.FactionUnclaimedChunkEvent
+import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.event.faction.FactionClaimEvent
 import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.faction.MfFaction
@@ -159,8 +159,10 @@ class MfClaimServiceTest {
             assertNull(attempt.token)
             repository.releaseFirst.countDown()
             write.get(5, TimeUnit.SECONDS)
-            assertEquals(WildernessReservationStatus.CLAIMED,
-                service.wildernessReservations.tryReserve(world, setOf(ChunkPos(0, 0)), 5000).status)
+            assertEquals(
+                WildernessReservationStatus.CLAIMED,
+                service.wildernessReservations.tryReserve(world, setOf(ChunkPos(0, 0)), 5000).status
+            )
         } finally {
             repository.releaseFirst.countDown()
             executor.shutdownNow()
