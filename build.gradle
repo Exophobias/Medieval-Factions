@@ -9,6 +9,9 @@ plugins {
 group = "com.dansplugins"
 version = "5.9.0-patriam.1-SNAPSHOT"
 
+def minecraftVersion = providers.gradleProperty("minecraftVersion").getOrElse("26.2")
+def spigotVersion = "${minecraftVersion}-R0.1-SNAPSHOT"
+
 def repoUsername = ""
 def repoPassword = ""
 def propertiesFile = new File("repo.properties")
@@ -37,7 +40,7 @@ configurations {
 
 dependencies {
     implementation 'me.clip:placeholderapi:2.11.6'
-    implementation 'org.spigotmc:spigot-api:26.2-R0.1-SNAPSHOT'
+    implementation "org.spigotmc:spigot-api:${spigotVersion}"
     implementation 'us.dynmap:dynmap-api:2.2'
     implementation 'org.bstats:bstats-bukkit:3.0.0'
     implementation platform("dev.forkhandles:forkhandles-bom:2.2.0.0")
@@ -288,4 +291,17 @@ tasks.named('test') {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
     systemProperty 'pact.rootDir', "${projectDir}/pacts"
+}
+
+// Prove the selected server API, including after transitive dependency conflict resolution.
+tasks.register('verifyMinecraftApi') {
+    doLast {
+        def api = configurations.compileClasspath.resolvedConfiguration.resolvedArtifacts.find {
+            it.moduleVersion.id.group == 'org.spigotmc' && it.name == 'spigot-api'
+        }
+        if (api == null || api.moduleVersion.id.version != spigotVersion) {
+            throw new GradleException("Expected spigot-api:${spigotVersion}, resolved ${api?.moduleVersion?.id}")
+        }
+        logger.lifecycle("spigot-api:jar:${api.moduleVersion.id.version}")
+    }
 }
