@@ -16,7 +16,13 @@ class NomadAddonFenceTest {
 
     private fun fence() = NomadAddonFence(plugins.resolve("MedievalFactions"))
     private fun camps() = plugins.resolve("PatriamNomads/camps")
+    private fun identities() = camps().resolve("identities.manifest")
     private fun marker() = plugins.resolve("MedievalFactions/nomad-addon-required.marker")
+
+    private fun createCampManifest() {
+        Files.createDirectories(camps())
+        Files.writeString(identities(), "empty fixture")
+    }
 
     @Test
     fun `unarmed server does not require the addon and cannot arm without its data directory`() {
@@ -24,12 +30,14 @@ class NomadAddonFenceTest {
         assertFalse(fence.armed())
         assertNull(fence.startupIssue(false))
         assertThrows(IOException::class.java) { fence.arm() }
+        Files.createDirectories(camps())
+        assertThrows(IOException::class.java) { fence.arm() }
         assertFalse(Files.exists(marker()))
     }
 
     @Test
     fun `successful adoption latch survives restart and checks both startup phases`() {
-        Files.createDirectories(camps())
+        createCampManifest()
         fence().arm()
 
         val restarted = fence()
@@ -43,15 +51,17 @@ class NomadAddonFenceTest {
 
     @Test
     fun `losing the Nomads data directory is detected even when the jar remains`() {
-        Files.createDirectories(camps())
+        createCampManifest()
         fence().arm()
+        Files.delete(identities())
+        assertEquals("PatriamNomads camp identity manifest is missing", fence().startupIssue(true, true))
         Files.delete(camps())
         assertEquals("PatriamNomads camp data directory is missing", fence().startupIssue(true, true))
     }
 
     @Test
     fun `bad marker is never mistaken for an unarmed server or overwritten`() {
-        Files.createDirectories(camps())
+        createCampManifest()
         Files.createDirectories(marker().parent)
         Files.writeString(marker(), "corrupt")
         val fence = fence()
@@ -62,7 +72,7 @@ class NomadAddonFenceTest {
 
     @Test
     fun `arming is idempotent and final disband cannot silently remove the permanent latch`() {
-        Files.createDirectories(camps())
+        createCampManifest()
         val fence = fence()
         fence.arm()
         val bytes = Files.readAllBytes(marker())

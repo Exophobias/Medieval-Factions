@@ -24,6 +24,7 @@ class NomadAddonFence(mfDataFolder: Path) {
     private val pluginFolder = mfFolder.parent ?: throw IllegalArgumentException("MF data folder has no parent")
     private val marker = mfFolder.resolve("nomad-addon-required.marker")
     private val campFolder = pluginFolder.resolve("PatriamNomads").resolve("camps")
+    private val identities = campFolder.resolve("identities.manifest")
 
     /** Any marker entry, including a corrupt file or link, means MF must fail closed. */
     fun markerPresent(): Boolean = try {
@@ -48,6 +49,8 @@ class NomadAddonFence(mfDataFolder: Path) {
 
     fun campDirectoryPresent(): Boolean = Files.isDirectory(campFolder, NOFOLLOW_LINKS)
 
+    fun identitiesPresent(): Boolean = Files.isRegularFile(identities, NOFOLLOW_LINKS)
+
     /** Null means no startup objection. Enabled state is checked after all plugins enable. */
     @Throws(IOException::class)
     fun startupIssue(pluginRegistered: Boolean, pluginEnabled: Boolean? = null): String? {
@@ -56,6 +59,7 @@ class NomadAddonFence(mfDataFolder: Path) {
             !pluginRegistered -> "PatriamNomads is missing"
             pluginEnabled == false -> "PatriamNomads did not enable"
             !campDirectoryPresent() -> "PatriamNomads camp data directory is missing"
+            !identitiesPresent() -> "PatriamNomads camp identity manifest is missing"
             else -> null
         }
     }
@@ -65,6 +69,7 @@ class NomadAddonFence(mfDataFolder: Path) {
     @Throws(IOException::class)
     fun arm() {
         if (!campDirectoryPresent()) throw IOException("Nomad camp directory is unavailable")
+        if (!identitiesPresent()) throw IOException("Nomad camp identity manifest is unavailable")
         if (armed()) return
         Files.createDirectories(mfFolder)
         val candidate = Files.createTempFile(mfFolder, ".nomad-addon-required-", ".new")
