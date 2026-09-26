@@ -2,6 +2,7 @@ package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
+import com.dansplugins.factionsystem.api.MercenaryCombatProvider.Decision
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
 import com.dansplugins.factionsystem.utils.MfHostileMobChecker
@@ -80,6 +81,14 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
                     event.isCancelled = true
                 }
                 return
+            }
+            when (MercenaryCombatGate.decide(plugin, damagerPlayer.uniqueId, damaged.uniqueId)) {
+                Decision.ALLOW -> return
+                Decision.DENY -> {
+                    event.isCancelled = true
+                    return
+                }
+                Decision.ABSTAIN -> Unit
             }
             val relationshipService = plugin.services.factionRelationshipService
             val relationships = relationshipService.getRelationships(damagerFaction.id, damagedFaction.id)

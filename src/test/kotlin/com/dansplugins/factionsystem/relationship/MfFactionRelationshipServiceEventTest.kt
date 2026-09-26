@@ -6,6 +6,7 @@ import com.dansplugins.factionsystem.api.PeaceOutcome
 import com.dansplugins.factionsystem.api.WarEndNotice
 import com.dansplugins.factionsystem.api.WarEndReason
 import com.dansplugins.factionsystem.api.event.FactionPeaceRequestedEvent
+import com.dansplugins.factionsystem.api.event.FactionRelationshipCreateAttemptEvent
 import com.dansplugins.factionsystem.api.event.FactionWarStartEvent
 import com.dansplugins.factionsystem.event.relationship.RelationshipCreatedEvent
 import com.dansplugins.factionsystem.event.relationship.RelationshipDeletedEvent
@@ -40,6 +41,7 @@ class MfFactionRelationshipServiceEventTest {
     private var createdEntered: CountDownLatch? = null
     private var releaseCreated: CountDownLatch? = null
     private var cancelWarStart = false
+    private var cancelHierarchy = false
 
     @BeforeEach
     fun setUp() {
@@ -56,6 +58,12 @@ class MfFactionRelationshipServiceEventTest {
             val event = invocation.getArgument(0, Event::class.java)
             events.add(event)
             if (event is FactionWarStartEvent && cancelWarStart) {
+                event.isCancelled = true
+            }
+            if (event is FactionRelationshipCreateAttemptEvent && cancelHierarchy &&
+                (event.relationshipType == FactionRelationshipCreateAttemptEvent.Type.LIEGE ||
+                    event.relationshipType == FactionRelationshipCreateAttemptEvent.Type.VASSAL)
+            ) {
                 event.isCancelled = true
             }
             if (event is RelationshipCreatedEvent) {
@@ -152,6 +160,32 @@ class MfFactionRelationshipServiceEventTest {
     }
 
     @Test
+    fun stableRelationshipAttemptVetoPreventsHierarchyRows() {
+        cancelHierarchy = true
+        val liege = MfFactionRelationship(
+            factionId = MfFactionId("vassal"),
+            targetId = MfFactionId("liege"),
+            type = MfFactionRelationshipType.LIEGE
+        )
+        val vassal = MfFactionRelationship(
+            factionId = MfFactionId("liege"),
+            targetId = MfFactionId("vassal"),
+            type = MfFactionRelationshipType.VASSAL
+        )
+
+        assertTrue(service.save(liege) is Failure)
+        assertTrue(service.save(vassal) is Failure)
+
+        assertTrue(repository.getFactionRelationships().isEmpty())
+        assertEquals(
+            listOf(FactionRelationshipCreateAttemptEvent.Type.LIEGE,
+                FactionRelationshipCreateAttemptEvent.Type.VASSAL),
+            events.filterIsInstance<FactionRelationshipCreateAttemptEvent>().map { it.relationshipType }
+        )
+        assertTrue(events.none { it is RelationshipCreatedEvent })
+    }
+
+    @Test
     fun concurrentDeleteCannotPublishBeforeTheCommittedCreate() {
         val relationship = war("ally", "enemy")
         val entered = CountDownLatch(1)
@@ -178,6 +212,31 @@ class MfFactionRelationshipServiceEventTest {
                 events.filter { it is RelationshipCreatedEvent || it is RelationshipDeletedEvent }
                     .map { it::class }
             )
+        } finally {
+            release.countDown()
+            workers.shutdownNow()
+        }
+    }
+
+    @Test
+    fun warMutationBarrierWaitsForAnInFlightWarStart() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        createdEntered = entered
+        releaseCreated = release
+        val workers = Executors.newFixedThreadPool(2)
+        try {
+            val save = workers.submit { service.save(war("ally", "enemy")) }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val barrier = workers.submit { service.mutationBarrier() }
+            org.junit.jupiter.api.Assertions.assertThrows(TimeoutException::class.java) {
+                barrier.get(200, TimeUnit.MILLISECONDS)
+            }
+
+            release.countDown()
+            save.get(5, TimeUnit.SECONDS)
+            barrier.get(5, TimeUnit.SECONDS)
+            assertEquals(1, service.getRelationships(MfFactionId("ally"), MfFactionId("enemy")).size)
         } finally {
             release.countDown()
             workers.shutdownNow()

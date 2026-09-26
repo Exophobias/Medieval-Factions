@@ -6,6 +6,7 @@ import com.dansplugins.factionsystem.api.PeaceOutcome
 import com.dansplugins.factionsystem.api.WarEndNotice
 import com.dansplugins.factionsystem.api.WarEndReason
 import com.dansplugins.factionsystem.api.event.FactionPeaceRequestedEvent
+import com.dansplugins.factionsystem.api.event.FactionRelationshipCreateAttemptEvent
 import com.dansplugins.factionsystem.api.event.FactionWarStartEvent
 import com.dansplugins.factionsystem.event.relationship.RelationshipCreateEvent
 import com.dansplugins.factionsystem.event.relationship.RelationshipCreatedEvent
@@ -35,6 +36,9 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
 
     private val relationshipsById: MutableMap<MfFactionRelationshipId, MfFactionRelationship> = ConcurrentHashMap()
     private val mutationLock = ReentrantLock()
+
+    /** Wait until every relationship mutation already holding the lock has finished. */
+    fun mutationBarrier() = mutationLock.withLock { Unit }
 
     /** Factions whose parent row is being cascade-deleted; guarded by [mutationLock]. */
     private val deletingFactions = HashSet<MfFactionId>()
@@ -134,6 +138,17 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
                     if (warEvent.isCancelled) {
                         throw EventCancelledException("War refused by a plugin")
                     }
+                }
+                val apiEvent = FactionRelationshipCreateAttemptEvent(
+                    FactionId(relationship.factionId.value),
+                    FactionId(relationship.targetId.value),
+                    FactionId(initiatingFaction.value),
+                    FactionRelationshipCreateAttemptEvent.Type.valueOf(relationship.type.name),
+                    !plugin.server.isPrimaryThread
+                )
+                ChildMutationCallbackGuard.callEvent(plugin, apiEvent)
+                if (apiEvent.isCancelled) {
+                    throw EventCancelledException("Relationship refused by a plugin")
                 }
                 val event = RelationshipCreateEvent(relationship.id, relationship, !plugin.server.isPrimaryThread)
                 ChildMutationCallbackGuard.callEvent(plugin, event)

@@ -111,6 +111,9 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     override fun getClaimAt(world: World, chunkX: Int, chunkZ: Int): ClaimView? =
         plugin.services.claimService.getClaim(world.uid, chunkX, chunkZ)?.let(::ClaimViewAdapter)
 
+    override fun getClaimAt(worldId: UUID, chunkX: Int, chunkZ: Int): ClaimView? =
+        plugin.services.claimService.getClaim(worldId, chunkX, chunkZ)?.let(::ClaimViewAdapter)
+
     override fun getClaimedChunks(faction: FactionId): Map<UUID, Set<ChunkPos>> {
         val claims = plugin.services.claimService.getClaims(MfFactionId(faction.value))
         if (claims.isEmpty()) return emptyMap()
@@ -131,6 +134,13 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
 
     override fun getClaimCount(faction: FactionId): Int =
         plugin.services.claimService.getClaimCount(MfFactionId(faction.value))
+
+    override fun claimMutationBarrier() = plugin.services.claimService.mutationBarrier()
+
+    override fun warMutationBarrier() = plugin.services.factionRelationshipService.mutationBarrier()
+
+    override fun factionDeletionBarrier(faction: FactionId) =
+        plugin.services.factionService.deletionBarrier(MfFactionId(faction.value))
 
     override fun registerClaimOverrideProvider(provider: ClaimOverrideProvider) {
         plugin.services.claimService.claimOverrides.register(provider)
@@ -219,6 +229,11 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         }
     }
 
+    override fun claimIfUnclaimed(faction: FactionId, worldId: UUID, chunkX: Int, chunkZ: Int): ApiResult =
+        plugin.services.claimService
+            .claimIfUnclaimed(MfClaimedChunk(worldId, chunkX, chunkZ, MfFactionId(faction.value)))
+            .toApiResult()
+
     override fun transferClaim(
         expectedOwner: FactionId,
         to: FactionId,
@@ -246,6 +261,11 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
             ?: return ApiResult.failure("Chunk is not claimed")
         return plugin.services.claimService.delete(claim).toApiResult()
     }
+
+    override fun unclaimIfOwned(expectedOwner: FactionId, worldId: UUID, chunkX: Int, chunkZ: Int): ApiResult =
+        plugin.services.claimService
+            .delete(MfClaimedChunk(worldId, chunkX, chunkZ, MfFactionId(expectedOwner.value)))
+            .toApiResult()
 
     override fun forcePeace(faction: FactionId, otherFaction: FactionId): ApiResult {
         val a = MfFactionId(faction.value)

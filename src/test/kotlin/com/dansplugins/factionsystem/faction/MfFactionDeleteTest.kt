@@ -1,6 +1,8 @@
 package com.dansplugins.factionsystem.faction
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.FactionId
+import com.dansplugins.factionsystem.api.event.FactionDisbandAttemptEvent
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.event.faction.FactionDeletedEvent
 import com.dansplugins.factionsystem.gate.MfGateService
@@ -39,9 +41,11 @@ class MfFactionDeleteTest {
     private lateinit var relationships: MfFactionRelationshipService
     private val events = mutableListOf<Event>()
     private val id = MfFactionId("doomed")
+    private var vetoDisband = false
 
     @BeforeEach
     fun setUp() {
+        vetoDisband = false
         plugin = mock(MedievalFactions::class.java)
         `when`(plugin.logger).thenReturn(Logger.getLogger(javaClass.name))
         val config = mock(FileConfiguration::class.java)
@@ -51,7 +55,12 @@ class MfFactionDeleteTest {
         `when`(plugin.server).thenReturn(server)
         val manager = mock(PluginManager::class.java)
         `when`(server.pluginManager).thenReturn(manager)
-        doAnswer { invocation -> events.add(invocation.getArgument(0)); null }
+        doAnswer { invocation ->
+            val event = invocation.getArgument<Event>(0)
+            events.add(event)
+            if (vetoDisband && event is FactionDisbandAttemptEvent) event.isCancelled = true
+            null
+        }
             .`when`(manager).callEvent(any(Event::class.java))
         val scheduler = mock(BukkitScheduler::class.java)
         `when`(server.scheduler).thenReturn(scheduler)
@@ -102,6 +111,21 @@ class MfFactionDeleteTest {
         verify(relationships).evictForDeletedFaction(id)
         assertEquals(1, events.count { it is FactionDeletedEvent })
         assertTrue(duplicate is Failure)
+    }
+
+    @Test
+    fun stableDisbandAttemptVetoPreservesFactionAndChildren() {
+        vetoDisband = true
+
+        val result = service.delete(id)
+
+        assertTrue(result is Failure)
+        assertNotNull(service.getFaction(id))
+        assertEquals(FactionId(id.value), events.filterIsInstance<FactionDisbandAttemptEvent>().single().faction)
+        verify(claims, never()).evictAllClaims(id)
+        verify(gates, never()).evictAllGates(id)
+        verify(relationships, never()).evictForDeletedFaction(id)
+        assertTrue(events.none { it is FactionDeletedEvent })
     }
 
     private class FailingRepository(faction: MfFaction) : MfFactionRepository {

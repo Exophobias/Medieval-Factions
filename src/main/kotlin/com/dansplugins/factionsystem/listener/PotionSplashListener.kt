@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.MercenaryCombatProvider.Decision
 import com.dansplugins.factionsystem.faction.AdminFactionProtection
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
@@ -52,6 +53,10 @@ class PotionSplashListener(private val plugin: MedievalFactions) : Listener {
             if (damagerDuel != null && damagedDuel != null && damagerDuel.id == damagedDuel.id) {
                 continue
             }
+            if (damagerDuel != null || damagedDuel != null) {
+                event.setIntensity(damaged, 0.0)
+                continue
+            }
             val damagedFaction = factionService.getFaction(damagedMfPlayer.id)
             if (damagerFaction == null || damagedFaction == null) {
                 if (!plugin.config.getBoolean("pvp.enabledForFactionlessPlayers")) {
@@ -64,6 +69,14 @@ class PotionSplashListener(private val plugin: MedievalFactions) : Listener {
                     event.setIntensity(damaged, 0.0)
                 }
                 continue
+            }
+            when (MercenaryCombatGate.decide(plugin, damager.uniqueId, damaged.uniqueId)) {
+                Decision.ALLOW -> continue
+                Decision.DENY -> {
+                    event.setIntensity(damaged, 0.0)
+                    continue
+                }
+                Decision.ABSTAIN -> Unit
             }
             val relationshipService = plugin.services.factionRelationshipService
             val relationships = relationshipService.getRelationships(damagerFaction.id, damagedFaction.id)
