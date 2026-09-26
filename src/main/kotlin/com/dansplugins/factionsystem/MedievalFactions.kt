@@ -15,6 +15,7 @@ import com.dansplugins.factionsystem.command.lock.MfLockCommand
 import com.dansplugins.factionsystem.command.power.MfPowerCommand
 import com.dansplugins.factionsystem.command.unlock.MfUnlockCommand
 import com.dansplugins.factionsystem.config.ConfigLifecycle
+import com.dansplugins.factionsystem.db.MfJdbc
 import com.dansplugins.factionsystem.dpc.MfDpcApiService
 import com.dansplugins.factionsystem.duel.JooqMfDuelInviteRepository
 import com.dansplugins.factionsystem.duel.JooqMfDuelRepository
@@ -42,7 +43,6 @@ import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.law.JooqMfLawRepository
 import com.dansplugins.factionsystem.law.MfLawRepository
 import com.dansplugins.factionsystem.law.MfLawService
-import com.dansplugins.factionsystem.legacy.MfLegacyDataMigrator
 import com.dansplugins.factionsystem.listener.AreaEffectCloudApplyListener
 import com.dansplugins.factionsystem.listener.AsyncPlayerChatListener
 import com.dansplugins.factionsystem.listener.AsyncPlayerPreLoginListener
@@ -56,6 +56,7 @@ import com.dansplugins.factionsystem.listener.CreatureSpawnListener
 import com.dansplugins.factionsystem.listener.EntityDamageByEntityListener
 import com.dansplugins.factionsystem.listener.EntityDamageListener
 import com.dansplugins.factionsystem.listener.EntityExplodeListener
+import com.dansplugins.factionsystem.listener.EntityInteractionProtection
 import com.dansplugins.factionsystem.listener.InventoryClickListener
 import com.dansplugins.factionsystem.listener.InventoryMoveItemListener
 import com.dansplugins.factionsystem.listener.LingeringPotionSplashListener
@@ -89,6 +90,7 @@ import com.dansplugins.factionsystem.relationship.MfFactionRelationshipRepositor
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
 import com.dansplugins.factionsystem.service.Services
 import com.dansplugins.factionsystem.teleport.MfTeleportService
+import com.dansplugins.factionsystem.trace.TraceClient
 import com.dansplugins.factionsystem.warend.JooqWarEndOutboxRepository
 import com.dansplugins.factionsystem.warend.WarEndOutboxRepository
 import com.google.gson.Gson
@@ -103,17 +105,20 @@ import org.bstats.bukkit.Metrics
 import org.bstats.charts.SimplePie
 import org.bukkit.NamespacedKey
 import org.bukkit.boss.KeyedBossBar
+import org.bukkit.command.CommandExecutor
+import org.bukkit.command.TabCompleter
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.entity.Player
 import org.bukkit.plugin.java.JavaPlugin
 import org.flywaydb.core.Flyway
-import org.jooq.SQLDialect
+import org.jooq.DSLContext
 import org.jooq.conf.Settings
 import org.jooq.impl.DSL
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalTime
+import java.util.UUID
 import java.util.logging.Level.SEVERE
 import javax.sql.DataSource
 import kotlin.math.floor
@@ -123,7 +128,7 @@ class MedievalFactions : JavaPlugin() {
     var disposableFixtureMutationFence: com.dansplugins.factionsystem.fixture.DisposableFixtureMutationFence? = null
         private set
 
-    private lateinit var dataSource: DataSource
+    private var dataSource: DataSource? = null
 
     @Volatile
     private var activeConfigSnapshot: ConfigLifecycle.Snapshot? = null
@@ -155,6 +160,10 @@ class MedievalFactions : JavaPlugin() {
     override fun getConfig(): FileConfiguration =
         activeConfigSnapshot?.configuration() ?: super.getConfig()
 
+    // A no-op until the config has been read, so a command arriving before
+    // onEnable() finishes has something safe to report to.
+    private var trace: TraceClient = TraceClient.disabled()
+
     override fun onEnable() {
         bundledConfigYaml = getResource("config.yml")?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }
             ?: run {
@@ -163,97 +172,73 @@ class MedievalFactions : JavaPlugin() {
                 return
             }
         val configFile = dataFolder.toPath().resolve("config.yml")
-        val migrator = MfLegacyDataMigrator(this)
         if (ConfigLifecycle.isMf4Legacy(configFile)) {
-            migrator.backup()
-            val fresh = ConfigLifecycle.prepare(configFile, bundledConfigYaml)
-            if (!activatePreparedConfig(fresh)) return
-            if (!updateOperatorConfig(mapOf("migrateMf4" to true))) {
-                logger.severe("The MF4 import marker could not be persisted safely; startup is blocked.")
-                server.pluginManager.disablePlugin(this)
-                return
-            }
-            logger.warning("Shutting down the server due to Medieval Factions 4 migration.")
-            logger.warning("If you have a database, please configure it before starting the server again.")
-            logger.warning("Otherwise, simply start your server again to begin migration.")
-            server.shutdown()
+            logger.severe("MF4 data conversion requires a separately requested migration; startup is blocked.")
+            server.pluginManager.disablePlugin(this)
             return
         }
 
         if (!activatePreparedConfig(ConfigLifecycle.prepare(configFile, bundledConfigYaml))) return
 
+        if (config.getBoolean("migrateMf4")) {
+            logger.severe("MF4 data conversion requires a separately requested migration; startup is blocked.")
+            server.pluginManager.disablePlugin(this)
+            return
+        }
+
+        val storageType = config.getString("storage.type") ?: "database"
+        if (storageType.equals("json", ignoreCase = true)) {
+            val blocker = jsonStorageBlocker()
+            if (blocker != null) {
+                logger.severe(
+                    "storage.type=json is unavailable while $blocker is installed: " +
+                        "Patriam integrations require the database-backed durable war-end outbox and fixture service."
+                )
+                server.pluginManager.disablePlugin(this)
+                return
+            }
+        }
+
         language = Language(this, config.getString("language") ?: "en-US")
-
-        Class.forName("org.h2.Driver")
-        val hikariConfig = HikariConfig()
-        hikariConfig.jdbcUrl = config.getString("database.url")
-        val databaseUsername = config.getString("database.username")
-        if (databaseUsername != null) {
-            hikariConfig.username = databaseUsername
-        }
-        val databasePassword = config.getString("database.password")
-        if (databasePassword != null) {
-            hikariConfig.password = databasePassword
-        }
-        dataSource = HikariDataSource(hikariConfig)
-        val oldClassLoader = Thread.currentThread().contextClassLoader
-        Thread.currentThread().contextClassLoader = classLoader
-        val flyway = Flyway.configure()
-            .dataSource(dataSource)
-            .locations("classpath:com/dansplugins/factionsystem/db/migration")
-            .table("mf_schema_history")
-            .baselineOnMigrate(true)
-            .baselineVersion("0")
-            .validateOnMigrate(false)
-            .load()
-        flyway.migrate()
-        Thread.currentThread().contextClassLoader = oldClassLoader
-
-        System.setProperty("org.jooq.no-logo", "true")
-        System.setProperty("org.jooq.no-tips", "true")
-
-        val dialect = config.getString("database.dialect")?.let(SQLDialect::valueOf)
-        val jooqSettings = Settings().withRenderSchema(false)
-        val dsl = DSL.using(
-            dataSource,
-            dialect,
-            jooqSettings
-        )
+        logger.info("Using storage type: $storageType")
 
         flags = MfFlags(this)
         factionPermissions = MfFactionPermissions(this)
 
         val gson = Gson()
-        val playerRepository: MfPlayerRepository = JooqMfPlayerRepository(this, dsl)
+
+        // Initialize repositories based on storage type
+        val repositories = if (storageType.equals("json", ignoreCase = true)) {
+            initializeJsonRepositories(gson)
+        } else {
+            initializeDatabaseRepositories(gson)
+        }
+
         val mapService = if (server.pluginManager.getPlugin("dynmap") != null && config.getBoolean("dynmap.enableDynmapIntegration")) {
             DynmapService(this)
         } else {
             null
         }
-        val factionRepository: MfFactionRepository = JooqMfFactionRepository(this, dsl, gson)
-        val lawRepository: MfLawRepository = JooqMfLawRepository(dsl)
-        val factionRelationshipRepository: MfFactionRelationshipRepository = JooqMfFactionRelationshipRepository(dsl)
-        val claimedChunkRepository: MfClaimedChunkRepository = JooqMfClaimedChunkRepository(dsl)
-        val lockRepository: MfLockRepository = JooqMfLockRepository(dsl)
-        val interactionStatusRepository: MfInteractionStatusRepository = JooqMfInteractionStatusRepository(dsl)
-        val gateRepository: MfGateRepository = JooqMfGateRepository(this, dsl)
-        val gateCreationContextRepository: MfGateCreationContextRepository = JooqMfGateCreationContextRepository(dsl)
-        val chatMessageRepository: MfChatChannelMessageRepository = JooqMfChatChannelMessageRepository(dsl)
-        val duelRepository: MfDuelRepository = JooqMfDuelRepository(dsl)
-        val duelInviteRepository: MfDuelInviteRepository = JooqMfDuelInviteRepository(dsl)
-        val warEndOutboxRepository: WarEndOutboxRepository = JooqWarEndOutboxRepository(dsl)
+        val warEndOutboxRepository: WarEndOutboxRepository = repositories.dslContext?.let(::JooqWarEndOutboxRepository)
+            ?: object : WarEndOutboxRepository {
+                override fun getUnacknowledged(consumerId: String): List<com.dansplugins.factionsystem.api.WarEndNotice> =
+                    error("Durable war-end notices require database storage")
 
-        val playerService = MfPlayerService(this, playerRepository)
-        val factionService = MfFactionService(this, factionRepository)
-        val lawService = MfLawService(lawRepository)
-        val factionRelationshipService = MfFactionRelationshipService(this, factionRelationshipRepository)
-        val claimService = MfClaimService(this, claimedChunkRepository)
-        val lockService = MfLockService(this, lockRepository)
-        val interactionService = MfInteractionService(interactionStatusRepository)
+                override fun acknowledge(consumerId: String, noticeId: UUID): Boolean =
+                    error("Durable war-end notices require database storage")
+            }
+
+        val playerService = MfPlayerService(this, repositories.playerRepository)
+        val factionService = MfFactionService(this, repositories.factionRepository)
+        val lawService = MfLawService(repositories.lawRepository)
+        val factionRelationshipService = MfFactionRelationshipService(this, repositories.factionRelationshipRepository)
+        val claimService = MfClaimService(this, repositories.claimedChunkRepository)
+        val lockService = MfLockService(this, repositories.lockRepository)
+        val interactionService = MfInteractionService(repositories.interactionStatusRepository)
         val notificationService = setupNotificationService()
-        val gateService = MfGateService(this, gateRepository, gateCreationContextRepository)
-        val chatService = MfChatService(this, chatMessageRepository)
-        val duelService = MfDuelService(this, duelRepository, duelInviteRepository)
+        val gateService = MfGateService(this, repositories.gateRepository, repositories.gateCreationContextRepository)
+        val chatService = MfChatService(this, repositories.chatMessageRepository)
+        val duelService = MfDuelService(this, repositories.duelRepository, repositories.duelInviteRepository)
         val potionService = MfPotionService(this)
         val teleportService = MfTeleportService(this)
         val approvalRequestService = MfApprovalRequestService()
@@ -278,13 +263,15 @@ class MedievalFactions : JavaPlugin() {
         )
         setupRpkLockService()
 
-        disposableFixtureMutationFence = com.dansplugins.factionsystem.fixture.DisposableFixtureMutationFence()
-        server.servicesManager.register(
-            com.dansplugins.factionsystem.api.DisposableFactionFixtureService::class.java,
-            com.dansplugins.factionsystem.fixture.DefaultDisposableFactionFixtureService(this, dsl),
-            this,
-            org.bukkit.plugin.ServicePriority.Normal
-        )
+        repositories.dslContext?.let { dsl ->
+            disposableFixtureMutationFence = com.dansplugins.factionsystem.fixture.DisposableFixtureMutationFence()
+            server.servicesManager.register(
+                com.dansplugins.factionsystem.api.DisposableFactionFixtureService::class.java,
+                com.dansplugins.factionsystem.fixture.DefaultDisposableFactionFixtureService(this, dsl),
+                this,
+                org.bukkit.plugin.ServicePriority.Normal
+            )
+        }
 
         server.servicesManager.register(
             com.dansplugins.factionsystem.api.MedievalFactionsApi::class.java,
@@ -304,6 +291,16 @@ class MedievalFactions : JavaPlugin() {
                 config.getString("database.dialect")
             }
         )
+
+        // The validated config generation contains the schema's explicit reporting choice.
+        trace = TraceClient.builder(config.getString("usage-reporting.endpoint") ?: "https://trace.danielstephenson.dev", name)
+            .key(config.getString("usage-reporting.key") ?: "")
+            .enabled(config.getBoolean("usage-reporting.enabled"))
+            .serverWideConfig(dataFolder.parentFile)
+            .logger(logger)
+            .build()
+        logUsageReportingState()
+        trace.report("startup", null, mapOf("version" to description.version))
         metrics.addCustomChart(
             SimplePie("average_claims") {
                 factionService.factions
@@ -371,13 +368,6 @@ class MedievalFactions : JavaPlugin() {
             }
         )
 
-        if (config.getBoolean("migrateMf4")) {
-            migrator.migrate()
-            check(updateOperatorConfig(mapOf("migrateMf4" to null))) {
-                "MF4 import completed, but its completion marker could not be persisted safely"
-            }
-        }
-
         if (server.pluginManager.getPlugin("PlaceholderAPI") != null) {
             MedievalFactionsPlaceholderExpansion(this).register()
         }
@@ -392,7 +382,9 @@ class MedievalFactions : JavaPlugin() {
             }
         }
 
-        val entityInteractionProtection = com.dansplugins.factionsystem.listener.EntityInteractionProtection(this)
+        // Shared between the two entity interaction listeners so that a right-click raising both events
+        // only produces a single message.
+        val entityInteractionProtection = EntityInteractionProtection(this)
         listOf(
             com.dansplugins.factionsystem.api.impl.ApiFactionLifecycleListener(this),
             com.dansplugins.factionsystem.api.impl.ApiRelationshipListener(this),
@@ -420,18 +412,18 @@ class MedievalFactions : JavaPlugin() {
             PlayerInteractListener(this),
             PlayerJoinListener(this),
             PlayerMoveListener(this),
-            PlayerQuitListener(this),
+            PlayerQuitListener(this, entityInteractionProtection),
             PlayerTeleportListener(this),
             PotionSplashListener(this)
         ).forEach { server.pluginManager.registerEvents(it, this) }
 
-        getCommand("faction")?.setExecutor(MfFactionCommand(this))
-        getCommand("lock")?.setExecutor(MfLockCommand(this))
-        getCommand("unlock")?.setExecutor(MfUnlockCommand(this))
-        getCommand("accessors")?.setExecutor(MfAccessorsCommand(this))
-        getCommand("power")?.setExecutor(MfPowerCommand(this))
-        getCommand("gate")?.setExecutor(MfGateCommand(this))
-        getCommand("duel")?.setExecutor(MfDuelCommand(this))
+        registerCommand("faction", MfFactionCommand(this))
+        registerCommand("lock", MfLockCommand(this))
+        registerCommand("unlock", MfUnlockCommand(this))
+        registerCommand("accessors", MfAccessorsCommand(this))
+        registerCommand("power", MfPowerCommand(this))
+        registerCommand("gate", MfGateCommand(this))
+        registerCommand("duel", MfDuelCommand(this))
 
         server.scheduler.scheduleSyncRepeatingTask(this, {
             val onlinePlayers = server.onlinePlayers
@@ -577,10 +569,6 @@ class MedievalFactions : JavaPlugin() {
         )
     }
 
-    override fun onDisable() {
-        servicesOrNull?.claimService?.wildernessReservations?.close()
-    }
-
     /**
      * Publishes a small plugin-owned edit only if the physical file is still the active generation.
      * A refused write leaves both runtime configuration and the operator's newer bytes untouched.
@@ -618,6 +606,10 @@ class MedievalFactions : JavaPlugin() {
 
     internal fun configLifecycleResult(): ConfigLifecycle.Result? = lastConfigResult
 
+    /** JSON omits Patriam's durable war-end outbox and disposable fixture service. */
+    internal fun jsonStorageBlocker(): String? =
+        listOf("PatriamMFAddon", "PatriamTesting").firstOrNull { server.pluginManager.getPlugin(it) != null }
+
     private fun activatePreparedConfig(result: ConfigLifecycle.Result): Boolean {
         lastConfigResult = result
         val source = if (result.sourceVersion() < 0) "unknown" else "v${result.sourceVersion()}"
@@ -636,8 +628,101 @@ class MedievalFactions : JavaPlugin() {
         }
         activeConfigSnapshot = result.snapshot()
         logger.info("$summary ${result.detail()}.")
-        result.backup()?.let { logger.info("A byte-identical owner-only migration backup was created as ${it.fileName}.") }
         return true
+    }
+
+    private data class Repositories(
+        val dslContext: DSLContext?,
+        val playerRepository: MfPlayerRepository,
+        val factionRepository: MfFactionRepository,
+        val lawRepository: MfLawRepository,
+        val factionRelationshipRepository: MfFactionRelationshipRepository,
+        val claimedChunkRepository: MfClaimedChunkRepository,
+        val lockRepository: MfLockRepository,
+        val interactionStatusRepository: MfInteractionStatusRepository,
+        val gateRepository: MfGateRepository,
+        val gateCreationContextRepository: MfGateCreationContextRepository,
+        val chatMessageRepository: MfChatChannelMessageRepository,
+        val duelRepository: MfDuelRepository,
+        val duelInviteRepository: MfDuelInviteRepository
+    )
+
+    private fun initializeDatabaseRepositories(gson: Gson): Repositories {
+        val jdbcUrl = MfJdbc.hardenUrl(config.getString("database.url") ?: "")
+        MfJdbc.preloadDriver(jdbcUrl)
+        val hikariConfig = HikariConfig()
+        hikariConfig.jdbcUrl = jdbcUrl
+        val databaseUsername = config.getString("database.username")
+        if (databaseUsername != null) {
+            hikariConfig.username = databaseUsername
+        }
+        val databasePassword = config.getString("database.password")
+        if (databasePassword != null) {
+            hikariConfig.password = databasePassword
+        }
+        dataSource = HikariDataSource(hikariConfig)
+        val oldClassLoader = Thread.currentThread().contextClassLoader
+        Thread.currentThread().contextClassLoader = classLoader
+        val flyway = Flyway.configure()
+            .dataSource(dataSource!!)
+            .locations("classpath:com/dansplugins/factionsystem/db/migration")
+            .table("mf_schema_history")
+            .baselineOnMigrate(true)
+            .baselineVersion("0")
+            .validateOnMigrate(false)
+            .load()
+        flyway.migrate()
+        Thread.currentThread().contextClassLoader = oldClassLoader
+
+        System.setProperty("org.jooq.no-logo", "true")
+        System.setProperty("org.jooq.no-tips", "true")
+
+        val dialect = MfJdbc.parseDialect(config.getString("database.dialect"))
+        val jooqSettings = Settings().withRenderSchema(false)
+        val dsl = DSL.using(
+            dataSource,
+            dialect,
+            jooqSettings
+        )
+
+        return Repositories(
+            dslContext = dsl,
+            playerRepository = JooqMfPlayerRepository(this, dsl),
+            factionRepository = JooqMfFactionRepository(this, dsl, gson),
+            lawRepository = JooqMfLawRepository(dsl),
+            factionRelationshipRepository = JooqMfFactionRelationshipRepository(dsl),
+            claimedChunkRepository = JooqMfClaimedChunkRepository(dsl),
+            lockRepository = JooqMfLockRepository(dsl),
+            interactionStatusRepository = JooqMfInteractionStatusRepository(dsl),
+            gateRepository = JooqMfGateRepository(this, dsl),
+            gateCreationContextRepository = JooqMfGateCreationContextRepository(dsl),
+            chatMessageRepository = JooqMfChatChannelMessageRepository(dsl),
+            duelRepository = JooqMfDuelRepository(dsl),
+            duelInviteRepository = JooqMfDuelInviteRepository(dsl)
+        )
+    }
+
+    private fun initializeJsonRepositories(gson: Gson): Repositories {
+        val storagePath = config.getString("storage.json.path") ?: "./medieval_factions_data"
+        val storageManager = com.dansplugins.factionsystem.storage.json.JsonStorageManager(this, storagePath)
+
+        logger.info("JSON storage path: $storagePath")
+
+        return Repositories(
+            dslContext = null,
+            playerRepository = com.dansplugins.factionsystem.storage.json.JsonMfPlayerRepository(this, storageManager),
+            factionRepository = com.dansplugins.factionsystem.storage.json.JsonMfFactionRepository(this, storageManager, gson),
+            lawRepository = com.dansplugins.factionsystem.storage.json.JsonMfLawRepository(this, storageManager),
+            factionRelationshipRepository = com.dansplugins.factionsystem.storage.json.JsonMfFactionRelationshipRepository(this, storageManager),
+            claimedChunkRepository = com.dansplugins.factionsystem.storage.json.JsonMfClaimedChunkRepository(this, storageManager),
+            lockRepository = com.dansplugins.factionsystem.storage.json.JsonMfLockRepository(this, storageManager),
+            interactionStatusRepository = com.dansplugins.factionsystem.storage.json.JsonMfInteractionStatusRepository(this, storageManager),
+            gateRepository = com.dansplugins.factionsystem.storage.json.JsonMfGateRepository(this, storageManager),
+            gateCreationContextRepository = com.dansplugins.factionsystem.storage.json.JsonMfGateCreationContextRepository(this, storageManager),
+            chatMessageRepository = com.dansplugins.factionsystem.storage.json.JsonMfChatChannelMessageRepository(this, storageManager),
+            duelRepository = com.dansplugins.factionsystem.storage.json.JsonMfDuelRepository(this, storageManager),
+            duelInviteRepository = com.dansplugins.factionsystem.storage.json.JsonMfDuelInviteRepository(this, storageManager)
+        )
     }
 
     internal fun onPowerCycle(
@@ -691,6 +776,50 @@ class MedievalFactions : JavaPlugin() {
         server.pluginManager.getPlugin("Mailboxes") != null -> MailboxesNotificationService(this)
         server.pluginManager.getPlugin("rpk-notification-lib-bukkit") != null -> RpkNotificationService(this)
         else -> NoOpNotificationService()
+    }
+
+    override fun onDisable() {
+        servicesOrNull?.claimService?.wildernessReservations?.close()
+        trace.close()
+
+        // Close database connection if it was initialized
+        dataSource?.let { ds ->
+            if (ds is HikariDataSource) {
+                logger.info("Closing database connection...")
+                ds.close()
+                logger.info("Database connection closed")
+            }
+        }
+    }
+
+    // Said on every startup so an operator can see reporting is on, and why it is off,
+    // from the console alone. The wording is shared by every plugin that reports to trace.
+    private fun logUsageReportingState() {
+        if (trace.isEnabled) {
+            val endpoint = config.getString("usage-reporting.endpoint") ?: "https://trace.danielstephenson.dev"
+            logger.info(
+                "Usage reporting is on: $name sends its name, version and command names to $endpoint" +
+                    " - nothing about players or the server. Turn it off with usage-reporting.enabled: false" +
+                    " in this plugin's config.yml, or for every plugin with enabled: false in" +
+                    " plugins/trace/config.yml. Details: https://github.com/Stephenson-Software/trace#usage-reporting"
+            )
+        } else {
+            logger.info("Usage reporting is off (${trace.disabledReason()}).")
+        }
+    }
+
+    // Every top-level command goes through here so that one usage event is reported
+    // per use. The event carries the command's declared name (so "/mf" and "/f"
+    // both report as "faction"), never the sender or the arguments. Tab completion
+    // is wired to the executor explicitly because wrapping it hides the fact that
+    // it is also a TabCompleter from PluginCommand's fallback.
+    private fun <T> registerCommand(name: String, executor: T) where T : CommandExecutor, T : TabCompleter {
+        val command = getCommand(name) ?: return
+        command.setExecutor { sender, cmd, label, args ->
+            trace.report("command", null, mapOf("name" to cmd.name))
+            executor.onCommand(sender, cmd, label, args)
+        }
+        command.tabCompleter = executor
     }
 
     private fun setupRpkLockService() {

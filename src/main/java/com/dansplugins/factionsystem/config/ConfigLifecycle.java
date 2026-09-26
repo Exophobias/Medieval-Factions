@@ -30,7 +30,6 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -64,7 +63,9 @@ import java.util.regex.Pattern;
 public final class ConfigLifecycle {
 
     public static final String VERSION_KEY = "config-version";
-    public static final int CURRENT_VERSION = 1;
+    public static final int CURRENT_VERSION = 2;
+    private static final String OLD_DPC_URL = "https://dansplugins.com/api/v1/factions";
+    private static final String CURRENT_DPC_URL = "https://api.dansplugins.com/api/v1/factions";
     private static final Pattern DECIMAL_INTEGER = Pattern.compile("0|[1-9][0-9]*");
     private static final Set<String> STRING_LIST_PATHS = Set.of(
             "factions.allowedMobSpawnReasons",
@@ -230,8 +231,11 @@ public final class ConfigLifecycle {
         while (workingVersion < CURRENT_VERSION) {
             final Migration migration;
             try {
+                String sourceYaml = migratedSerialization == null
+                        ? installedText : migratedSerialization;
                 migration = switch (workingVersion) {
-                    case 0 -> migrateZeroToOne(installedText, bundledYaml);
+                    case 0 -> migrateZeroToOne(sourceYaml, schemaOneTemplate(bundledYaml));
+                    case 1 -> migrateOneToTwo(sourceYaml, bundledYaml);
                     default -> null;
                 };
             } catch (RuntimeException failure) {
@@ -278,42 +282,31 @@ public final class ConfigLifecycle {
         String serialized = Objects.requireNonNull(migratedSerialization,
                 "a schema migration must provide canonical serialized YAML");
         byte[] publishedBytes = serialized.getBytes(StandardCharsets.UTF_8);
-        final Path backup;
-        try {
-            backup = createVerifiedBackup(configFile, installedBytes, sourceVersion);
-        } catch (FileContentChangedException failure) {
-            return blocked(State.ERROR, sourceVersion,
-                    "config.yml changed while its migration backup was prepared; retry");
-        } catch (IOException failure) {
-            return blocked(State.ERROR, sourceVersion,
-                    "config.yml could not be backed up safely");
-        }
-
         try {
             writer.write(configFile, serialized, installedBytes);
         } catch (FileContentChangedException failure) {
-            return new Result(State.ERROR, sourceVersion, backup,
+            return new Result(State.ERROR, sourceVersion, null,
                     "config.yml changed while its migration replacement was prepared; the "
                             + "operator's file was not replaced");
         } catch (AtomicMoveNotSupportedException failure) {
-            return new Result(State.ERROR, sourceVersion, backup,
+            return new Result(State.ERROR, sourceVersion, null,
                     "the filesystem cannot atomically replace config.yml");
         } catch (IOException failure) {
-            return new Result(State.ERROR, sourceVersion, backup,
+            return new Result(State.ERROR, sourceVersion, null,
                     "the migrated config.yml could not replace the installed file");
         }
 
         try {
             Snapshot published = readPublishedSnapshot(configFile, publishedBytes, bundledYaml);
-            return new Result(State.UPGRADED, sourceVersion, backup,
+            return new Result(State.UPGRADED, sourceVersion, null,
                     "upgraded schema v" + sourceVersion + " -> v" + CURRENT_VERSION,
                     published);
         } catch (FileContentChangedException failure) {
-            return new Result(State.ERROR, sourceVersion, backup,
+            return new Result(State.ERROR, sourceVersion, null,
                     "config.yml changed after migration was published; it was not activated");
         } catch (IOException | InvalidConfigurationException | ValidationException
                  | RuntimeException failure) {
-            return new Result(State.ERROR, sourceVersion, backup,
+            return new Result(State.ERROR, sourceVersion, null,
                     "the published config.yml failed exact post-write validation");
         }
     }
@@ -321,8 +314,8 @@ public final class ConfigLifecycle {
     /**
      * Safely publishes a plugin-owned edit from one exact active generation.
      *
-     * <p>No backup is made because this is not a schema migration. A concurrent operator edit
-     * refuses the write, and the caller keeps the previous snapshot as its last known good.</p>
+     * <p>A concurrent operator edit refuses the write, and the caller keeps the previous
+     * snapshot as its last known good.</p>
      */
     public static Result update(Path configFile, String bundledYaml, Snapshot active,
                                 Map<String, ?> updates) {
@@ -403,8 +396,79 @@ public final class ConfigLifecycle {
         return new Result(state, sourceVersion, null, detail, null);
     }
 
+    /** Reconstructs the published schema-1 template for the first migration edge. */
+    private static String schemaOneTemplate(String bundledYaml) {
+        LoaderOptions loaderOptions = new LoaderOptions();
+        loaderOptions.setAllowDuplicateKeys(false);
+        loaderOptions.setProcessComments(true);
+        DumperOptions dumperOptions = new DumperOptions();
+        dumperOptions.setProcessComments(true);
+        dumperOptions.setIndent(2);
+        dumperOptions.setIndicatorIndent(0);
+        Yaml yaml = new Yaml(new SafeConstructor(loaderOptions),
+                new Representer(dumperOptions), dumperOptions, loaderOptions);
+        Node root = yaml.compose(new StringReader(bundledYaml));
+        if (!(root instanceof MappingNode mapping)) {
+            throw new IllegalStateException("the bundled configuration must have a mapping root");
+        }
+        replaceTemplateValue(mapping, VERSION_KEY, 1, yaml);
+        removeTemplateKey(mapping, "storage");
+        removeTemplateKey(mapping, "usage-reporting");
+        Node factions = unwrap(mapping.getValue().get(tupleIndex(mapping, "factions")).getValueNode());
+        if (factions instanceof MappingNode factionMapping) {
+            removeTemplateKey(factionMapping, "nonMembersCanInteractWithEntities");
+        }
+        Node dpcApi = unwrap(mapping.getValue().get(tupleIndex(mapping, "dpc-api")).getValueNode());
+        if (dpcApi instanceof MappingNode dpcMapping) {
+            replaceTemplateValue(dpcMapping, "url", OLD_DPC_URL, yaml);
+        }
+        StringWriter output = new StringWriter();
+        yaml.serialize(mapping, output);
+        return output.toString();
+    }
+
+    private static void removeTemplateKey(MappingNode mapping, String key) {
+        int index = tupleIndex(mapping, key);
+        if (index >= 0) {
+            mapping.getValue().remove(index);
+        }
+    }
+
+    private static void replaceTemplateValue(MappingNode mapping, String key, Object value,
+                                             Yaml yaml) {
+        int index = tupleIndex(mapping, key);
+        if (index < 0) {
+            throw new IllegalStateException("the bundled configuration lacks " + key);
+        }
+        NodeTuple original = mapping.getValue().get(index);
+        Node replacement = yaml.represent(value);
+        copyTemplateComments(unwrap(original.getValueNode()), replacement);
+        mapping.getValue().set(index, new NodeTuple(original.getKeyNode(), replacement));
+    }
+
     /** Schema 0 is a valid installed MF5-era file from before this marker existed. */
-    private static Migration migrateZeroToOne(String installedYaml, String bundledYaml) {
+    private static Migration migrateZeroToOne(String installedYaml, String schemaOneYaml) {
+        return canonicalize(installedYaml, schemaOneYaml);
+    }
+
+    /** Adds the new storage and reporting keys while retaining explicit operator choices. */
+    private static Migration migrateOneToTwo(String installedYaml, String bundledYaml) {
+        Migration canonical = canonicalize(installedYaml, bundledYaml);
+        if (!OLD_DPC_URL.equals(canonical.configuration().getString("dpc-api.url"))) {
+            return canonical;
+        }
+        // Only the exact old bundled default is corrected. A custom endpoint remains untouched.
+        String updated = serializePluginUpdates(canonical.serialized(), bundledYaml,
+                Map.of("dpc-api.url", CURRENT_DPC_URL));
+        try {
+            return new Migration(parse(updated), updated);
+        } catch (InvalidConfigurationException failure) {
+            throw new IllegalStateException("the migrated configuration could not be parsed", failure);
+        }
+    }
+
+    /** Template comments/order/anchors remain; extensions follow known siblings. */
+    private static Migration canonicalize(String installedYaml, String bundledYaml) {
         final String serialized;
         try {
             LoaderOptions loaderOptions = new LoaderOptions();
@@ -718,6 +782,15 @@ public final class ConfigLifecycle {
     /** A small set of semantics whose callers otherwise throw or silently coerce. */
     private static void validateSemantics(ConfigurationSection configured)
             throws ValidationException {
+        String storageType = configured.getString("storage.type");
+        if (storageType != null && !storageType.equalsIgnoreCase("database")
+                && !storageType.equalsIgnoreCase("json")) {
+            throw new ValidationException("storage.type");
+        }
+        String jsonPath = configured.getString("storage.json.path");
+        if (jsonPath != null && jsonPath.isBlank()) {
+            throw new ValidationException("storage.json.path");
+        }
         String duration = configured.getString("duels.duration");
         if (duration != null) {
             try {
@@ -942,45 +1015,6 @@ public final class ConfigLifecycle {
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(bytes));
         return decoded.toString();
-    }
-
-    private static Path createVerifiedBackup(Path configFile, byte[] expected,
-                                              int sourceVersion) throws IOException {
-        Path parent = configFile.toAbsolutePath().normalize().getParent();
-        if (parent == null) {
-            throw new IOException("config.yml has no parent directory");
-        }
-        if (!Arrays.equals(expected, Files.readAllBytes(configFile))) {
-            throw new FileContentChangedException();
-        }
-        String base = configFile.getFileName() + ".v" + sourceVersion + ".bak";
-        for (int suffix = 0; ; suffix++) {
-            Path backup = parent.resolve(suffix == 0 ? base : base + "." + suffix);
-            boolean created = false;
-            try {
-                createOwnerOnlyFile(backup);
-                created = true;
-                try (FileChannel channel = FileChannel.open(backup, StandardOpenOption.WRITE)) {
-                    ByteBuffer buffer = ByteBuffer.wrap(expected);
-                    while (buffer.hasRemaining()) {
-                        channel.write(buffer);
-                    }
-                    channel.force(true);
-                }
-            } catch (FileAlreadyExistsException collision) {
-                continue;
-            } catch (IOException failure) {
-                if (created) {
-                    Files.deleteIfExists(backup);
-                }
-                throw failure;
-            }
-            if (!Arrays.equals(expected, Files.readAllBytes(backup))) {
-                Files.deleteIfExists(backup);
-                throw new IOException("backup verification failed");
-            }
-            return backup;
-        }
     }
 
     static void writeUtf8AtomicRequired(Path target, String content,

@@ -35,6 +35,7 @@ import org.bukkit.block.data.Openable
 import org.bukkit.block.data.type.Door
 import org.bukkit.block.data.type.TrapDoor
 import org.bukkit.entity.Player
+import org.bukkit.event.Event.Result.DENY
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.block.Action.LEFT_CLICK_BLOCK
@@ -50,6 +51,41 @@ import org.bukkit.block.data.type.Gate as FenceGateData
 class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
 
     private val pendingPlayers = ConcurrentHashMap.newKeySet<MfPlayerId>()
+    private companion object {
+        // Hand-used items whose right-click use acts on the player rather than on the world - drinking,
+        // throwing, drawing or raising - and which therefore have no block-targeted behaviour at all.
+        // Material.isEdible already covers food, so only the non-edible cases are listed here.
+        // Items that do act on the clicked block (a bucket, flint and steel, a hoe, an axe, a shovel,
+        // bone meal, an eye of ender, a firework rocket, a wind charge, anything placeable) are
+        // deliberately absent, because releasing the item half of a protected interaction for those
+        // would let a non-member alter a claim. The list is therefore fail-closed: an item missing from
+        // it is merely restricted, never a hole in protection.
+        private val WORLD_NEUTRAL_MATERIALS: Set<Material> = buildSet {
+            addAll(
+                listOf(
+                    Material.POTION,
+                    Material.SPLASH_POTION,
+                    Material.LINGERING_POTION,
+                    Material.MILK_BUCKET,
+                    Material.HONEY_BOTTLE,
+                    Material.EXPERIENCE_BOTTLE,
+                    Material.BOW,
+                    Material.CROSSBOW,
+                    Material.SNOWBALL,
+                    Material.EGG,
+                    Material.ENDER_PEARL,
+                    Material.FISHING_ROD,
+                    Material.TRIDENT,
+                    Material.SHIELD,
+                    Material.SPYGLASS
+                )
+            )
+            // Added in 1.19+; use name-based lookup so the plugin loads on older servers.
+            Material.getMaterial("OMINOUS_BOTTLE")?.let { add(it) }
+            // Added in 1.19.3+; use name-based lookup for the same reason.
+            Material.getMaterial("GOAT_HORN")?.let { add(it) }
+        }
+    }
 
     @EventHandler
     fun onPlayerInteract(event: PlayerInteractEvent) {
@@ -159,7 +195,11 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
                         )
                     }
                 } else {
-                    if (notify) {
+                    // A lock is a separate protection mechanism from territory, but the two-result
+                    // distinction applies to it identically: the locked block must stay shut, while an
+                    // item that cannot act on it has no reason to be suppressed.
+                    val deniedInFull = denyInteraction(event)
+                    if (deniedInFull && notify) {
                         plugin.server.scheduler.runTaskAsynchronously(
                             plugin,
                             Runnable {
@@ -168,7 +208,6 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
                             }
                         )
                     }
-                    event.isCancelled = true
                 }
                 return
             } else {
@@ -188,8 +227,10 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
 
         if (claim == null) {
             if (plugin.config.getBoolean("wilderness.interaction.prevent", false)) {
-                event.isCancelled = true
-                if (notify && plugin.config.getBoolean("wilderness.interaction.alert", true)) {
+                // The option protects blocks, not the player's own food, so denyInteraction keeps
+                // eating and drinking working here exactly as it does inside a claim - see #1747.
+                val deniedInFull = denyInteraction(event)
+                if (deniedInFull && notify && plugin.config.getBoolean("wilderness.interaction.alert", true)) {
                     event.player.sendMessage("$RED${plugin.language["CannotInteractBlockInWilderness"]}")
                 }
             }
@@ -198,12 +239,6 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
 
         val factionService = plugin.services.factionService
         val claimFaction = factionService.getFaction(claim.factionId) ?: return
-
-        // Allow eating food in faction territory without triggering protection
-        val item = event.item
-        if (item != null && item.type.isEdible && !clickedBlock.type.isInteractable) {
-            return
-        }
 
         // Check if player is allowed to interact based on faction relationships.
         // overrideActionFor is evaluated only when MF has already denied, so its BlockState
@@ -224,7 +259,7 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
                 // Check if player is at war and trying to place a ladder
                 // Only allow if they're right-clicking with a ladder on a solid, non-interactable block
                 val isPlacingLadder = event.action == RIGHT_CLICK_BLOCK &&
-                    event.hasItem() && event.item?.type == Material.LADDER && clickedBlock.type.isSolid && !clickedBlock.type.isInteractable
+                    event.hasItem() && event.item?.type == Material.LADDER && clickedBlock.type.isSolid && !isInteractiveBlock(clickedBlock.type)
                 if (isPlacingLadder && claimService.isWartimeLadderPlacementAllowed(
                         mfPlayer.id,
                         claim,
@@ -237,27 +272,91 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
                 if (isWartimeActionAllowed(event, clickedBlock, mfPlayer, claim)) {
                     return
                 }
-                event.isCancelled = true
-                if (notify) event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", claimFaction.name]}")
+                val deniedInFull = denyInteraction(event)
+                if (deniedInFull && notify) {
+                    event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", claimFaction.name]}")
+                }
             }
         }
     }
 
     /**
-     * Resolve the attempted action before consulting its wartime list. A right-click interaction
-     * grant must not admit left-click damage or passive physical events; an item placement grant
-     * must not open the container it was clicked against. Returning true preserves both existing
-     * Bukkit results, including another plugin's DENY; break/place events retain their own gates.
+     * Named predicate for "interactive block" (chest, lever, door, etc. - anything that responds
+     * to a right-click independently of what the player is holding). Kept as a thin wrapper around
+     * Bukkit's [Material.isInteractable] - already the definition used elsewhere in this listener
+     * (the ladder-placement and wartime checks) - so the definition lives in one named place per
+     * #1970, rather than being re-derived inline at each call site.
      */
-    private fun isWartimeActionAllowed(event: PlayerInteractEvent, block: Block, player: MfPlayer, claim: MfClaimedChunk): Boolean {
-        val claims = plugin.services.claimService
+    private fun isInteractiveBlock(material: Material): Boolean = material.isInteractable
+
+    /**
+     * True when this interaction is the player using what they are holding on themselves - eating,
+     * drinking, throwing, drawing a bow, raising a shield - rather than acting on the block. The
+     * action type is checked first and strictly: a left-click never uses an item this way, and a
+     * physical interaction has no item at all, so neither may be exempted. See [WORLD_NEUTRAL_MATERIALS]
+     * for why the set of materials is a fail-closed allowance rather than a list of what to block.
+     */
+    private fun isWorldNeutralItemUse(event: PlayerInteractEvent): Boolean {
+        if (event.action != RIGHT_CLICK_BLOCK) return false
+        val item = event.item ?: return false
+        return item.type.isEdible || item.type in WORLD_NEUTRAL_MATERIALS
+    }
+
+    /**
+     * Refuses a protected interaction, and reports whether it was refused in full.
+     *
+     * A [PlayerInteractEvent] carries two independent results - the interacted block and the item in
+     * hand - and `isCancelled = true` denies both at once. Denying the item in hand also suppresses
+     * the follow-up use-item packet the client sends when a block-targeted use does nothing, which is
+     * why cancelling outright stopped a player eating, drinking, shooting a bow, throwing a snowball
+     * or an ender pearl, casting a fishing rod or throwing a trident while merely looking at a
+     * protected block (#1747, #1995).
+     *
+     * So when the held item cannot act on the block, only the block result is denied and the item is
+     * left to run. Everything else - every left-click, every physical interaction, and every
+     * right-click with an item that could place, break or alter a block - is still cancelled in full,
+     * because a left-click and a physical interaction are gated on `isCancelled` alone, and because
+     * an item's block-targeted use is gated on the item result rather than the block result.
+     *
+     * @return true when both results were denied, false when only the block was protected. The
+     *         protection message is sent only in the former case: the player who was eating never
+     *         attempted to use the block, and #1747's per-interaction chat noise must not return.
+     */
+    private fun denyInteraction(event: PlayerInteractEvent): Boolean {
+        if (isWorldNeutralItemUse(event)) {
+            event.setUseInteractedBlock(DENY)
+            return false
+        }
+        event.isCancelled = true
+        return true
+    }
+
+    /**
+     * Strictly gates which wartime permission check (if any) is consulted, based solely on the
+     * Bukkit [org.bukkit.event.block.Action] and whether the clicked block is interactive. The
+     * action type is resolved first and is the sole determinant of which branch runs; the held
+     * item's material plays no role in branch selection (only in the value passed to the placeable
+     * check once that branch is already chosen). This keeps action-type detection and wartime
+     * config evaluation as two separate steps with no overlap - see #1968, #1970.
+     */
+    private fun isWartimeActionAllowed(
+        event: PlayerInteractEvent,
+        clickedBlock: Block,
+        mfPlayer: MfPlayer,
+        claim: MfClaimedChunk
+    ): Boolean {
+        val claimService = plugin.services.claimService
         return when (event.action) {
-            LEFT_CLICK_BLOCK -> claims.isWartimeBreakableBlock(player.id, claim, block.type)
-            RIGHT_CLICK_BLOCK -> if (block.type.isInteractable) {
-                claims.isWartimeInteractableBlock(player.id, claim, block.type)
+            LEFT_CLICK_BLOCK ->
+                // Block is in the wartime breakable list; allow the left-click so BlockBreakEvent can fire
+                claimService.isWartimeBreakableBlock(mfPlayer.id, claim, clickedBlock.type)
+            RIGHT_CLICK_BLOCK -> if (isInteractiveBlock(clickedBlock.type)) {
+                // Block is in the wartime interactable list; allow the interaction
+                claimService.isWartimeInteractableBlock(mfPlayer.id, claim, clickedBlock.type)
             } else if (event.hasItem()) {
-                val item = event.item
-                item != null && claims.isWartimePlaceableBlock(player.id, claim, item.type)
+                // Item in hand is in the wartime placeable list; allow the right-click so BlockPlaceEvent can fire
+                val itemType = event.item?.type
+                itemType != null && claimService.isWartimePlaceableBlock(mfPlayer.id, claim, itemType)
             } else {
                 false
             }

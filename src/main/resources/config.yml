@@ -1,7 +1,11 @@
 # Independent operator-configuration schema. Do not change this to the plugin/JAR version.
-config-version: 1
+config-version: 2
 version: @version@
 language: en-US
+storage:
+  type: 'database' # Options: 'database' or 'json'
+  json:
+    path: './medieval_factions_data' # Path where JSON files will be stored (only used when type is 'json')
 database:
   url: 'jdbc:h2:./medieval_factions_db;AUTO_SERVER=true;MODE=MYSQL;DATABASE_TO_UPPER=false'
   dialect: 'H2'
@@ -299,7 +303,7 @@ gates:
     - *buttons
 dpc-api:
   enabled: false
-  url: "https://dansplugins.com/api/v1/factions"  # full endpoint URL of the DPC API; include port if needed (e.g. "https://dansplugins.com:8080/api/v1/factions")
+  url: "https://api.dansplugins.com/api/v1/factions"  # full endpoint URL of the DPC API (the API is a separate host from the website); include port if needed (e.g. "https://api.dansplugins.com:8080/api/v1/factions")
   key: ""                      # API key from https://dansplugins.com — register or sign in, then generate a key from your account page
   server-id: ""                # unique name for this server (e.g. "my-survival-server"); used to identify your server in the DPC registry
   login-reminder: true
@@ -307,5 +311,26 @@ dpc-api:
   server-address: ""           # explicit server address (e.g. "play.myserver.com:25565"); used when share-server-ip is true. If blank, auto-detects from server binding.
   discord-link: ""
   sync-interval-minutes: 10   # how often to sync faction data to the DPC API (in minutes, minimum 1)
+# Optional usage reporting. When enabled, plugin startup and each command use
+# send a small event (plugin name, event name, plugin version) to the author's
+# trace server. Nothing about players or the server is included. Sending
+# happens off the main thread, never blocks a tick, and is dropped silently
+# if the server cannot be reached. Patriam leaves this disabled by default.
+#
+# Other ways to turn it off, which win over the setting below:
+#   - for every plugin on this server that reports to trace: enabled: false in
+#     plugins/trace/config.yml (created only when an enabled reporting client starts)
+#   - environment variable TRACE_USAGE_REPORTING=off or DO_NOT_TRACK=1
+# The plugin says on every startup whether reporting is on. Details:
+# https://github.com/Stephenson-Software/trace#usage-reporting
+usage-reporting:
+  enabled: false
+  endpoint: https://trace.danielstephenson.dev
+  # The key identifies this plugin to the trace server, so reports are
+  # attributed to MedievalFactions and can be revoked as a group if they are ever
+  # abused. It is not a secret -- it ships in this file on every server that
+  # runs the plugin -- and it cannot do anything except report as this
+  # plugin. Empty means reporting is off regardless of the switch above.
+  key: "2TI4ChnyxT8Ar4E4Zsnl20MEXBvo3IYVvhqUWVPpQdQ"
 dev:
   enableDevCommands: false

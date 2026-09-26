@@ -5,7 +5,10 @@ This document provides detailed information about all configuration options avai
 ## Table of Contents
 - [Configuration Schema and Upgrades](#configuration-schema-and-upgrades)
 - [General Settings](#general-settings)
-- [Database Configuration](#database-configuration)
+- [Storage Configuration](#storage-configuration)
+  - [Database Storage](#database-storage)
+  - [JSON Storage](#json-storage)
+  - [Migrating Between Storage Types](#migrating-between-storage-types)
 - [Player Power System](#player-power-system)
 - [Wilderness Settings](#wilderness-settings)
 - [PVP Settings](#pvp-settings)
@@ -16,27 +19,28 @@ This document provides detailed information about all configuration options avai
 - [Dynmap Integration](#dynmap-integration)
 - [Gates](#gates)
 - [Developer Options](#developer-options)
+- [DPC Community API](#dpc-community-api)
+- [Usage Reporting](#usage-reporting)
 
 ## Configuration Schema and Upgrades
 
 `config-version` is the operator-configuration schema, independent of the plugin/JAR `version` and
-the Flyway database schema. The supported schema is currently `1`. A valid MF5-era `config.yml`
+the Flyway database schema. The supported schema is currently `2`. A valid MF5-era `config.yml`
 without the marker is schema 0 and is upgraded automatically: Medieval Factions rebuilds it in the
 latest bundled order, overlays explicit operator values and credentials, and retains unknown
 extension keys after the known keys in their nearest section. The schema is intentionally open so
 integration extensions are accepted; known bundled paths still have their section and value types
 validated.
 
-Before migration, the exact installed bytes are copied to a same-directory, owner-only
-`config.yml.v0.bak` (or a numbered collision-safe variant). Replacement is atomic and refuses a
+No backup is created by configuration migration. Replacement is atomic and refuses a
 concurrent edit. Blank, null, duplicate, quoted, tagged, malformed, negative, or future markers—and
 any YAML null elsewhere—leave the installed file unchanged and block startup before database or
 game state is loaded. Startup and `/f version` report plugin version, supported/source/installed/active schema,
 and state without printing values. Configuration changes made by `/f dpc` use the same exact-byte
 compare-and-swap protection; a failed write keeps the last-known-good runtime settings.
 
-The older `version: v4.*` format is not treated as ordinary schema 0. It continues through the
-existing MF4 backup/import process. Restart the plugin after manual `config.yml` edits; there is no
+The older `version: v4.*` format is not treated as ordinary schema 0. Automatic MF4 conversion is
+blocked in this fork because its importer creates a backup. Restart the plugin after manual `config.yml` edits; there is no
 partial in-place reload of database, language, listener, and scheduler settings.
 
 ## General Settings
@@ -44,7 +48,7 @@ partial in-place reload of database, language, listener, and scheduler settings.
 ### `config-version`
 **Type:** Plain, unquoted integer
 
-**Default:** `1`
+**Default:** `2`
 
 **Description:** Configuration schema used for safe automatic upgrades. Do not set it to the plugin version.
 
@@ -59,9 +63,33 @@ partial in-place reload of database, language, listener, and scheduler settings.
 **Description:** Sets the default language for the plugin. This build ships English only.  
 **Available Values:** `en-US`
 
-## Database Configuration
+## Storage Configuration
 
-Medieval Factions uses a database to store faction data, claims, and player information.
+Medieval Factions supports two storage backends: **Database** (default) and **JSON**. You can choose which one to use based on your server's needs.
+
+### `storage.type`
+**Type:** String  
+**Default:** `database`  
+**Description:** Determines which storage backend to use for persisting faction data.  
+**Available Values:**
+- `database` - Uses a SQL database (embedded H2 by default, or a MariaDB/MySQL server)
+- `json` - Uses JSON files stored on disk
+
+**When to use JSON:**
+- Simpler server setups without database requirements
+- Easier data inspection and manual editing (be careful!)
+- Better portability for backups
+- Smaller servers with fewer players
+
+**When to use Database:**
+- Larger servers with many players and factions
+- Better performance for complex queries
+- Concurrent access from multiple servers (with a MariaDB/MySQL server)
+- Professional production environments
+
+### Database Storage
+
+When `storage.type` is set to `database`, the following options apply:
 
 ### `database.url`
 **Type:** String  
@@ -69,14 +97,24 @@ Medieval Factions uses a database to store faction data, claims, and player info
 **Description:** JDBC connection URL for the database.  
 **Examples:**
 - H2 (default): `jdbc:h2:./medieval_factions_db;AUTO_SERVER=true;MODE=MYSQL;DATABASE_TO_UPPER=false`
-- MySQL: `jdbc:mysql://localhost:3306/medievalfactions`
-- PostgreSQL: `jdbc:postgresql://localhost:5432/medievalfactions`
+- MariaDB or MySQL server: `jdbc:mariadb://localhost:3306/medievalfactions`
+
+The plugin bundles two JDBC drivers: H2 and the MariaDB Connector/J. The MariaDB driver is
+used for both MariaDB and MySQL servers, so the URL for either starts with `jdbc:mariadb://`
+(that driver only accepts a `jdbc:mysql://` URL with `?permitMysqlScheme` appended). No PostgreSQL driver is bundled, so a
+`jdbc:postgresql://` URL fails at startup.
+
+The database is closed explicitly when the plugin disables. For an H2 URL that does not use
+`AUTO_SERVER=true` the plugin also appends `;DB_CLOSE_ON_EXIT=FALSE` (unless the setting is
+already present), so H2 registers no shutdown hook of its own — such a hook would run after
+the server has unloaded the plugin, and fail. H2 does not allow that setting together with
+`AUTO_SERVER=true`, so the default URL is left as it is.
 
 ### `database.dialect`
 **Type:** String  
 **Default:** `H2`  
-**Description:** Database dialect to use. Must match your database type.  
-**Available Values:** `H2`, `MySQL`, `PostgreSQL`
+**Description:** SQL dialect to use. Must match your database type.  
+**Available Values:** `H2`, `MYSQL`, `MARIADB` (case-insensitive; `MySQL` and `MariaDB` are accepted spellings)
 
 ### `database.username`
 **Type:** String  
@@ -88,6 +126,43 @@ Medieval Factions uses a database to store faction data, claims, and player info
 **Default:** `` (empty)  
 **Description:** Database password for authentication.  
 **Security Note:** Consider using environment variables or secure storage for production passwords.
+
+### JSON Storage
+
+When `storage.type` is set to `json`, the following options apply:
+
+### `storage.json.path`
+**Type:** String  
+**Default:** `./medieval_factions_data`  
+**Description:** Directory path where JSON files will be stored. Can be relative or absolute.  
+**Examples:**
+- Relative path: `./medieval_factions_data`
+- Absolute path: `/var/minecraft/data/medieval_factions`
+
+**Important Notes:**
+- Ensure the server has read/write permissions for this directory
+- JSON startup and `/mf migrate toJson` are blocked while PatriamMFAddon or PatriamTesting is installed; those integrations require the database-backed durable war-end outbox and disposable fixture service.
+- `players.json` and `factions.json` are validated against a JSON schema before being written, so malformed data is rejected rather than persisted. The other entity files have no schema yet, and no file is schema-validated when read back
+- Individual entity types are stored in separate JSON files (players.json, factions.json, etc.)
+- If a file holds unreadable data, the original file remains untouched and reads and writes fail until an operator repairs it. No automatic copy is made.
+
+### Migrating Between Storage Types
+
+Medieval Factions provides a migration command to transfer data between storage types. It's recommended to:
+
+1. **Backup your data** before any migration
+2. Run the migration command: `/mf migrate <type>`
+   - `/mf migrate toJson` - Migrate from database to JSON
+   - `/mf migrate toDatabase` - Migrate from JSON to database
+3. Wait for the migration to complete (progress shown in command output)
+4. Stop your server
+5. Change `storage.type` to the desired backend (`json` or `database`)
+6. Configure the target storage backend appropriately
+7. Start your server
+
+**Permission Required:** `mf.migrate` (for operators/admins)
+
+The migration command initializes both storage backends, copies all data, and reports success or failure. It refuses to run if the target already contains data, and changes made by players while it runs may not be carried over — so run it with the server empty. Check the [Migration Guide](docs/MIGRATION_GUIDE.md) for detailed procedures and troubleshooting.
 
 ## Player Power System
 
@@ -148,12 +223,12 @@ Controls behavior and alerts in unclaimed wilderness areas.
 ### `wilderness.interaction.prevent`
 **Type:** Boolean  
 **Default:** `false`  
-**Description:** When `true`, prevents block interactions (buttons, levers, etc.) in wilderness.
+**Description:** When `true`, prevents block interactions (buttons, levers, etc.) in wilderness. Only the block half of the interaction is refused when the held item cannot act on a block: eating, drinking, drawing a bow or a crossbow, throwing a snowball, an egg, an ender pearl, a trident or a potion, casting a fishing rod, raising a shield and using a spyglass or a goat horn all still work while looking at a block. Items that do act on the clicked block — a bucket, flint and steel, a hoe, an axe, a shovel, bone meal, an eye of ender, a firework rocket, a wind charge, or anything placeable — are refused outright, as are left-clicks and physical interactions.
 
 ### `wilderness.interaction.alert`
 **Type:** Boolean  
 **Default:** `false`  
-**Description:** When `true`, sends an alert message when players interact with blocks in wilderness.
+**Description:** When `true`, sends an alert message when players interact with blocks in wilderness. No alert is sent for physical interactions (stepping on a pressure plate or tripwire, trampling farmland), which repeat every tick and would flood chat, nor when only the block half of the interaction was refused (see `wilderness.interaction.prevent`), because the player was using the held item rather than the block; the interaction is still prevented in both cases.
 
 ### `wilderness.place.prevent`
 **Type:** Boolean  
@@ -286,6 +361,11 @@ factions:
 **Type:** Boolean  
 **Default:** `false`  
 **Description:** When `true`, non-faction members can open/close doors (including trapdoors and fence gates) in faction territory.
+
+### `factions.nonMembersCanInteractWithEntities`
+**Type:** Boolean  
+**Default:** `false`  
+**Description:** When `true`, non-faction members can right-click entities in faction territory — minecarts (including chest and hopper minecarts), boats, item frames, armour stands, animals and the like. When `false`, those interactions are blocked for anyone without interaction rights in the claim, and the player is told why. Villager trading is not covered by this option: it is governed by the `protectVillagerTrade` faction flag instead. Wilderness is not covered either; see `wilderness.interaction.prevent`. Note that `true` is more permissive than releases before this option existed: armour stands were protected then, and setting this to `true` leaves them editable by non-members.
 
 ### `factions.maxClaimRadius`
 **Type:** Integer  
@@ -477,6 +557,9 @@ These settings define the default values for faction flags when a new faction is
 **Default:** `&7[allies] [${factionColor}${faction}&7] [${role}] &f${displayName}: ${message}`  
 **Description:** Format for ally chat messages (chat between allied factions).
 
+### PlaceholderAPI placeholders in chat formats
+When PlaceholderAPI is installed, placeholders provided by any registered expansion (for example `%someplugin_some_placeholder%`) may be used in the chat formats above, alongside the `${...}` variables listed. They are resolved for the player sending the message. Only the configured format string itself is resolved — a `%...%` sequence typed into a chat message, or contained in a player's display name, is left as literal text, so players cannot expand placeholders through chat. Colour codes are translated afterwards, so a placeholder that returns `&`-codes is coloured as expected. When PlaceholderAPI is not installed, such text is left exactly as written.
+
 ## Duels
 
 ### `duels.duration`
@@ -625,8 +708,8 @@ This integration is **strictly opt-in**.
 
 ### `dpc-api.url`
 **Type:** String  
-**Default:** `"https://dansplugins.com/api/v1/factions"`  
-**Description:** The full endpoint URL of the DPC API. Include a port if the API runs on a non-standard port (e.g. `"https://dansplugins.com:8080/api/v1/factions"`).
+**Default:** `"https://api.dansplugins.com/api/v1/factions"`  
+**Description:** The full endpoint URL of the DPC API. Note that the API is served from `api.dansplugins.com`, a different host from the `dansplugins.com` website — pointing this at the website returns the site's HTML 404 page rather than an API response. Include a port if the API runs on a non-standard port (e.g. `"https://api.dansplugins.com:8080/api/v1/factions"`).
 
 ### `dpc-api.key`
 **Type:** String  
@@ -673,6 +756,9 @@ status code and a truncated response body to your server log. Common cases:
 - **`400 Bad Request`** — usually means `dpc-api.server-id` contains
   disallowed characters. Allowed characters are letters, digits, dot,
   underscore, colon, and hyphen.
+- **`404 Not Found`** with an HTML body — `dpc-api.url` is pointing at the
+  website rather than the API. The API host is `api.dansplugins.com`; the
+  website answers every unknown `/api/...` path with its own 404 page.
 - **`429` / `5xx`** — transient server-side issue; the next sync will retry.
   Failed requests never crash the plugin.
 
@@ -684,6 +770,31 @@ cycle), that's the ratio guard at work — it's intentional and self-corrects
 within one or two sync cycles. See the
 [dpc-api README](https://github.com/Dans-Plugins/dansplugins-dot-com/blob/main/dpc-api/README.md#sync-safety-guards)
 for the full server-side semantics.
+
+---
+
+## Usage Reporting
+
+When usage reporting is enabled, startup and each command use send a small event (plugin name, event name, plugin version or command name) to the author's trace server. Nothing about players or the server is included: no player names, UUIDs, IPs, world names or server addresses. Sending happens off the main thread, never blocks a tick, and is dropped silently if the trace server cannot be reached.
+
+This reporting is **off by default** in the Patriam fork. It is separate from the [DPC Community API](#dpc-community-api) integration, which shares faction data and is opt-in. The plugin says on every startup whether reporting is on, and why it is off. Two switches outside this file win over `usage-reporting.enabled`: `enabled: false` in `plugins/trace/config.yml` turns reporting off for every plugin on the server that reports to trace, and the environment variables `TRACE_USAGE_REPORTING=off` and `DO_NOT_TRACK=1` turn it off for the whole process. Details: https://github.com/Stephenson-Software/trace#usage-reporting.
+
+### `usage-reporting.enabled`
+**Type:** Boolean  
+**Default:** `false`  
+**Description:** Whether usage events are sent. Set to `false` to turn reporting off entirely.
+
+### `usage-reporting.endpoint`
+**Type:** String  
+**Default:** `https://trace.danielstephenson.dev`  
+**Description:** The trace server events are sent to. There is no reason to change this unless you run your own trace server.
+
+### `usage-reporting.key`
+**Type:** String  
+**Default:** The plugin's own key, as shipped in `config.yml`  
+**Description:** Identifies this plugin to the trace server, so reports are attributed to MedievalFactions and can be revoked as a group if they are ever abused. It is not a secret -- it ships in the bundled `config.yml` on every server that runs the plugin -- and it cannot do anything except report as this plugin. An empty key turns reporting off regardless of `usage-reporting.enabled`.
+
+**Note:** Schema 1 to 2 migration adds this block with reporting disabled unless an operator explicitly enabled it.
 
 ---
 

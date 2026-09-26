@@ -17,7 +17,10 @@ This document provides a comprehensive list of all commands available in the Med
 - [Power System](#power-system)
 - [Chat System](#chat-system)
 - [Applications](#applications)
+- [Moderator Approval](#moderator-approval)
 - [Admin Commands](#admin-commands)
+- [DPC Community API](#dpc-community-api)
+- [Permission Groups](#permission-groups)
 
 ## Command Aliases
 
@@ -35,10 +38,11 @@ The main faction command can be accessed using any of the following aliases:
 **Description:** Displays a list of helpful commands and usage information.  
 **Usage:** `/f help`
 
-### `/faction info` or `/f info`
+### `/faction info [player|faction]` or `/f info [player|faction]`
 **Permission:** `mf.info` (default: true)  
 **Description:** Displays information about your faction.  
-**Usage:** `/f info`
+**Usage:** `/f info`  
+**Notes:** With `mf.info.other` (default: true), an argument can be given to view another player's faction or a faction by name instead of your own; this also allows console usage.
 
 ### `/faction who [player]` or `/f who [player]`
 **Permission:** `mf.who` (default: true)  
@@ -65,16 +69,17 @@ The main faction command can be accessed using any of the following aliases:
 **Usage:** `/f create MyFaction`  
 **Notes:** Faction names are limited to 20 characters by default (configurable).
 
-### `/faction disband` or `/f disband`
+### `/faction disband [faction]` or `/f disband [faction]`
 **Permission:** `mf.disband` (default: true)  
 **Description:** Disbands your faction. This action is irreversible.  
 **Usage:** `/f disband`  
-**Notes:** You must be the faction leader to disband the faction. All claimed land will be unclaimed.
+**Notes:** You must be the faction leader to disband the faction, and it must be down to a single member. All claimed land will be unclaimed. With `mf.disband.others` (default: op), a faction name can be given to disband any faction regardless of its member count (admin command).
 
 ### `/faction join [faction]` or `/f join [faction]`
 **Permission:** `mf.join` (default: true)  
 **Description:** Joins a faction that you have been invited to.  
-**Usage:** `/f join FactionName`
+**Usage:** `/f join FactionName`  
+**Notes:** With `mf.force.join` (default: op), you can join a faction you were never invited to. Running `/f join FactionName` without an invite shows a clickable confirmation prompt instead of the "not invited" error; appending `-f` (`/f join FactionName -f`) skips the prompt and joins immediately.
 
 ### `/faction leave` or `/f leave`
 **Permission:** `mf.leave` (default: true)  
@@ -89,7 +94,8 @@ The main faction command can be accessed using any of the following aliases:
 ### `/faction kick [player]` or `/f kick [player]`
 **Permission:** `mf.kick` (default: true)  
 **Description:** Kicks a player from your faction.  
-**Usage:** `/f kick PlayerName`
+**Usage:** `/f kick PlayerName`  
+**Notes:** With `mf.force.kick` (default: op), a faction name can be given before the player (`/f kick FactionName PlayerName`) to target a faction other than the one you are in. The faction-role check is still applied against the target faction, so you must also hold that faction's kick role permission — the permission selects which faction is acted on, it does not by itself override the faction's own permissions.
 
 ### `/faction transfer [player]` or `/f transfer [player]`
 **Permission:** `mf.transfer` (default: true)  
@@ -119,6 +125,8 @@ Naming a vassal's leader is the only way an heir can be someone who is not alrea
 - `/f set description "Our faction description"` - Sets faction description
 - `/f set prefix [TAG]` - Sets faction prefix
 
+**Notes:** With `mf.force.rename` (default: op), a faction name or ID can be given before the new name (`/f set name FactionName NewName`) to rename a faction other than the one you are in. As with `mf.force.kick`, the faction-role check still runs against the target faction, so you must also hold that faction's change-name role permission.
+
 ### `/faction flag [list|set]` or `/f flag [list|set]`
 **Permissions:** 
 - `mf.flag.list` (default: true)
@@ -131,20 +139,24 @@ Naming a vassal's leader is the only way an heir can be someone who is not alrea
 
 **Example:** `/f flag set color #FF0000`
 
+**Notes:** With `mf.force.flag` (default: op), a faction name or ID can be given as the first argument to list or set flags on a faction other than your own (`/f flag list FactionName [page]`, `/f flag set FactionName [flag] [value]`). Unlike `mf.force.kick` and `mf.force.rename`, this genuinely bypasses the target faction's role permissions; the base `mf.flag.list` / `mf.flag.set` node is still required. The permission also enables faction-name tab completion for both subcommands.
+
 See [FACTION_FLAGS.md](FACTION_FLAGS.md) for a complete list of available flags.
 
 ## Territory & Claims
 
 ### `/faction claim [radius]` or `/f claim [radius]`
-**Permission:** `mf.claim` (default: true)  
-**Description:** Claims the chunk you are standing in, or claims in a radius if specified.  
+**Permission:** `mf.claim` or `mf.claim.circle` (default: true)  
+**Description:** Claims the chunk you are standing in, or claims in a circular radius if specified.  
 **Usage:**
 - `/f claim` - Claims the current chunk
-- `/f claim 2` - Claims chunks in a 2-chunk radius (5x5 area)
+- `/f claim 2` - Claims chunks in a circular 2-chunk radius
+- `/f claim circle 2` - Same as above; `circle` is an explicit alias for the default radius-claiming behavior
 
 **Notes:** 
 - Each chunk claimed requires power. Your faction must have enough power to claim land.
 - Maximum claim radius is configurable (default: 3).
+- The claimed area is a circle (chunks within the given radius of your current chunk), not a square.
 
 ### `/faction claim auto` or `/f claim auto`
 **Permission:** `mf.claim.auto` or `mf.autoclaim` (default: true)  
@@ -339,9 +351,9 @@ See [FACTION_FLAGS.md](FACTION_FLAGS.md) for a complete list of available flags.
 
 ### `/gate remove` or `/tor remove`
 **Permission:** `mf.gate` (default: true)  
-**Description:** Removes a gate. Click on a gate block to remove the entire gate.  
+**Description:** Removes your faction's gate nearest to you, in its entirety. There is no click step and no confirmation prompt.  
 **Usage:** `/gate remove`  
-**Notes:** Maximum removal distance: 12 blocks (default, configurable)
+**Notes:** Maximum removal distance: 12 blocks (default, configurable). Gates in other worlds are never candidates, however close their coordinates are.
 
 ### `/gate cancel` or `/tor cancel`
 **Permission:** `mf.gate` (default: true)  
@@ -370,6 +382,8 @@ See [FACTION_FLAGS.md](FACTION_FLAGS.md) for a complete list of available flags.
 **Usage:**
 - `/unlock` - Enables unlock mode
 - `/unlock cancel` - Cancels unlock mode
+
+**Notes:** Normally you can only unlock blocks you locked yourself. With `mf.force.unlock` (default: op), unlock mode also works on blocks locked by another player — a message naming the lock owner whose protection was bypassed is shown — and breaking another player's locked block unlocks it instead of being refused. (A faction role can also grant a lock bypass for unlock mode, independently of this permission.)
 
 ### `/accessors list`
 **Permission:** `mf.accessors.list` (default: true)  
@@ -409,10 +423,11 @@ See [FACTION_FLAGS.md](FACTION_FLAGS.md) for a complete list of available flags.
 
 ## Power System
 
-### `/faction power` or `/f power`
+### `/faction power [player|faction]` or `/f power [player|faction]`
 **Permission:** `mf.power` (default: true)  
 **Description:** Displays power statistics for yourself or your faction. When viewing a faction, also shows the number of chunks it has claimed; if `factions.limitLand` is enabled, this is shown as `claimed/capacity` where the capacity equals the faction's current power.  
-**Usage:** `/f power`
+**Usage:** `/f power`  
+**Notes:** With `mf.power.view.other` (default: true), an argument can be given to view another player's or faction's power instead of your own; this also allows console usage.
 
 ### `/power set [player] [amount]`
 **Permission:** `mf.power.set` or `mf.force.power` (default: op)  
@@ -500,9 +515,9 @@ See [FACTION_FLAGS.md](FACTION_FLAGS.md) for a complete list of available flags.
 **Usage:** `/f admin setleader FactionName PlayerName`
 
 ### `/faction addmember [faction] [player]` or `/f addmember [faction] [player]`
-**Permission:** `mf.force.addmember` (default: op)  
-**Description:** Forcefully adds a player to a faction (admin command).  
-**Usage:** `/f addmember FactionName PlayerName`
+**Permission:** `mf.force.addmember` or `mf.force.join` (default: op)  
+**Description:** Forcefully adds a player to a faction (admin command). If the target player is already in another faction, you are prompted to confirm moving them (which removes them from their current faction first). Append the `-f` flag to skip the confirmation and move them immediately.  
+**Usage:** `/f addmember FactionName PlayerName` or `/f addmember FactionName PlayerName -f`
 
 ---
 
@@ -541,6 +556,24 @@ See [FACTION_FLAGS.md](FACTION_FLAGS.md) for a complete list of available flags.
 **Permission:** `mf.dpc` (default: op)  
 **Description:** Clears the Discord invite link from DPC API data.
 
+### `/faction migrate [type]` or `/f migrate [type]`
+**Permission:** `mf.migrate` (default: op)  
+**Description:** Migrates data between storage backends (database ↔ JSON).  
+**Usage:** 
+- `/f migrate toJson` - Migrate from database to JSON storage
+- `/f migrate toDatabase` - Migrate from JSON to database storage
+
+**Notes:** 
+- **Always backup your data before migrating!**
+- Migration runs asynchronously and may take several minutes for large datasets
+- The target backend must be empty; the command refuses to migrate into one that already holds data
+- Run it with no players online — changes made during the migration may not be carried over
+- After successful migration, you must:
+  1. Stop the server
+  2. Update `storage.type` in config.yml to match the new backend
+  3. Restart the server
+- See [Migration Guide](docs/MIGRATION_GUIDE.md) for detailed instructions
+
 ---
 
 ## Permission Groups
@@ -556,8 +589,27 @@ The `mf.admin` permission grants access to all admin commands including:
 - `mf.power.set` - Set player power
 - `mf.admin.create` - Create leaderless factions
 - `mf.admin.setleader` - Set faction leaders
+- `mf.migrate` - Migrate between storage backends
 - `mf.approve` - Approve/deny pending faction actions
 - `mf.dpc` - Manage DPC community API settings
+
+### Force Permissions
+The `mf.force.*` nodes (all `default: op`) do not add new commands — each one changes the behavior of an existing command or listener. They are documented with the command they affect; this table is an index.
+
+| Permission | Affects | Effect |
+|------------|---------|--------|
+| `mf.force.addmember` | [`/f addmember`](#faction-addmember-faction-player-or-f-addmember-faction-player) | Forcefully adds a player to a faction. |
+| `mf.force.bonuspower` | [`/f bonuspower`](#faction-bonuspower-faction-amount-or-f-bonuspower-faction-amount) | Sets a faction's bonus power. |
+| `mf.force.flag` | [`/f flag list`, `/f flag set`](#faction-flag-listset-or-f-flag-listset) | Lists/sets flags on another faction, bypassing its role permissions. |
+| `mf.force.join` | [`/f join`](#faction-join-faction-or-f-join-faction), [`/f addmember`](#faction-addmember-faction-player-or-f-addmember-faction-player) | Joins a faction without an invite (confirmation prompt, or `-f` to skip it). Also grants `/f addmember`. |
+| `mf.force.kick` | [`/f kick`](#faction-kick-player-or-f-kick-player) | Targets a faction other than your own; the target faction's role check still applies. |
+| `mf.force.power` | [`/power set`](#power-set-player-amount) | Sets a player's power (alternative to `mf.power.set`). |
+| `mf.force.rename` | [`/f set name`](#faction-set-namedescriptionprefix-value-or-f-set-namedescriptionprefix-value) | Targets a faction other than your own; the target faction's role check still applies. |
+| `mf.force.unlock` | [`/unlock`](#unlock-cancel), block breaking | Unlocks blocks locked by another player. |
+
+`mf.force.claim` and `mf.force.unclaim` are declared in `plugin.yml` and granted by `mf.force.*`, but nothing in the plugin currently reads them — granting them has no effect. See issue [#1987](https://github.com/Dans-Plugins/Medieval-Factions/issues/1987).
+
+`mf.force.kick` and `mf.force.rename` only widen which faction the command targets; the target faction's own role check still applies. `mf.force.flag` behaves differently and does bypass it. See issue [#1988](https://github.com/Dans-Plugins/Medieval-Factions/issues/1988).
 
 ## Notes
 

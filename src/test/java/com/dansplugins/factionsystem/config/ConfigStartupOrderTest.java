@@ -18,7 +18,8 @@ class ConfigStartupOrderTest {
                 "activatePreparedConfig(ConfigLifecycle.prepare(configFile, bundledConfigYaml))");
 
         assertTrue(gate >= 0, "onEnable must contain the canonical config gate");
-        assertTrue(gate < source.indexOf("Class.forName(\"org.h2.Driver\")"));
+        assertTrue(gate < source.indexOf("initializeDatabaseRepositories(gson)"));
+        assertTrue(gate < source.indexOf("MfJdbc.preloadDriver(jdbcUrl)"));
         assertTrue(gate < source.indexOf("HikariDataSource(hikariConfig)"));
         assertTrue(gate < source.indexOf("Flyway.configure()"));
         assertTrue(gate < source.indexOf("services = Services("));

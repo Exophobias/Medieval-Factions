@@ -83,7 +83,11 @@ class EntityInteractionProtection(
 
     @EventHandler
     fun onPlayerQuit(event: PlayerQuitEvent) {
-        notices.remove(event.player.uniqueId)
+        forgetPlayer(event.player.uniqueId)
+    }
+
+    fun forgetPlayer(playerId: UUID) {
+        notices.remove(playerId)
     }
 
     private fun notify(player: Player, target: Entity, message: String) {

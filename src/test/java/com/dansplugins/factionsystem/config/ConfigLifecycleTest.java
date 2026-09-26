@@ -68,10 +68,9 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertArrayEquals(historical, Files.readAllBytes(result.backup()));
-        assertOwnerOnly(result.backup());
+        assertNull(result.backup());
         assertOwnerOnly(config);
-        assertEquals(1, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(2, result.snapshot().configuration().getInt("config-version"));
         assertEquals(7, result.snapshot().configuration().getInt("players.initialPower"));
         assertEquals(42, result.snapshot().configuration().getInt("factions.maxMembers"));
         assertEquals("historical-database-secret",
@@ -86,6 +85,9 @@ class ConfigLifecycleTest {
                 .getBoolean("third-party-hooks.audit.enabled"));
         assertFalse(result.detail().contains("historical-database-secret"));
         assertFalse(result.detail().contains("historical-dpc-secret"));
+        try (var files = Files.list(temporaryDirectory)) {
+            assertEquals(1L, files.count(), "migration must not create a backup");
+        }
         String migratedText = Files.readString(config, StandardCharsets.UTF_8);
         assertTrue(migratedText.contains("Makes each chunk cost slightly more power"));
         assertTrue(migratedText.contains("# Direct block entries"));
@@ -105,6 +107,102 @@ class ConfigLifecycleTest {
         assertEquals(ConfigLifecycle.State.CURRENT, second.state());
         assertNull(second.backup());
         assertArrayEquals(migratedBytes, Files.readAllBytes(config));
+    }
+
+    @Test
+    void schemaOneMigrationAddsUpstreamKeysWithoutLosingOperatorChoices() throws Exception {
+        Path config = temporaryDirectory.resolve("config.yml");
+        Files.writeString(config, """
+                config-version: 1
+                database:
+                  password: operator-database-secret
+                storage:
+                  type: database
+                  json:
+                    path: ./operator-json
+                dpc-api:
+                  url: https://dansplugins.com/api/v1/factions
+                  key: operator-dpc-secret
+                usage-reporting:
+                  enabled: true
+                  endpoint: https://operator.example.test
+                  key: operator-trace-key
+                factions:
+                  demesneCurve:
+                    enabled: true
+                    freeChunks: 48
+                extension:
+                  retained: preserved
+                """, StandardCharsets.UTF_8);
+
+        ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+        assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
+        assertEquals(1, result.sourceVersion());
+        assertEquals(2, result.installedVersion());
+        assertNull(result.backup());
+        var values = result.snapshot().configuration();
+        assertEquals("operator-database-secret", values.getString("database.password"));
+        assertEquals("operator-dpc-secret", values.getString("dpc-api.key"));
+        assertEquals("https://api.dansplugins.com/api/v1/factions",
+                values.getString("dpc-api.url"));
+        assertEquals("database", values.getString("storage.type"));
+        assertEquals("./operator-json", values.getString("storage.json.path"));
+        assertTrue(values.getBoolean("usage-reporting.enabled"));
+        assertEquals("https://operator.example.test", values.getString("usage-reporting.endpoint"));
+        assertEquals("operator-trace-key", values.getString("usage-reporting.key"));
+        assertTrue(values.getBoolean("factions.demesneCurve.enabled"));
+        assertEquals(48, values.getInt("factions.demesneCurve.freeChunks"));
+        assertEquals("preserved", values.getString("extension.retained"));
+        assertFalse(values.contains("factions.nonMembersCanInteractWithEntities"));
+        assertOwnerOnly(config);
+        try (var files = Files.list(temporaryDirectory)) {
+            assertEquals(1L, files.count(), "schema migration must not create a backup");
+        }
+    }
+
+    @Test
+    void schemaOneMigrationPreservesCustomDpcUrlAndDefaultsTelemetryOff() throws Exception {
+        Path config = temporaryDirectory.resolve("config.yml");
+        Files.writeString(config, """
+                config-version: 1
+                dpc-api:
+                  url: https://operator.example.test/factions
+                """, StandardCharsets.UTF_8);
+
+        ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+        assertTrue(result.compatible(), result.detail());
+        assertEquals("https://operator.example.test/factions",
+                result.snapshot().configuration().getString("dpc-api.url"));
+        assertFalse(result.snapshot().configuration().getBoolean("usage-reporting.enabled"));
+        assertEquals("database", result.snapshot().configuration().getString("storage.type"));
+    }
+
+    @Test
+    void schemaOneMigrationRejectsInvalidStorageAndReportingWithoutWrites() throws Exception {
+        List<String> invalid = List.of(
+                "storage:\n  type: unsupported\n",
+                "storage:\n  json:\n    path: '   '\n",
+                "usage-reporting:\n  enabled: 'false'\n"
+        );
+        for (int index = 0; index < invalid.size(); index++) {
+            Path directory = temporaryDirectory.resolve("invalid-schema-2-" + index);
+            Files.createDirectories(directory);
+            Path config = directory.resolve("config.yml");
+            byte[] original = ("config-version: 1\n" + invalid.get(index))
+                    .getBytes(StandardCharsets.UTF_8);
+            Files.write(config, original);
+
+            ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+            assertEquals(ConfigLifecycle.State.INVALID, result.state(), result.detail());
+            assertArrayEquals(original, Files.readAllBytes(config));
+            assertNull(result.backup());
+            try (var files = Files.list(directory)) {
+                assertEquals(1L, files.count(), "invalid migration must not write artifacts");
+            }
+        }
     }
 
     @Test
@@ -130,7 +228,7 @@ class ConfigLifecycleTest {
         String template = bundledTemplate();
         String unversioned = template.replaceFirst(
                 "(?s)\\A# Independent operator-configuration schema\\.[^\\r\\n]*\\R"
-                        + "config-version: 1\\R",
+                        + "config-version: 2\\R",
                 ""
         );
         Files.writeString(config, unversioned, StandardCharsets.UTF_8);
@@ -169,7 +267,7 @@ class ConfigLifecycleTest {
                 "config-version: 01\n",
                 "config-version: 1.0\n",
                 "config-version: nope\n",
-                "config-version: 2\n",
+                "config-version: 3\n",
                 "config-version: 1\ndpc-api:\n  key:\n",
                 "config-version: 1\nitems: [one, null]\n",
                 "config-version: 1\n1: credential-shaped-value\n",
@@ -198,7 +296,7 @@ class ConfigLifecycleTest {
     @Test
     void flowRootPlainMarkerIsAcceptedWithoutRewriting() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] flow = "{config-version: 1, database: {password: flow-secret}, extension: {x: 3}}\n"
+        byte[] flow = "{config-version: 2, database: {password: flow-secret}, extension: {x: 3}}\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, flow);
 
@@ -223,7 +321,7 @@ class ConfigLifecycleTest {
         assertEquals(0, result.sourceVersion());
         assertEquals(11, result.snapshot().configuration().getInt("players.initialPower"));
         assertEquals(3, result.snapshot().configuration().getInt("extension.x"));
-        assertArrayEquals(flow, Files.readAllBytes(result.backup()));
+        assertNull(result.backup());
     }
 
     @Test
@@ -237,12 +335,12 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(1, result.snapshot().configuration().getInt("config-version"));
-        assertArrayEquals(comments, Files.readAllBytes(result.backup()));
+        assertEquals(2, result.snapshot().configuration().getInt("config-version"));
+        assertNull(result.backup());
     }
 
     @Test
-    void knownSectionReplacedByScalarIsRejectedBeforeBackupOrWrite() throws Exception {
+    void knownSectionReplacedByScalarIsRejectedBeforeWrite() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = "players: credential-shaped-scalar\n".getBytes(StandardCharsets.UTF_8);
         Files.write(config, invalid);
@@ -260,7 +358,7 @@ class ConfigLifecycleTest {
     void currentKnownLeafWithWrongPhysicalTypeIsValueSafeAndUnchanged() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 1\n" +
+                "config-version: 2\n" +
                     "database:\n" +
                     "  password:\n" +
                     "    leaked-child: credential-shaped-value\n"
@@ -295,7 +393,7 @@ class ConfigLifecycleTest {
     void knownStringListCannotSilentlyDropMappingEntries() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 1\n" +
+                "config-version: 2\n" +
                     "factions:\n" +
                     "  blockedClaimWorlds:\n" +
                     "  - valid-world\n" +
@@ -313,7 +411,7 @@ class ConfigLifecycleTest {
     }
 
     @Test
-    void exactBackupRemainsWhenAtomicReplacementFailsAndSourceDoesNotChange()
+    void failedAtomicReplacementLeavesSourceAndCreatesNoBackup()
             throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] legacy = "database:\n  password: atomic-failure-secret\n"
@@ -330,9 +428,10 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.ERROR, result.state());
         assertArrayEquals(legacy, Files.readAllBytes(config));
-        assertNotNull(result.backup());
-        assertArrayEquals(legacy, Files.readAllBytes(result.backup()));
-        assertOwnerOnly(result.backup());
+        assertNull(result.backup());
+        try (var files = Files.list(temporaryDirectory)) {
+            assertEquals(1L, files.count(), "a failed migration must not create a backup");
+        }
         assertFalse(result.detail().contains("atomic-failure-secret"));
         assertFalse(result.detail().contains("credential-shaped-writer-error"));
     }
@@ -378,7 +477,7 @@ class ConfigLifecycleTest {
         assertEquals(ConfigLifecycle.State.ERROR, result.state());
         assertNull(result.snapshot());
         assertArrayEquals(raced, Files.readAllBytes(config));
-        assertArrayEquals(legacy, Files.readAllBytes(result.backup()));
+        assertNull(result.backup());
         assertFalse(result.detail().contains("raced-secret"));
     }
 
@@ -413,7 +512,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         Files.writeString(
                 config,
-                "config-version: 1\nthird-party-extension:\n  retained: true\n",
+                "config-version: 2\nthird-party-extension:\n  retained: true\n",
                 StandardCharsets.UTF_8
         );
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
@@ -437,7 +536,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
         byte[] operatorEdit = (
-                "config-version: 1\n" +
+                "config-version: 2\n" +
                     "dpc-api:\n" +
                     "  enabled: false\n" +
                     "  key: operator-new-secret\n"

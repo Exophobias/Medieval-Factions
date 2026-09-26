@@ -17,7 +17,9 @@ import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
+import dev.forkhandles.result4k.Success
 import org.bukkit.Material
+import org.bukkit.Server
 import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
@@ -27,20 +29,28 @@ import org.bukkit.block.data.type.Door
 import org.bukkit.block.data.type.TrapDoor
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.entity.Player
+import org.bukkit.event.Event
 import org.bukkit.event.block.Action
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.ItemStack
+import org.bukkit.scheduler.BukkitScheduler
+import org.bukkit.scheduler.BukkitTask
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyString
+import org.mockito.ArgumentMatchers.eq
+import org.mockito.Mockito.atLeast
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.util.*
+import java.util.logging.Logger
 import org.bukkit.block.data.type.Gate as FenceGateData
 
 class PlayerInteractListenerTest {
@@ -86,6 +96,7 @@ class PlayerInteractListenerTest {
     private lateinit var lockService: MfLockService
     private lateinit var relationshipService: MfFactionRelationshipService
     private lateinit var factionService: com.dansplugins.factionsystem.faction.MfFactionService
+    private lateinit var scheduler: BukkitScheduler
     private lateinit var uut: PlayerInteractListener
 
     // Common test constants
@@ -96,8 +107,10 @@ class PlayerInteractListenerTest {
     fun setUp() {
         fixture = createBasicFixture()
         medievalFactions = mock(MedievalFactions::class.java)
+        `when`(medievalFactions.logger).thenReturn(Logger.getLogger("PlayerInteractListenerTest"))
         mockServices()
         mockLanguageSystem()
+        mockScheduler()
         uut = PlayerInteractListener(medievalFactions)
     }
 
@@ -217,8 +230,32 @@ class PlayerInteractListenerTest {
         // Act
         uut.onPlayerInteract(fixture.event)
 
-        // Assert - event should NOT be cancelled because player has bypass enabled
+        // Assert - event should NOT be cancelled because player has bypass enabled, and the bypass
+        // notice is sent once for the deliberate right-click
         verifyEventNotCancelled()
+        runScheduledAsyncTasks()
+        verifyPlayerNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_LockedBlock_NonOwnerWithoutBypass_ShouldCancelAndNotifyPlayer() {
+        // Arrange
+        mockBlockData<Door>()
+        setupConfigForDoorInteraction(enabled = false)
+        setupPlayerMocks(fixture.player, bypassEnabled = false)
+
+        // Create a locked block owned by a different player
+        setupLockedBlock(ownedByPlayer = false, playerIsAccessor = false)
+
+        `when`(fixture.player.hasPermission("mf.bypass")).thenReturn(false)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert - lock protection applies and the player is told why
+        verifyEventCancelled()
+        runScheduledAsyncTasks()
+        verifyPlayerNotified()
     }
 
     @Test
@@ -234,8 +271,9 @@ class PlayerInteractListenerTest {
         // Act
         uut.onPlayerInteract(fixture.event)
 
-        // Assert - event should NOT be cancelled because player is an accessor
+        // Assert - event should NOT be cancelled because player is an accessor, and no notice is sent
         verifyEventNotCancelled()
+        verifyNoAsyncTaskScheduled()
     }
 
     @Test
@@ -433,13 +471,18 @@ class PlayerInteractListenerTest {
         // Act
         uut.onPlayerInteract(fixture.event)
 
-        // Assert - physical action with ladder should not bypass protection
+        // Assert - physical action with ladder should not bypass protection.
+        // No message is sent because physical interactions repeat every tick (see #1957).
         verifyEventCancelled()
-        verify(fixture.player, never()).sendMessage(any(String::class.java))
+        verifyPlayerNotNotified()
     }
 
     @Test
-    fun onPlayerInteract_WartimeInteractableBlock_ShouldAllowInteraction() {
+    fun onPlayerInteract_WartimeInteractableBlock_HeldItemInPlaceableList_ShouldStillAllowInteractionWithoutConsultingPlaceableList() {
+        // Regression test for #1970 - requirement 4: the item held in hand must play no role in
+        // branch selection. Here the clicked block is interactive AND the held item is itself in
+        // wartimePlaceableBlocks - only the isWartimeInteractableBlock check may run; the
+        // isWartimePlaceableBlock stub for the held item's material must never be reached.
         // Arrange
         setupWartimeLadderTest(
             ladderItem = false,
@@ -449,18 +492,93 @@ class PlayerInteractListenerTest {
         )
 
         val block = fixture.block
+        val event = fixture.event
+        val interactableMaterial = mock(Material::class.java)
+        `when`(interactableMaterial.isSolid).thenReturn(true)
+        `when`(interactableMaterial.isInteractable).thenReturn(true)
+        `when`(block.type).thenReturn(interactableMaterial)
+
         val playerId = MfPlayerId(fixture.player.uniqueId.toString())
         val claim = claimService.getClaim(block.chunk)!!
+        val heldItemMaterial = event.item!!.type
 
-        // This control represents an actual interactive block, not the helper's placement surface.
-        `when`(block.type.isInteractable).thenReturn(true)
-        `when`(claimService.isWartimeInteractableBlock(playerId, claim, block.type)).thenReturn(true)
+        `when`(claimService.isWartimeInteractableBlock(playerId, claim, interactableMaterial)).thenReturn(true)
+        `when`(claimService.isWartimePlaceableBlock(playerId, claim, heldItemMaterial)).thenReturn(true)
 
         // Act
-        uut.onPlayerInteract(fixture.event)
+        uut.onPlayerInteract(event)
 
-        // Assert - event should NOT be cancelled because block is in wartime interactable list
+        // Assert - allowed via the interactable list; the placeable list must never be consulted
         verifyEventNotCancelled()
+        verify(claimService, never()).isWartimePlaceableBlock(playerId, claim, heldItemMaterial)
+    }
+
+    @Test
+    fun onPlayerInteract_LeftClickBlock_NeverConsultsInteractableOrPlaceableLists() {
+        // Regression test for #1970 - requirement 1. Empirically distinguishes old vs. new
+        // behaviour: the old code called isWartimeInteractableBlock(clickedBlock.type) unconditionally,
+        // regardless of action, so a block whose material appeared in wartimeInteractableBlocks would
+        // wrongly be allowed to break even though it is absent from wartimeBreakableBlocks. Under the
+        // fix, LEFT_CLICK_BLOCK must consult only the breakable list.
+        // Arrange
+        setupWartimeLadderTest(
+            ladderItem = false,
+            isWartimeLadderPlacementAllowed = false,
+            configEnabled = false,
+            atWarWithClaimFaction = true
+        )
+
+        val event = fixture.event
+        `when`(event.action).thenReturn(Action.LEFT_CLICK_BLOCK)
+
+        val block = fixture.block
+        val playerId = MfPlayerId(fixture.player.uniqueId.toString())
+        val claim = claimService.getClaim(block.chunk)!!
+        val heldItemMaterial = event.item!!.type
+
+        // Both other lists are wrongly permissive - only the breakable list's answer may matter
+        `when`(claimService.isWartimeBreakableBlock(playerId, claim, block.type)).thenReturn(false)
+        `when`(claimService.isWartimeInteractableBlock(playerId, claim, block.type)).thenReturn(true)
+        `when`(claimService.isWartimePlaceableBlock(playerId, claim, heldItemMaterial)).thenReturn(true)
+
+        // Act
+        uut.onPlayerInteract(event)
+
+        // Assert - blocked: the leaked interactable/placeable stubs must not be reachable from LEFT_CLICK_BLOCK
+        verifyEventCancelled()
+        verify(claimService, never()).isWartimeInteractableBlock(playerId, claim, block.type)
+        verify(claimService, never()).isWartimePlaceableBlock(playerId, claim, heldItemMaterial)
+    }
+
+    @Test
+    fun onPlayerInteract_RightClickPlacingOnNonInteractiveSurface_NeverConsultsInteractableList() {
+        // Regression test for #1970 - requirement 3. The interactable list is wrongly permissive here
+        // (would leak placement rights under the old unconditional isWartimeInteractableBlock call);
+        // the placeable list is the only correct source of truth for a non-interactive surface and
+        // says no, so placement must be blocked.
+        // Arrange
+        setupWartimeLadderTest(
+            ladderItem = false,
+            isWartimeLadderPlacementAllowed = false,
+            configEnabled = false,
+            atWarWithClaimFaction = true
+        )
+
+        val event = fixture.event
+        val block = fixture.block
+        val playerId = MfPlayerId(fixture.player.uniqueId.toString())
+        val claim = claimService.getClaim(block.chunk)!!
+        val heldItemMaterial = event.item!!.type
+
+        `when`(claimService.isWartimeInteractableBlock(playerId, claim, block.type)).thenReturn(true)
+        `when`(claimService.isWartimePlaceableBlock(playerId, claim, heldItemMaterial)).thenReturn(false)
+
+        // Act
+        uut.onPlayerInteract(event)
+
+        // Assert - blocked (placeable list says no), and the interactable list is never touched
+        verifyEventCancelled()
+        verify(claimService, never()).isWartimeInteractableBlock(playerId, claim, block.type)
     }
 
     @Test
@@ -775,9 +893,12 @@ class PlayerInteractListenerTest {
         // Act
         uut.onPlayerInteract(event)
 
-        // Assert — interaction must be blocked; placeable list must not affect interactive blocks
+        // Assert — interaction must be blocked; placeable list must not affect interactive blocks.
+        // Regression test for #1970 - requirement 2: the placeable check must never be reached for
+        // an interactive block, not merely produce the right outcome.
         verifyEventCancelled()
         verifyPlayerNotified()
+        verify(claimService, never()).isWartimePlaceableBlock(playerId, claim, itemMaterial)
     }
 
     @Test
@@ -976,6 +1097,543 @@ class PlayerInteractListenerTest {
         verifyPlayerNotified()
     }
 
+    // --- Hand-used items in protected territory, see #1747 and #1995 ---
+
+    @Test
+    fun onPlayerInteract_EdibleItem_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowEating() {
+        // Arrange
+        setupItemUseTestInEnemyTerritory(mockEdibleMaterial())
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert - the player is eating, not acting on the block, so protection must not cancel it
+        verifyEventNotCancelled()
+        verifyBlockUseDenied()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_PotionInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowDrinking() {
+        // Material.isEdible is false for potions, so drinking was still being cancelled after the
+        // original food fix.
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.POTION)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_MilkBucketInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowDrinking() {
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.MILK_BUCKET)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_BowInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowDrawing() {
+        // #1995: a bow is not edible, so the material whitelist left it cancelled outright, which also
+        // suppressed the use-item packet that draws it.
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.BOW)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_SnowballInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowThrowing() {
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.SNOWBALL)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_EnderPearlInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowThrowing() {
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.ENDER_PEARL)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_EggInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowThrowing() {
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.EGG)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_FishingRodInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowCasting() {
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.FISHING_ROD)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_TridentInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowThrowing() {
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.TRIDENT)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_SplashPotionInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldAllowThrowing() {
+        // A splash potion is thrown rather than drunk, so it was excluded from the consumable
+        // whitelist. Throwing it still cannot alter a block, and the harm it can do is protected
+        // against by PotionSplashListener and AreaEffectCloudApplyListener, so it is released too.
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.SPLASH_POTION)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    // --- Invariants that must survive the two-result change, see #1995 ---
+
+    @Test
+    fun onPlayerInteract_EdibleItem_RightClickInteractiveBlockInEnemyTerritory_ShouldDenyBlockUseButAllowEating() {
+        // Holding food must not become a way to reach a chest or a lever in enemy territory. The block
+        // half is what protects the chest, so it is denied; eating is unrelated to it and runs.
+        // Arrange
+        setupItemUseTestInEnemyTerritory(mockEdibleMaterial(), blockIsInteractable = true)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyBlockUseDenied()
+        verifyItemUseNotDenied()
+        verifyEventNotCancelled()
+    }
+
+    @Test
+    fun onPlayerInteract_BowInHand_RightClickInteractiveBlockInEnemyTerritory_ShouldDenyBlockUse() {
+        // The same holds for every other hand-used item: a chest, lever, door, button or cauldron is
+        // protected by the block half regardless of what is being held.
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.BOW, blockIsInteractable = true)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyBlockUseDenied()
+        verifyItemUseNotDenied()
+    }
+
+    @Test
+    fun onPlayerInteract_EdibleItem_LeftClickBlockInEnemyTerritory_ShouldBlockInteraction() {
+        // A left-click never consumes an item, so holding food must not exempt one. It must still be
+        // cancelled outright rather than block-denied: a block-break attempt is gated on isCancelled.
+        // Arrange
+        setupItemUseTestInEnemyTerritory(mockEdibleMaterial(), action = Action.LEFT_CLICK_BLOCK)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventCancelled()
+        verifyPlayerNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_BowInHand_LeftClickBlockInEnemyTerritory_ShouldBlockInteraction() {
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.BOW, action = Action.LEFT_CLICK_BLOCK)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventCancelled()
+        verifyPlayerNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_BowInHand_PhysicalActionInEnemyTerritory_ShouldBlockInteraction() {
+        // A physical interaction carries no item use at all, and is gated on isCancelled, so it must
+        // still be cancelled outright. The per-tick message suppression from #1957 is unchanged.
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.BOW, action = Action.PHYSICAL)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventCancelled()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_FlintAndSteelInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldBlockInteraction() {
+        // An item whose use is aimed at the clicked block must still be cancelled in full: releasing
+        // the item half would let a non-member set fire to a claim, which no other listener prevents.
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.FLINT_AND_STEEL)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventCancelled()
+        verifyPlayerNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_PlaceableBlockInHand_RightClickNonInteractiveBlockInEnemyTerritory_ShouldBlockInteraction() {
+        // Placement is refused here as well as by BlockPlaceListener - a block item is never released.
+        // Arrange
+        setupItemUseTestInEnemyTerritory(Material.STONE)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventCancelled()
+        verifyPlayerNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_BowInHand_LockedBlockNonOwnerWithoutBypass_ShouldDenyBlockUseButAllowDrawing() {
+        // A lock protects a specific block rather than territory, but the same distinction applies:
+        // the block stays shut while an item that cannot act on it is left alone. No lock message is
+        // sent, because the player never attempted to use the block.
+        // Arrange
+        mockBlockData<BlockData>()
+        setupConfigForDoorInteraction(enabled = false)
+        setupPlayerMocks(fixture.player, bypassEnabled = false)
+        setupLockedBlock(ownedByPlayer = false, playerIsAccessor = false)
+
+        `when`(fixture.player.hasPermission("mf.bypass")).thenReturn(false)
+
+        val item = mock(ItemStack::class.java)
+        `when`(item.type).thenReturn(Material.BOW)
+        `when`(fixture.event.item).thenReturn(item)
+        `when`(fixture.event.hasItem()).thenReturn(true)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyBlockUseDenied()
+        verifyItemUseNotDenied()
+        verifyNoAsyncTaskScheduled()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_BowInHand_InWilderness_WildernessPreventInteractionSetToTrue_ShouldAllowDrawing() {
+        // The wilderness allowance must cover every hand-used item, not just food, and it must keep
+        // sitting ahead of nothing in particular - the same helper decides it for both paths.
+        // Arrange
+        val block = fixture.block
+        val event = fixture.event
+
+        mockBlockData<BlockData>()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player)
+        `when`(claimService.getClaim(block.chunk)).thenReturn(null)
+        `when`(medievalFactions.config.getBoolean("wilderness.interaction.prevent", false)).thenReturn(true)
+        `when`(medievalFactions.config.getBoolean("wilderness.interaction.alert", true)).thenReturn(true)
+
+        val blockMaterial = mock(Material::class.java)
+        `when`(blockMaterial.isInteractable).thenReturn(false)
+        `when`(block.type).thenReturn(blockMaterial)
+
+        val item = mock(ItemStack::class.java)
+        `when`(item.type).thenReturn(Material.BOW)
+        `when`(event.item).thenReturn(item)
+        `when`(event.hasItem()).thenReturn(true)
+        `when`(event.action).thenReturn(Action.RIGHT_CLICK_BLOCK)
+        `when`(interactionService.getInteractionStatus(playerId)).thenReturn(null)
+
+        // Act
+        uut.onPlayerInteract(event)
+
+        // Assert
+        verifyEventNotCancelled()
+        verifyItemUseNotDenied()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_EdibleItem_InWilderness_WildernessPreventInteractionSetToTrue_ShouldAllowEating() {
+        // Arrange
+        val block = fixture.block
+        val player = fixture.player
+        val event = fixture.event
+
+        mockBlockData<BlockData>()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(player)
+        `when`(claimService.getClaim(block.chunk)).thenReturn(null)
+        `when`(medievalFactions.config.getBoolean("wilderness.interaction.prevent", false)).thenReturn(true)
+        `when`(medievalFactions.config.getBoolean("wilderness.interaction.alert", true)).thenReturn(true)
+
+        val blockMaterial = mock(Material::class.java)
+        `when`(blockMaterial.isInteractable).thenReturn(false)
+        `when`(block.type).thenReturn(blockMaterial)
+
+        // Built before the stubbing below starts: mockEdibleMaterial() stubs a mock of its own, and
+        // doing that part-way through a `when(...)` raises UnfinishedStubbingException.
+        val edibleMaterial = mockEdibleMaterial()
+        val item = mock(ItemStack::class.java)
+        `when`(item.type).thenReturn(edibleMaterial)
+        `when`(event.item).thenReturn(item)
+        `when`(event.hasItem()).thenReturn(true)
+        `when`(event.action).thenReturn(Action.RIGHT_CLICK_BLOCK)
+        `when`(interactionService.getInteractionStatus(playerId)).thenReturn(null)
+
+        // Act
+        uut.onPlayerInteract(event)
+
+        // Assert - wilderness interaction prevention protects blocks, not the player's own food
+        verifyEventNotCancelled()
+        verifyPlayerNotNotified()
+    }
+
+    // --- Physical interaction tests ---
+
+    @Test
+    fun onPlayerInteract_PhysicalActionInFactionTerritory_ShouldCancelWithoutNotifyingPlayer() {
+        // Regression test for #1957: a pressure plate fires a PHYSICAL interaction on every tick the
+        // player stands on it, so notifying on each one floods chat. The interaction must still be
+        // cancelled - only the message is suppressed.
+        // Arrange
+        mockBlockData<BlockData>()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+
+        `when`(claimService.isInteractionAllowed(playerId, claim)).thenReturn(false)
+        `when`(fixture.event.action).thenReturn(Action.PHYSICAL)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert - protection still applies, but the player is not spammed
+        verifyEventCancelled()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_RightClickInFactionTerritory_ShouldCancelAndNotifyPlayer() {
+        // Contrast case for #1957: a deliberate right-click happens once, so the player is still told
+        // why the interaction was blocked.
+        // Arrange
+        mockBlockData<BlockData>()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+
+        `when`(claimService.isInteractionAllowed(playerId, claim)).thenReturn(false)
+        `when`(fixture.event.action).thenReturn(Action.RIGHT_CLICK_BLOCK)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert
+        verifyEventCancelled()
+        verifyPlayerNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_PhysicalActionInWilderness_WildernessPreventInteractionSetToTrue_ShouldCancelWithoutNotifyingPlayer() {
+        // The same per-tick flood applies to pressure plates in wilderness when
+        // wilderness.interaction.prevent is enabled.
+        // Arrange
+        val block = fixture.block
+        val player = fixture.player
+        val event = fixture.event
+
+        val blockData = mock(BlockData::class.java)
+        `when`(block.blockData).thenReturn(blockData)
+
+        val mfPlayer = mock(MfPlayer::class.java)
+        val playerId = MfPlayerId(player.uniqueId.toString())
+        `when`(mfPlayer.id).thenReturn(playerId)
+
+        `when`(event.clickedBlock).thenReturn(block)
+        `when`(event.action).thenReturn(Action.PHYSICAL)
+        `when`(playerService.getPlayer(player)).thenReturn(mfPlayer)
+        `when`(interactionService.getInteractionStatus(playerId)).thenReturn(null)
+        `when`(claimService.getClaim(block.chunk)).thenReturn(null)
+        `when`(medievalFactions.config).thenReturn(mock(FileConfiguration::class.java))
+        `when`(medievalFactions.config.getBoolean("wilderness.interaction.prevent", false)).thenReturn(true)
+        `when`(medievalFactions.config.getBoolean("wilderness.interaction.alert", true)).thenReturn(true)
+
+        // Act
+        uut.onPlayerInteract(event)
+
+        // Assert
+        verifyEventCancelled()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_PhysicalActionWithBypassEnabled_ShouldNotNotifyPlayer() {
+        // The bypass notice is sent on every blocked-then-bypassed interaction, so it floods an
+        // admin's chat for exactly the same reason.
+        // Arrange
+        mockBlockData<BlockData>()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player, bypassEnabled = true)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+
+        `when`(claimService.isInteractionAllowed(playerId, claim)).thenReturn(false)
+        `when`(fixture.player.hasPermission("mf.bypass")).thenReturn(true)
+        `when`(fixture.event.action).thenReturn(Action.PHYSICAL)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert - bypass still applies, but without the per-tick notice
+        verifyEventNotCancelled()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_PhysicalActionOnLockedBlock_ShouldCancelWithoutSchedulingOwnerLookup() {
+        // Regression test for #1978: a locked pressure plate produced not just a message per tick, but a
+        // scheduled async task and an owner lookup per tick. The lock protection itself must not change.
+        // Arrange
+        mockBlockData<BlockData>()
+        setupConfigForDoorInteraction(enabled = false)
+        setupPlayerMocks(fixture.player, bypassEnabled = false)
+        setupLockedBlock(ownedByPlayer = false, playerIsAccessor = false)
+
+        `when`(fixture.player.hasPermission("mf.bypass")).thenReturn(false)
+        `when`(fixture.event.action).thenReturn(Action.PHYSICAL)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert - still blocked, but no per-tick task, lookup or message
+        verifyEventCancelled()
+        verifyNoAsyncTaskScheduled()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_PhysicalActionOnLockedBlockWithBypassEnabled_ShouldNotScheduleOwnerLookup() {
+        // The bypass notice on a locked block floods for the same reason as the blocked notice.
+        // Arrange
+        mockBlockData<BlockData>()
+        setupConfigForDoorInteraction(enabled = false)
+        setupPlayerMocks(fixture.player, bypassEnabled = true)
+        setupLockedBlock(ownedByPlayer = false, playerIsAccessor = false)
+
+        `when`(fixture.player.hasPermission("mf.bypass")).thenReturn(true)
+        `when`(fixture.event.action).thenReturn(Action.PHYSICAL)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert - bypass still applies, without the per-tick task
+        verifyEventNotCancelled()
+        verifyNoAsyncTaskScheduled()
+        verifyPlayerNotNotified()
+    }
+
+    @Test
+    fun onPlayerInteract_PhysicalActionByUnregisteredPlayer_ShouldOnlyScheduleOneSavePerTick() {
+        // Regression test for #1981: applyProtections schedules an async save when the player has no
+        // MfPlayer record. Action.PHYSICAL fires once per tick for as long as the player stands on the
+        // block, so without de-duplication every tick between the first dispatch and the save completing
+        // queues another save. `playerService.getPlayer` returns null by default (unstubbed mock).
+        // Arrange
+        setupConfigForDoorInteraction(enabled = false)
+        `when`(fixture.event.action).thenReturn(Action.PHYSICAL)
+
+        // Act - two physical interactions land before the first save has run
+        uut.onPlayerInteract(fixture.event)
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert - both interactions are cancelled, but only one save is in flight
+        verify(fixture.event, org.mockito.Mockito.times(2)).isCancelled = true
+        verify(scheduler, org.mockito.Mockito.times(1)).runTaskAsynchronously(eq(medievalFactions), any(Runnable::class.java))
+    }
+
+    @Test
+    fun onPlayerInteract_PhysicalActionByUnregisteredPlayer_ShouldScheduleAnotherSaveOnceThePriorOneCompletes() {
+        // Once the in-flight save finishes (success or failure), the player is no longer "pending", so a
+        // later physical interaction (e.g. next tick, if the record still isn't visible yet) may dispatch
+        // another save.
+        // Arrange
+        `when`(fixture.event.action).thenReturn(Action.PHYSICAL)
+        // MfPlayer(plugin, event.player) reads plugin.config.getDouble(...), so config must be mocked
+        // before the scheduled save runnable is actually executed below.
+        setupConfigForDoorInteraction(enabled = false)
+        `when`(playerService.save(anyMfPlayer())).thenReturn(Success(mock(MfPlayer::class.java)))
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+        runScheduledAsyncTasks()
+        uut.onPlayerInteract(fixture.event)
+
+        // Assert - the completed save's player id was released, so the second interaction schedules again
+        verify(scheduler, org.mockito.Mockito.times(2)).runTaskAsynchronously(eq(medievalFactions), any(Runnable::class.java))
+    }
+
     // Helper functions
 
     // ---- claim-override classification -----------------------------------
@@ -1085,6 +1743,18 @@ class PlayerInteractListenerTest {
         `when`(claimService.isOverridden(playerId, fixture.world, 0, 0, 0, action)).thenReturn(true)
     }
 
+    /**
+     * Mockito's [ArgumentMatchers.any] returns null, which trips Kotlin's null-check on the
+     * non-nullable [MfPlayer] parameter of [MfPlayerService.save] before the matcher is registered,
+     * corrupting Mockito's matcher stack for subsequent tests. This generic indirection avoids the
+     * compiler inserting that check.
+     */
+    private fun <T> anyMfPlayer(): T {
+        ArgumentMatchers.any<MfPlayer>()
+        @Suppress("UNCHECKED_CAST")
+        return null as T
+    }
+
     private inline fun <reified T> mockBlockData() {
         val blockData = mock(T::class.java)
         `when`(fixture.block.blockData).thenReturn(blockData as BlockData?)
@@ -1134,10 +1804,15 @@ class PlayerInteractListenerTest {
         // Mock the lockService to return our locked block for the specific block position
         doReturn(lockedBlock).`when`(lockService).getLockedBlock(blockPosition)
 
-        // Mock the upward block position as well for bisected blocks
-        val upBlock = fixture.block.getRelative(BlockFace.UP)
-        val upBlockPosition = MfBlockPosition.fromBukkitBlock(upBlock)
-        doReturn(null).`when`(lockService).getLockedBlock(upBlockPosition)
+        // Mock the neighbouring block positions as well, since bisected blocks are looked up as a pair
+        // with either their upper or their lower half.
+        // The position must be resolved before the doReturn(...) call: reading the neighbour mock's
+        // coordinates part-way through stubbing lockService raises UnfinishedStubbingException.
+        val neighbourPositions = listOf(BlockFace.UP, BlockFace.DOWN)
+            .map { face -> MfBlockPosition.fromBukkitBlock(fixture.block.getRelative(face)) }
+        neighbourPositions.forEach { position ->
+            doReturn(null).`when`(lockService).getLockedBlock(position)
+        }
     }
 
     private fun setupClaimAndFaction(block: Block): Pair<MfClaimedChunk, MfFactionId> {
@@ -1174,6 +1849,46 @@ class PlayerInteractListenerTest {
         `when`(factionService.getFaction(factionId)).thenReturn(mockFaction)
 
         return Pair(claim, factionId)
+    }
+
+    /**
+     * A material that reports itself as edible. Real food constants are not usable here: this class
+     * mocks [org.bukkit.Bukkit] statically for the whole run, under which the real enum's
+     * [Material.isEdible] does not report true. Mocking the material instead is what the rest of this
+     * file already does, and it keeps the test independent of Bukkit's internals.
+     */
+    private fun mockEdibleMaterial(): Material {
+        val material = mock(Material::class.java)
+        `when`(material.isEdible).thenReturn(true)
+        return material
+    }
+
+    /**
+     * Arranges an interaction with [itemMaterial] in hand against the fixture block, which sits in a
+     * claim the player is not allowed to interact with. Defaults to the shape of using an item on
+     * oneself - eating, drinking, throwing, drawing - a right-click against a block that does not
+     * respond to right-clicks.
+     */
+    private fun setupItemUseTestInEnemyTerritory(
+        itemMaterial: Material,
+        blockIsInteractable: Boolean = false,
+        action: Action = Action.RIGHT_CLICK_BLOCK
+    ) {
+        mockBlockData<BlockData>()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+        `when`(claimService.isInteractionAllowed(playerId, claim)).thenReturn(false)
+
+        val blockMaterial = mock(Material::class.java)
+        `when`(blockMaterial.isInteractable).thenReturn(blockIsInteractable)
+        `when`(fixture.block.type).thenReturn(blockMaterial)
+
+        val item = mock(ItemStack::class.java)
+        `when`(item.type).thenReturn(itemMaterial)
+        `when`(fixture.event.item).thenReturn(item)
+        `when`(fixture.event.hasItem()).thenReturn(true)
+        `when`(fixture.event.action).thenReturn(action)
     }
 
     private fun setupWartimeLadderTest(
@@ -1236,11 +1951,13 @@ class PlayerInteractListenerTest {
 
     private fun createBasicFixture(): PlayerInteractListenerTestFixture {
         val world = testUtils.createMockWorld()
-        val block = testUtils.createMockBlock(world)
+        val block = testUtils.createMockBlock(world, 0, 0, 0)
 
-        // Mock blocks for UP and DOWN directions
-        val blockAbove = testUtils.createMockBlock(world)
-        val blockBelow = testUtils.createMockBlock(world)
+        // Mock blocks for UP and DOWN directions. These must have distinct coordinates: MfBlockPosition
+        // is a data class over (worldId, x, y, z), so neighbours left at the default (0, 0, 0) would
+        // collapse onto the clicked block's position and overwrite its lockService stub.
+        val blockAbove = testUtils.createMockBlock(world, 0, 1, 0)
+        val blockBelow = testUtils.createMockBlock(world, 0, -1, 0)
 
         // Set up relative block retrieval
         `when`(block.getRelative(BlockFace.UP)).thenReturn(blockAbove)
@@ -1270,8 +1987,29 @@ class PlayerInteractListenerTest {
         verify(fixture.event, never()).isCancelled = true
     }
 
+    /**
+     * Asserts that the interacted-block half of the event was refused. This is what protects the
+     * block itself once the event is no longer cancelled outright - see #1995.
+     */
+    private fun verifyBlockUseDenied() {
+        verify(fixture.event).setUseInteractedBlock(Event.Result.DENY)
+    }
+
+    /**
+     * Asserts that the item-in-hand half of the event was left alone, by neither of the two routes
+     * that would deny it: `setUseItemInHand(DENY)` and `isCancelled = true`, which denies both halves.
+     */
+    private fun verifyItemUseNotDenied() {
+        verify(fixture.event, never()).setUseItemInHand(Event.Result.DENY)
+        verify(fixture.event, never()).isCancelled = true
+    }
+
     private fun verifyPlayerNotified() {
         verify(fixture.player).sendMessage(any(String::class.java))
+    }
+
+    private fun verifyPlayerNotNotified() {
+        verify(fixture.player, never()).sendMessage(any(String::class.java))
     }
 
     private data class PlayerInteractListenerTestFixture(
@@ -1302,6 +2040,30 @@ class PlayerInteractListenerTest {
     private fun mockLanguageSystem() {
         val language = mock(Language::class.java)
         `when`(language.get(anyString(), anyString())).thenReturn("Cannot interact with block in faction territory")
+        `when`(language["UnknownPlayer"]).thenReturn("Unknown player")
         `when`(medievalFactions.language).thenReturn(language)
+    }
+
+    private fun mockScheduler() {
+        val server = mock(Server::class.java)
+        scheduler = mock(BukkitScheduler::class.java)
+        `when`(medievalFactions.server).thenReturn(server)
+        `when`(server.scheduler).thenReturn(scheduler)
+        `when`(scheduler.runTaskAsynchronously(eq(medievalFactions), any(Runnable::class.java)))
+            .thenReturn(mock(BukkitTask::class.java))
+    }
+
+    /**
+     * Runs every [Runnable] that was dispatched to the async scheduler, so that the logic inside it is
+     * actually exercised rather than only asserted to have been scheduled.
+     */
+    private fun runScheduledAsyncTasks() {
+        val captor = ArgumentCaptor.forClass(Runnable::class.java)
+        verify(scheduler, atLeast(0)).runTaskAsynchronously(eq(medievalFactions), captor.capture())
+        captor.allValues.forEach { it.run() }
+    }
+
+    private fun verifyNoAsyncTaskScheduled() {
+        verify(scheduler, never()).runTaskAsynchronously(eq(medievalFactions), any(Runnable::class.java))
     }
 }
