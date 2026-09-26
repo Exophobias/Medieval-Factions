@@ -231,6 +231,15 @@ interface MedievalFactionsApi {
     fun warMutationBarrier()
 
     /**
+     * Wait for an already-started disband or atomic member transfer that deletes [faction] to
+     * finish. Call from a worker thread after installing a [event.FactionDisbandAttemptEvent]
+     * veto, then re-read the faction before changing its policy. New deletion attempts remain
+     * subject to the veto. This method performs no write and must not be called from an MF event
+     * callback.
+     */
+    fun factionDeletionBarrier(faction: FactionId)
+
+    /**
      * The power level of the given player, or `0.0` if MedievalFactions has no record of them.
      *
      * Power is MF's per-player score that, summed across members, bounds how much land a group may

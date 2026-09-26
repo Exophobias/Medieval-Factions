@@ -374,6 +374,15 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         }
     }
 
+    /** Wait until an already-started disband or atomic source-faction transfer has finished. */
+    fun deletionBarrier(factionId: MfFactionId) {
+        commitLock(factionId).withLock {
+            while (factionId in deletingFactions) {
+                lifecycleIdle(factionId).await()
+            }
+        }
+    }
+
     /** Fire cancellable precommit gates only; irreversible cleanup happens after the batch commits. */
     private fun fireSaveGates(previous: MfFaction?, requested: MfFaction): MfFaction {
         if (previous == null) {

@@ -139,6 +139,9 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
 
     override fun warMutationBarrier() = plugin.services.factionRelationshipService.mutationBarrier()
 
+    override fun factionDeletionBarrier(faction: FactionId) =
+        plugin.services.factionService.deletionBarrier(MfFactionId(faction.value))
+
     override fun registerClaimOverrideProvider(provider: ClaimOverrideProvider) {
         plugin.services.claimService.claimOverrides.register(provider)
     }

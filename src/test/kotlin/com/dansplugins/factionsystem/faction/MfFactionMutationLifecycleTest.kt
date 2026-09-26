@@ -656,6 +656,59 @@ class MfFactionMutationLifecycleTest {
         assertTrue(events.none { it is FactionDeletedEvent })
     }
 
+    @Test
+    fun factionDeletionBarrierWaitsUntilDisbandHasFinished() {
+        val faction = createFaction("BarrierDisband", listOf(player()))
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val barrierStarted = CountDownLatch(1)
+        val barrierFinished = CountDownLatch(1)
+        val deleteResult = AtomicReference<Result4k<Unit, *>>()
+        val deleteFailure = AtomicReference<Throwable?>()
+        val barrierFailure = AtomicReference<Throwable?>()
+        val factionAfterBarrier = AtomicReference<MfFaction?>()
+        eventProbe = { event ->
+            if (event is FactionDisbandAttemptEvent && event.faction == FactionId(faction.id.value)) {
+                entered.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+        }
+
+        val deleting = thread(name = "barrier-disband") {
+            try {
+                deleteResult.set(service.delete(faction.id))
+            } catch (failure: Throwable) {
+                deleteFailure.set(failure)
+            }
+        }
+        assertTrue(entered.await(5, TimeUnit.SECONDS))
+        val barrier = thread(name = "faction-deletion-barrier") {
+            try {
+                barrierStarted.countDown()
+                service.deletionBarrier(faction.id)
+                factionAfterBarrier.set(service.getFaction(faction.id))
+            } catch (failure: Throwable) {
+                barrierFailure.set(failure)
+            } finally {
+                barrierFinished.countDown()
+            }
+        }
+        try {
+            assertTrue(barrierStarted.await(5, TimeUnit.SECONDS))
+            assertFalse(barrierFinished.await(200, TimeUnit.MILLISECONDS))
+        } finally {
+            release.countDown()
+        }
+        assertTrue(barrierFinished.await(5, TimeUnit.SECONDS))
+        deleting.join(5000)
+        barrier.join(5000)
+        assertNull(deleteFailure.get())
+        assertNull(barrierFailure.get())
+        assertTrue(deleteResult.get() != null)
+        assertFalse(deleteResult.get() is Failure)
+        assertNull(factionAfterBarrier.get())
+    }
+
     private fun queueMainTasks(): MutableList<Runnable> {
         val tasks = mutableListOf<Runnable>()
         `when`(plugin.server.scheduler.runTask(any(Plugin::class.java), any(Runnable::class.java)))
