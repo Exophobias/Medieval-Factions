@@ -21,6 +21,13 @@
 >
 > This fork targets Minecraft 26.2 and requires Java 25 or newer.
 >
+> Before the separate PatriamNomads addon records its first adopted faction, it durably arms
+> `plugins/MedievalFactions/nomad-addon-required.marker`. Future MF startups stop the server if
+> PatriamNomads or its `camps` directory is missing, and a later startup check requires the addon
+> to be enabled. The marker intentionally remains after the last Nomad disbands until an audited
+> retirement can prove all Nomad identities and camp records are gone. Do not delete it to bypass
+> a failed startup.
+>
 > Everything below this box is upstream's README.
 
 

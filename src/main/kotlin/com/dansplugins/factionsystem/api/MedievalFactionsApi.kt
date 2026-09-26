@@ -240,6 +240,14 @@ interface MedievalFactionsApi {
     fun factionDeletionBarrier(faction: FactionId)
 
     /**
+     * Durably latch MF to the separate Nomads addon before that addon first records an adopted
+     * faction. A successful call means future MF startups require the addon and its camp directory.
+     * This remains latched after disband; a missing directory cannot prove every record was retired.
+     */
+    fun armNomadPersistenceGuard(): ApiResult =
+        ApiResult.failure("This MedievalFactions provider has no Nomad persistence guard")
+
+    /**
      * The power level of the given player, or `0.0` if MedievalFactions has no record of them.
      *
      * Power is MF's per-player score that, summed across members, bounds how much land a group may

@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem
 
 import com.dansplugins.factionsystem.approval.MfApprovalRequestService
+import com.dansplugins.factionsystem.api.ApiResult
 import com.dansplugins.factionsystem.chat.JooqMfChatChannelMessageRepository
 import com.dansplugins.factionsystem.chat.MfChatChannelMessageRepository
 import com.dansplugins.factionsystem.chat.MfChatService
@@ -89,6 +90,8 @@ import com.dansplugins.factionsystem.potion.MfPotionService
 import com.dansplugins.factionsystem.relationship.JooqMfFactionRelationshipRepository
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipRepository
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
+import com.dansplugins.factionsystem.safety.NomadAddonFence
+import com.dansplugins.factionsystem.safety.NomadAddonFenceListener
 import com.dansplugins.factionsystem.service.Services
 import com.dansplugins.factionsystem.teleport.MfTeleportService
 import com.dansplugins.factionsystem.trace.TraceClient
@@ -116,10 +119,12 @@ import org.jooq.DSLContext
 import org.jooq.conf.Settings
 import org.jooq.impl.DSL
 import java.nio.charset.StandardCharsets
+import java.io.IOException
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalTime
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Level.SEVERE
 import javax.sql.DataSource
 import kotlin.math.floor
@@ -138,6 +143,9 @@ class MedievalFactions : JavaPlugin() {
     private var lastConfigResult: ConfigLifecycle.Result? = null
 
     private lateinit var bundledConfigYaml: String
+
+    private val nomadAddonFence by lazy { NomadAddonFence(dataFolder.toPath()) }
+    private val nomadShutdownRequested = AtomicBoolean()
 
     lateinit var flags: MfFlags
     lateinit var factionPermissions: MfFactionPermissions
@@ -166,6 +174,8 @@ class MedievalFactions : JavaPlugin() {
     private var trace: TraceClient = TraceClient.disabled()
 
     override fun onEnable() {
+        if (!checkNomadAddon(requireEnabled = false)) return
+        server.pluginManager.registerEvents(NomadAddonFenceListener(this), this)
         bundledConfigYaml = getResource("config.yml")?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }
             ?: run {
                 logger.severe("The plugin jar does not contain config.yml; startup is blocked.")
@@ -608,6 +618,58 @@ class MedievalFactions : JavaPlugin() {
 
     internal fun configLifecycleResult(): ConfigLifecycle.Result? = lastConfigResult
 
+    /** Called by the separate addon before its first adopted faction is committed. */
+    internal fun armNomadPersistenceGuard(): ApiResult {
+        if (!isEnabled) return ApiResult.failure("MedievalFactions is not enabled")
+        return try {
+            nomadAddonFence.arm()
+            ApiResult.success()
+        } catch (failure: IOException) {
+            ApiResult.failure("Could not durably arm the Nomad addon guard: ${failure.message}")
+        }
+    }
+
+    fun verifyNomadAddonAfterEnable() {
+        checkNomadAddon(requireEnabled = true)
+    }
+
+    fun onNomadAddonDisabled() {
+        if (nomadAddonFence.markerPresent()) {
+            shutdownForNomad("PatriamNomads disabled while its durable guard is armed")
+        }
+    }
+
+    private fun checkNomadAddon(requireEnabled: Boolean): Boolean {
+        val addon = server.pluginManager.getPlugin("PatriamNomads")
+        val issue = try {
+            nomadAddonFence.startupIssue(addon != null,
+                if (requireEnabled) addon?.isEnabled ?: false else null)
+        } catch (failure: IOException) {
+            shutdownForNomad("Nomad addon marker cannot be validated: ${failure.message}")
+            return false
+        }
+        if (issue != null) {
+            shutdownForNomad("$issue while its durable guard is armed")
+            return false
+        }
+        return true
+    }
+
+    private fun shutdownForNomad(reason: String) {
+        if (!serverStopping() && nomadShutdownRequested.compareAndSet(false, true)) {
+            logger.severe("$reason; stopping server to preserve Nomad faction protections")
+            server.shutdown()
+        }
+    }
+
+    // MF's compatibility API omits Paper's isStopping method, but the live Paper runtime has it.
+    // Resolve it here so a normal server stop does not request a second shutdown from onDisable.
+    private fun serverStopping(): Boolean = try {
+        server.javaClass.getMethod("isStopping").invoke(server) == true
+    } catch (_: ReflectiveOperationException) {
+        false
+    }
+
     /** JSON omits Patriam's durable war-end outbox and disposable fixture service. */
     internal fun jsonStorageBlocker(): String? =
         listOf("PatriamMFAddon", "PatriamTesting").firstOrNull { server.pluginManager.getPlugin(it) != null }
@@ -791,6 +853,9 @@ class MedievalFactions : JavaPlugin() {
                 ds.close()
                 logger.info("Database connection closed")
             }
+        }
+        if (nomadAddonFence.markerPresent()) {
+            shutdownForNomad("MedievalFactions disabled while the Nomad addon guard is armed")
         }
     }
 
