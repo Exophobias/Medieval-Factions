@@ -33,8 +33,10 @@ class ApiFactionLifecycleListenerTest {
         val event = FactionCreateEvent(FactionId("new"), "New", founder, ids, true)
         ids.clear()
         assertEquals(listOf(founder.toString(), "malformed-initial-id"), event.memberIdValues)
-        assertEquals(listOf(founder.toString()),
-            FactionCreateEvent(FactionId("old"), "Old", founder, true).memberIdValues)
+        assertEquals(
+            listOf(founder.toString()),
+            FactionCreateEvent(FactionId("old"), "Old", founder, true).memberIdValues
+        )
     }
 
     @Test

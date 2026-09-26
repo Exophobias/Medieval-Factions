@@ -3,7 +3,9 @@ package com.dansplugins.factionsystem.claim
 import com.dansplugins.factionsystem.api.WildernessReservationApi
 import com.dansplugins.factionsystem.api.WildernessReservationStatus
 import com.dansplugins.factionsystem.api.geometry.ChunkPos
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
