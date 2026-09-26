@@ -4,6 +4,7 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.event.FactionCreateEvent
 import com.dansplugins.factionsystem.api.event.FactionDisbandedEvent
+import com.dansplugins.factionsystem.api.event.FactionJoinEvent
 import org.bukkit.event.Event
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
@@ -11,6 +12,7 @@ import org.bukkit.event.Listener
 import java.util.UUID
 import com.dansplugins.factionsystem.event.faction.FactionCreateEvent as MfFactionCreateEvent
 import com.dansplugins.factionsystem.event.faction.FactionDeletedEvent as MfFactionDeletedEvent
+import com.dansplugins.factionsystem.event.faction.FactionJoinEvent as MfFactionJoinEvent
 
 /**
  * Bridges MedievalFactions' internal faction lifecycle events to the stable API equivalents, so
@@ -48,12 +50,25 @@ class ApiFactionLifecycleListener(private val plugin: MedievalFactions) : Listen
             FactionId(faction.id.value),
             faction.name,
             creatorId,
+            faction.members.map { it.playerId.value },
             event.isAsynchronous
         )
         plugin.server.pluginManager.callEvent(apiEvent)
         if (apiEvent.isCancelled) {
             event.setCancelled(true)
         }
+    }
+
+    /** Inline cancellation bridge for additions to an existing faction. */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    fun onFactionJoin(event: MfFactionJoinEvent) {
+        val apiEvent = FactionJoinEvent(
+            FactionId(event.factionId.value),
+            event.playerId.value,
+            event.isAsynchronous
+        )
+        plugin.server.pluginManager.callEvent(apiEvent)
+        if (apiEvent.isCancelled) event.setCancelled(true)
     }
 
     // The handlers below are notifications, not gates, so they are the mirror image of the

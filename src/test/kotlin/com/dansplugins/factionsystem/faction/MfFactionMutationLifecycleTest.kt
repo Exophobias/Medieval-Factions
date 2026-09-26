@@ -376,7 +376,8 @@ class MfFactionMutationLifecycleTest {
     @Test
     fun cancelledStableCreateGateDoesNotScheduleACommittedCreation() {
         val tasks = queueMainTasks()
-        val proposed = unsavedFaction("Cancelled", listOf(player()))
+        val initialMembers = listOf(player(), player())
+        val proposed = unsavedFaction("Cancelled", initialMembers)
         var observedGate: ApiFactionCreateEvent? = null
         var absentBeforeGate = false
         eventProbe = { event ->
@@ -393,6 +394,8 @@ class MfFactionMutationLifecycleTest {
         assertTrue(gate.isAsynchronous)
         assertTrue(gate.isCancelled)
         assertTrue(absentBeforeGate)
+        assertEquals(initialMembers.first().value, gate.creatorId?.toString())
+        assertEquals(initialMembers.map { it.value }, gate.memberIdValues)
         assertEquals(1, events.filterIsInstance<ApiFactionCreateEvent>().size)
         assertNull(service.getFaction(proposed.id))
         assertNull(repository.rows[proposed.id])
