@@ -214,7 +214,7 @@ See [FACTION_FLAGS.md](FACTION_FLAGS.md) for a complete list of available flags.
 **Permission:** `mf.home` (default: true)  
 **Description:** Teleports you to your faction's home location.  
 **Usage:** `/f home`  
-**Notes:** There is a configurable teleport delay (default: 5 seconds).
+**Notes:** There is a configurable teleport delay (default: 5 seconds). A successful teleport starts a 30-minute cooldown for that player. The cooldown survives reconnects and normal restarts through player data. A cancelled or failed teleport does not start it. Set `factions.factionHomeCooldownMinutes` to `0` to disable the cooldown.
 
 ## Diplomacy & Warfare
 

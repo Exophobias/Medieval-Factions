@@ -25,7 +25,7 @@ This document provides detailed information about all configuration options avai
 ## Configuration Schema and Upgrades
 
 `config-version` is the operator-configuration schema, independent of the plugin/JAR `version` and
-the Flyway database schema. The supported schema is currently `2`. A valid MF5-era `config.yml`
+the Flyway database schema. The supported schema is currently `4`. A valid MF5-era `config.yml`
 without the marker is schema 0 and is upgraded automatically: Medieval Factions rebuilds it in the
 latest bundled order, overlays explicit operator values and credentials, and retains unknown
 extension keys after the known keys in their nearest section. The schema is intentionally open so
@@ -48,7 +48,7 @@ partial in-place reload of database, language, listener, and scheduler settings.
 ### `config-version`
 **Type:** Plain, unquoted integer
 
-**Default:** `2`
+**Default:** `4`
 
 **Description:** Configuration schema used for safe automatic upgrades. Do not set it to the plugin version.
 
@@ -447,6 +447,12 @@ factions:
 **Default:** `5`  
 **Description:** Delay (in seconds) before teleporting to faction home.  
 **Note:** Movement cancels the teleport.
+
+### `factions.factionHomeCooldownMinutes`
+**Type:** Integer
+**Default:** `30`
+**Description:** Per-player cooldown after a successful `/f home` teleport. A cancelled or failed teleport does not start the cooldown.
+**Range:** `0` (disabled) to `2147483647` minutes
 
 ### `factions.maxMembers`
 **Type:** Integer  

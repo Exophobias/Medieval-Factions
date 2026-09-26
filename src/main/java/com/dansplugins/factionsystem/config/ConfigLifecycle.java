@@ -63,7 +63,7 @@ import java.util.regex.Pattern;
 public final class ConfigLifecycle {
 
     public static final String VERSION_KEY = "config-version";
-    public static final int CURRENT_VERSION = 3;
+    public static final int CURRENT_VERSION = 4;
     private static final String OLD_DPC_URL = "https://dansplugins.com/api/v1/factions";
     private static final String CURRENT_DPC_URL = "https://api.dansplugins.com/api/v1/factions";
     private static final Pattern DECIMAL_INTEGER = Pattern.compile("0|[1-9][0-9]*");
@@ -236,7 +236,8 @@ public final class ConfigLifecycle {
                 migration = switch (workingVersion) {
                     case 0 -> migrateZeroToOne(sourceYaml, schemaOneTemplate(bundledYaml));
                     case 1 -> migrateOneToTwo(sourceYaml, schemaTwoTemplate(bundledYaml));
-                    case 2 -> migrateTwoToThree(sourceYaml, bundledYaml);
+                    case 2 -> migrateTwoToThree(sourceYaml, schemaThreeTemplate(bundledYaml));
+                    case 3 -> migrateThreeToFour(sourceYaml, bundledYaml);
                     default -> null;
                 };
             } catch (RuntimeException failure) {
@@ -407,6 +408,11 @@ public final class ConfigLifecycle {
         return priorSchemaTemplate(bundledYaml, 2);
     }
 
+    /** Reconstructs schema 3 before the faction-home cooldown existed. */
+    private static String schemaThreeTemplate(String bundledYaml) {
+        return priorSchemaTemplate(bundledYaml, 3);
+    }
+
     private static String priorSchemaTemplate(String bundledYaml, int version) {
         LoaderOptions loaderOptions = new LoaderOptions();
         loaderOptions.setAllowDuplicateKeys(false);
@@ -424,7 +430,10 @@ public final class ConfigLifecycle {
         replaceTemplateValue(mapping, VERSION_KEY, version, yaml);
         Node factions = unwrap(mapping.getValue().get(tupleIndex(mapping, "factions")).getValueNode());
         if (factions instanceof MappingNode factionMapping) {
-            removeTemplateKey(factionMapping, "adminOnlyLeaderlessFactions");
+            removeTemplateKey(factionMapping, "factionHomeCooldownMinutes");
+            if (version < 3) {
+                removeTemplateKey(factionMapping, "adminOnlyLeaderlessFactions");
+            }
         }
         if (version == 1) {
             removeTemplateKey(mapping, "storage");
@@ -494,6 +503,11 @@ public final class ConfigLifecycle {
         } catch (InvalidConfigurationException failure) {
             throw new IllegalStateException("the migrated configuration could not be parsed", failure);
         }
+    }
+
+    /** Adds the per-player faction-home cooldown at its bundled default. */
+    private static Migration migrateThreeToFour(String installedYaml, String bundledYaml) {
+        return canonicalize(installedYaml, bundledYaml);
     }
 
     /** Template comments/order/anchors remain; extensions follow known siblings. */
@@ -834,6 +848,13 @@ public final class ConfigLifecycle {
         if (configured.contains("dpc-api.sync-interval-minutes")
                 && configured.getInt("dpc-api.sync-interval-minutes") < 1) {
             throw new ValidationException("dpc-api.sync-interval-minutes");
+        }
+        if (configured.contains("factions.factionHomeCooldownMinutes")) {
+            long cooldownMinutes = ((Number) configured.get(
+                    "factions.factionHomeCooldownMinutes")).longValue();
+            if (cooldownMinutes < 0 || cooldownMinutes > Integer.MAX_VALUE) {
+                throw new ValidationException("factions.factionHomeCooldownMinutes");
+            }
         }
         if (configured.contains("dynmap.fillOpacity")) {
             double opacity = configured.getDouble("dynmap.fillOpacity");
