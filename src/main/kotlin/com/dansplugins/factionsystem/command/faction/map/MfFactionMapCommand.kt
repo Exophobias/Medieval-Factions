@@ -98,7 +98,7 @@ class MfFactionMapCommand(private val plugin: MedievalFactions) : CommandExecuto
                         Text(
                             arrayOf(
                                 if (faction != null) {
-                                    TextComponent(faction.name).apply {
+                                    TextComponent(faction.displayName).apply {
                                         this.color = color
                                     }
                                 } else {

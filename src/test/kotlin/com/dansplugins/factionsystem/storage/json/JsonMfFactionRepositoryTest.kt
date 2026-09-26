@@ -2,6 +2,7 @@ package com.dansplugins.factionsystem.storage.json
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfPosition
+import com.dansplugins.factionsystem.faction.AdminFactionProtection
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionApplication
 import com.dansplugins.factionsystem.faction.MfFactionId
@@ -169,6 +170,48 @@ class JsonMfFactionRepositoryTest {
         assertNotNull(read)
         assertNull(read?.home)
         assertNull(read?.prefix)
+    }
+
+    @Test
+    fun `display name round trips and legacy JSON falls back to the canonical name`() {
+        val owner = role("Owner")
+        val id = MfFactionId.generate()
+        val first = repository.upsert(
+            faction(id = id, roles = MfFactionRoles(owner.id, listOf(owner)))
+                .copy(name = "PeopleOfOlzhar", displayNameOverride = "People of Olzhar")
+        )
+        assertEquals("People of Olzhar", repository.getFaction(id)?.displayName)
+        assertEquals("PeopleOfOlzhar", repository.getFaction(id)?.name)
+
+        val file = File(tempDir.toFile(), "factions.json")
+        val legacy = JSONObject(file.readText())
+        legacy.getJSONArray("factions").getJSONObject(0).remove("displayNameOverride")
+        file.writeText(legacy.toString())
+        assertEquals("PeopleOfOlzhar", repository.getFaction(id)?.displayName)
+
+        repository.upsert(first.copy(displayNameOverride = null))
+        assertEquals("PeopleOfOlzhar", repository.getFaction(id)?.displayName)
+    }
+
+    @Test
+    fun `admin protection override round trips and reset removes persisted key`() {
+        val owner = role("Owner")
+        val id = MfFactionId.generate()
+        val original = faction(id = id, roles = MfFactionRoles(owner.id, listOf(owner)))
+            .copy(adminLeaderless = true)
+        val blocked = AdminFactionProtection.PVP.withAllowed(plugin, original, false)
+        repository.upsert(blocked)
+
+        val loaded = requireNotNull(repository.getFaction(id))
+        assertFalse(AdminFactionProtection.PVP.isAllowed(loaded))
+        assertTrue(AdminFactionProtection.PVP.isExplicit(loaded))
+        assertTrue(loaded.adminLeaderless)
+
+        repository.upsert(AdminFactionProtection.PVP.withAllowed(plugin, loaded, null))
+        val reset = requireNotNull(repository.getFaction(id))
+        assertTrue(AdminFactionProtection.PVP.isAllowed(reset))
+        assertFalse(AdminFactionProtection.PVP.isExplicit(reset))
+        assertFalse(File(tempDir.toFile(), "factions.json").readText().contains("adminProtectionPvp"))
     }
 
     @Test

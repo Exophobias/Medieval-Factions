@@ -70,7 +70,7 @@ class ApproveApplicationTask(
             plugin.logger.log(Level.SEVERE, "Failed to save faction: ${it.reason.message}", it.reason.cause)
             return
         }
-        targetPlayer.player?.sendMessage("${org.bukkit.ChatColor.GREEN}${plugin.language["CommandFactionApproveAppAccepted", faction.name]}")
+        targetPlayer.player?.sendMessage("${org.bukkit.ChatColor.GREEN}${plugin.language["CommandFactionApproveAppAccepted", faction.displayName]}")
         sender.sendMessage("${org.bukkit.ChatColor.GREEN}${plugin.language["CommandFactionApproveAppAcceptedSender", targetMfPlayer.name.toString()]}")
         updatedFaction.sendMessage(
             "${org.bukkit.ChatColor.GREEN}${plugin.language["CommandFactionApproveAppNewMember"]}",

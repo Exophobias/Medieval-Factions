@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.listener
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
+import com.dansplugins.factionsystem.faction.AdminFactionProtection
 import com.dansplugins.factionsystem.utils.MfServerVersion
 import org.bukkit.entity.Player
 import org.bukkit.entity.Projectile
@@ -20,6 +21,9 @@ class EntityExplodeListener(private val plugin: MedievalFactions) : Listener {
                 gateService.getGatesByTrigger(MfBlockPosition.fromBukkitBlock(block)).isNotEmpty()
         }
         event.blockList().removeAll(gateBlocks)
+        event.blockList().removeAll { block ->
+            AdminFactionProtectionChecks.denies(plugin, block.location, AdminFactionProtection.EXPLOSIONS)
+        }
 
         if (MfServerVersion.isAtLeast(1, 21)) {
             applyWindChargeProtection(event)

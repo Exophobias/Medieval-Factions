@@ -42,7 +42,7 @@ class MfFactionWhoCommand(private val plugin: MedievalFactions) : CommandExecuto
                     sender.sendMessage("$RED${plugin.language["CommandFactionWhoNotInAFaction", target.name ?: plugin.language["UnknownPlayer"]]}")
                     return@Runnable
                 }
-                sender.sendMessage("$GREEN${plugin.language["CommandFactionWhoSuccess", target.name ?: plugin.language["UnknownPlayer"], faction.name]}")
+                sender.sendMessage("$GREEN${plugin.language["CommandFactionWhoSuccess", target.name ?: plugin.language["UnknownPlayer"], faction.displayName]}")
             }
         )
         return true

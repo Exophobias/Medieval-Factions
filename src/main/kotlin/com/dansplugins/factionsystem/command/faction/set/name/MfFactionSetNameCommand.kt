@@ -127,7 +127,7 @@ class MfFactionSetNameCommand(private val plugin: MedievalFactions) : CommandExe
                 val claimService = plugin.services.claimService
                 onlinePlayers.filter { (_, chunk) -> claimService.getClaim(chunk)?.factionId == updatedFaction.id }
                     .forEach { (player, _) ->
-                        val title = "${ChatColor.of(updatedFaction.flags[plugin.flags.color])}${updatedFaction.name}"
+                        val title = "${ChatColor.of(updatedFaction.flags[plugin.flags.color])}${updatedFaction.displayName}"
                         val subtitle = "${ChatColor.of(updatedFaction.flags[plugin.flags.color])}${updatedFaction.description}"
                         if (plugin.config.getBoolean("factions.titleTerritoryIndicator")) {
                             player.resetTitle()

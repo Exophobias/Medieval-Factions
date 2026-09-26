@@ -98,7 +98,7 @@ class MfChatService(
             // in. Moving this below the replacements would let a player expand placeholders through chat.
             .let { placeholderResolver.resolve(bukkitPlayer, it) }
             .replace("\${factionColor}", ChatColor.of(faction.flags[plugin.flags.color]).toString())
-            .replace("\${faction}", faction.name)
+            .replace("\${faction}", faction.displayName)
             .replace("\${role}", faction.getRole(mfPlayer.id)?.name ?: plugin.language["NoRole"])
             .replace("\${name}", name)
             .replace("\${displayName}", displayName)

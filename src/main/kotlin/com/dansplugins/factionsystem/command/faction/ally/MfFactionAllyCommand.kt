@@ -98,7 +98,7 @@ class MfFactionAllyCommand(private val plugin: MedievalFactions) : CommandExecut
                             reason = reason
                         )
                     )
-                    sender.sendMessage("$GREEN${plugin.language["CommandFactionAllyPendingApproval", target.name]}")
+                    sender.sendMessage("$GREEN${plugin.language["CommandFactionAllyPendingApproval", target.displayName]}")
                     plugin.server.scheduler.runTask(
                         plugin,
                         Runnable {
@@ -106,7 +106,7 @@ class MfFactionAllyCommand(private val plugin: MedievalFactions) : CommandExecut
                             plugin.server.onlinePlayers
                                 .filter { it.hasPermission("mf.approve") }
                                 .forEach { moderator ->
-                                    moderator.sendMessage("${ChatColor.YELLOW}${plugin.language["ApprovalRequestNotification", faction.name, allyActionLabel, target.name, request.id.value]}")
+                                    moderator.sendMessage("${ChatColor.YELLOW}${plugin.language["ApprovalRequestNotification", faction.displayName, allyActionLabel, target.displayName, request.id.value]}")
                                     if (reason != null) {
                                         moderator.sendMessage("${ChatColor.GRAY}${plugin.language["ApprovalRequestReason", reason]}")
                                     }
@@ -122,32 +122,32 @@ class MfFactionAllyCommand(private val plugin: MedievalFactions) : CommandExecut
                         return@Runnable
                     }
                 if (reverseRelationships.any { it.type == ALLY }) {
-                    sender.sendMessage("$GREEN${plugin.language["CommandFactionAllySuccess", target.name]}")
+                    sender.sendMessage("$GREEN${plugin.language["CommandFactionAllySuccess", target.displayName]}")
                     plugin.server.scheduler.runTask(
                         plugin,
                         Runnable {
                             faction.sendMessage(
-                                plugin.language["FactionAllyNotificationTitle", target.name],
-                                plugin.language["FactionAllyNotificationBody", target.name]
+                                plugin.language["FactionAllyNotificationTitle", target.displayName],
+                                plugin.language["FactionAllyNotificationBody", target.displayName]
                             )
                             target.sendMessage(
-                                plugin.language["FactionAllyNotificationTitle", faction.name],
-                                plugin.language["FactionAllyNotificationBody", faction.name]
+                                plugin.language["FactionAllyNotificationTitle", faction.displayName],
+                                plugin.language["FactionAllyNotificationBody", faction.displayName]
                             )
                         }
                     )
                 } else {
-                    sender.sendMessage("$GREEN${plugin.language["CommandFactionAllyRequested", target.name]}")
+                    sender.sendMessage("$GREEN${plugin.language["CommandFactionAllyRequested", target.displayName]}")
                     plugin.server.scheduler.runTask(
                         plugin,
                         Runnable {
                             faction.sendMessage(
-                                plugin.language["FactionAllyRequestSentNotificationTitle", sender.name, target.name],
-                                plugin.language["FactionAllyRequestSentNotificationBody", sender.name, target.name]
+                                plugin.language["FactionAllyRequestSentNotificationTitle", sender.name, target.displayName],
+                                plugin.language["FactionAllyRequestSentNotificationBody", sender.name, target.displayName]
                             )
                             target.sendMessage(
-                                plugin.language["FactionAllyRequestReceivedNotificationTitle", sender.name, faction.name],
-                                plugin.language["FactionAllyRequestReceivedNotificationBody", sender.name, faction.name]
+                                plugin.language["FactionAllyRequestReceivedNotificationTitle", sender.name, faction.displayName],
+                                plugin.language["FactionAllyRequestReceivedNotificationBody", sender.name, faction.displayName]
                             )
                         }
                     )

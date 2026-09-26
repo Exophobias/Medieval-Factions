@@ -18,6 +18,7 @@ class FactionViewAdapter(
 
     override val id: FactionId get() = FactionId(faction.id.value)
     override val name: String get() = faction.name
+    override val displayName: String get() = faction.displayName
     override val description: String get() = faction.description
     override val home: Location? get() = faction.home?.toBukkitLocation()
     override val memberIds: List<UUID> get() = faction.members.map { UUID.fromString(it.playerId.value) }

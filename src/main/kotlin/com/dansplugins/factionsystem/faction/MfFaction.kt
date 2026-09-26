@@ -84,8 +84,11 @@ data class MfFaction(
      */
     val primaryOwnerTerm: UUID = UUID(0L, 0L),
     /** Staff-designated faction that may remain without a leader or members. */
-    val adminLeaderless: Boolean = false
+    val adminLeaderless: Boolean = false,
+    /** Optional player-facing label; [name] stays the canonical lookup name. */
+    val displayNameOverride: String? = null
 ) {
+    val displayName: String get() = displayNameOverride?.takeIf(MfFactionDisplayName::isValid) ?: name
     val canRemainLeaderless: Boolean
         get() = plugin.config.getBoolean("factions.allowLeaderlessFactions") &&
             (!plugin.config.getBoolean("factions.adminOnlyLeaderlessFactions") || adminLeaderless)

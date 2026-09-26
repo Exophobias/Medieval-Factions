@@ -69,7 +69,7 @@ class MfFactionInvokeCommand(private val plugin: MedievalFactions) : CommandExec
                 val isAlly = existingAllyRelationships.any { it.type == ALLY } && reverseAllyRelationships.any { it.type == ALLY }
                 val isVassal = existingAllyRelationships.any { it.type == VASSAL } && reverseAllyRelationships.any { it.type == LIEGE }
                 if (!isAlly && !isVassal) {
-                    sender.sendMessage("$RED${plugin.language["CommandFactionInvokeNotAllied", ally.name]}")
+                    sender.sendMessage("$RED${plugin.language["CommandFactionInvokeNotAllied", ally.displayName]}")
                     return@Runnable
                 }
                 if (ally.flags[plugin.flags.isNeutral]) {
@@ -107,25 +107,25 @@ class MfFactionInvokeCommand(private val plugin: MedievalFactions) : CommandExec
                         plugin.logger.log(Level.SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
                         return@Runnable
                     }
-                sender.sendMessage("${ChatColor.GREEN}${plugin.language["CommandFactionInvokeSuccess", ally.name, enemy.name]}")
+                sender.sendMessage("${ChatColor.GREEN}${plugin.language["CommandFactionInvokeSuccess", ally.displayName, enemy.displayName]}")
                 plugin.server.scheduler.runTask(
                     plugin,
                     Runnable {
                         faction.sendMessage(
-                            plugin.language["AllyInvokedNotificationTitle", ally.name, enemy.name],
-                            plugin.language["AllyInvokedNotificationBody", ally.name, enemy.name]
+                            plugin.language["AllyInvokedNotificationTitle", ally.displayName, enemy.displayName],
+                            plugin.language["AllyInvokedNotificationBody", ally.displayName, enemy.displayName]
                         )
                         ally.sendMessage(
-                            plugin.language["InvokedByAllyNotificationTitle", faction.name, enemy.name],
-                            plugin.language["InvokedByAllyNotificationBody", faction.name, enemy.name]
+                            plugin.language["InvokedByAllyNotificationTitle", faction.displayName, enemy.displayName],
+                            plugin.language["InvokedByAllyNotificationBody", faction.displayName, enemy.displayName]
                         )
                         enemy.sendMessage(
-                            plugin.language["EnemyInvokedAllyNotificationTitle", faction.name, ally.name],
-                            plugin.language["EnemyInvokedAllyNotificationBody", faction.name, ally.name]
+                            plugin.language["EnemyInvokedAllyNotificationTitle", faction.displayName, ally.displayName],
+                            plugin.language["EnemyInvokedAllyNotificationBody", faction.displayName, ally.displayName]
                         )
                         plugin.server.onlinePlayers.filter { onlinePlayer ->
                             (faction.members + ally.members + enemy.members).none { member -> member.playerId.toBukkitPlayer().uniqueId == onlinePlayer.uniqueId }
-                        }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionInvokedAlly", faction.name, ally.name, enemy.name]}") }
+                        }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionInvokedAlly", faction.displayName, ally.displayName, enemy.displayName]}") }
                     }
                 )
             }

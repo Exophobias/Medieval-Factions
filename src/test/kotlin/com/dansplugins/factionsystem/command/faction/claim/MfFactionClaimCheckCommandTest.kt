@@ -16,6 +16,7 @@ import org.bukkit.Location
 import org.bukkit.Server
 import org.bukkit.entity.Player
 import org.bukkit.scheduler.BukkitScheduler
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -95,8 +96,8 @@ class MfFactionClaimCheckCommandTest {
         val worldId = UUID.randomUUID()
         `when`(player.hasPermission("mf.claim.check")).thenReturn(true)
         stubSenderChunk(player, worldId, 0, 0)
-        stubClaim(worldId, 0, 0, "Bandits")
-        `when`(language["CommandFactionCheckClaimClaimed", "Bandits"]).thenReturn("Claimed by Bandits")
+        val faction = stubClaim(worldId, 0, 0, "PeopleOfOlzhar", "People of Olzhar")
+        `when`(language["CommandFactionCheckClaimClaimed", "People of Olzhar"]).thenReturn("Claimed by People of Olzhar")
 
         // execute
         val result = uut.onCommand(player, command, "label", arrayOf())
@@ -104,7 +105,8 @@ class MfFactionClaimCheckCommandTest {
 
         // verify
         assertTrue(result)
-        verify(player).sendMessage("${ChatColor.GREEN}Claimed by Bandits")
+        assertEquals("PeopleOfOlzhar", faction.name)
+        verify(player).sendMessage("${ChatColor.GREEN}Claimed by People of Olzhar")
     }
 
     @Test
@@ -158,15 +160,23 @@ class MfFactionClaimCheckCommandTest {
      * are stubbed — by chunk and by chunk position — so a test asserts which chunk was consulted rather than which
      * overload happened to be called.
      */
-    private fun stubClaim(worldId: UUID, chunkX: Int, chunkZ: Int, factionName: String) {
+    private fun stubClaim(
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int,
+        factionName: String,
+        displayName: String = factionName
+    ): MfFaction {
         val factionId = MfFactionId.generate()
         val faction = mock(MfFaction::class.java)
         `when`(faction.name).thenReturn(factionName)
+        `when`(faction.displayName).thenReturn(displayName)
         `when`(factionService.getFaction(factionId)).thenReturn(faction)
         val claim = MfClaimedChunk(worldId, chunkX, chunkZ, factionId)
         val chunk = chunkOf(worldId, chunkX, chunkZ)
         `when`(claimService.getClaim(chunk)).thenReturn(claim)
         `when`(claimService.getClaim(MfChunkPosition(worldId, chunkX, chunkZ))).thenReturn(claim)
+        return faction
     }
 
     private fun stubSenderChunk(player: Player, worldId: UUID, chunkX: Int, chunkZ: Int) {

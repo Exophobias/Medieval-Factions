@@ -142,7 +142,7 @@ class DynmapService(private val plugin: MedievalFactions) : MapService {
     private fun createAreaMarker(faction: MfFaction, world: World, corners: List<Point>, claimsMarkerSet: MarkerSet, factionInfo: String, index: Int, fillEnabled: Boolean = true) {
         val areaMarker = claimsMarkerSet.createAreaMarker(
             "claim_border_${faction.id}_${world.name}_$index",
-            faction.name,
+            faction.displayName,
             false,
             world.name,
             corners.map { (x, _) -> x * 16.0 }.toDoubleArray(),
@@ -231,14 +231,14 @@ class DynmapService(private val plugin: MedievalFactions) : MapService {
     private fun createRealmAreaMarker(faction: MfFaction, world: World, corners: List<Point>, realmMarkerSet: MarkerSet, index: Int) {
         val areaMarker = realmMarkerSet.createAreaMarker(
             "realm_${faction.id}_${world.name}_$index",
-            faction.name,
+            faction.displayName,
             false,
             world.name,
             corners.map { (x, _) -> x * 16.0 }.toDoubleArray(),
             corners.map { (_, z) -> z * 16.0 }.toDoubleArray(),
             false
         )
-        areaMarker.label = faction.name
+        areaMarker.label = faction.displayName
         val color = Integer.decode(faction.flags[plugin.flags.color])
         // For realms, use the same fill logic as claims
         val fillClaims = plugin.config.getBoolean("dynmap.fillClaims", true)

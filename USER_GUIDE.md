@@ -746,6 +746,16 @@ This displays all laws with their ID numbers.
 /f set name "The Grand Empire"
 ```
 
+**Set a Display Name:**
+```
+/f set displayname People of Olzhar
+/f set displayname reset
+```
+The display name is the label people see in faction messages, maps and territory titles. The faction's
+canonical name remains its command lookup name. Changing a display name requires your faction's
+change-name role permission. Server staff can use
+`/f set displayname --faction PeopleOfOlzhar People of Olzhar` for leaderless admin factions.
+
 **Set Description:**
 ```
 /f set description [Description]
@@ -798,6 +808,15 @@ Set a flag:
 ```
 
 See [FACTION_FLAGS.md](FACTION_FLAGS.md) for complete flag documentation.
+
+**Admin Faction Territory:**
+
+Staff can inspect an admin faction's protections with `/f admin protection PeopleOfOlzhar`.
+Use `/f admin protection PeopleOfOlzhar pvp off` to block player attacks within its claims.
+The other settings are `playerdamage`, `mobspawning`, `explosions`, and `firespread`.
+Set any of them to `on` to follow normal server rules, or `reset` to remove its override.
+These settings require `mf.admin.protection` and apply only to factions created with
+`/f admin create` or designated with `/f admin makeleaderless`.
 
 ---
 

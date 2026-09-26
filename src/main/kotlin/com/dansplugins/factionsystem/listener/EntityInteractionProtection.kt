@@ -74,9 +74,9 @@ class EntityInteractionProtection(
         if (claims.isOverridden(actor.id, target.world, position.blockX, position.blockY, position.blockZ, action)) return
         event.isCancelled = true
         val message = if (villager) {
-            plugin.language["PlayerInteractEntityCannotTradeWithVillager", faction.name]
+            plugin.language["PlayerInteractEntityCannotTradeWithVillager", faction.displayName]
         } else {
-            plugin.language["CannotInteractWithEntityInFactionTerritory", faction.name]
+            plugin.language["CannotInteractWithEntityInFactionTerritory", faction.displayName]
         }
         notify(player, target, "$RED$message")
     }

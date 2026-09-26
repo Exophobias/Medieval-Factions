@@ -46,7 +46,7 @@ class MfFactionMembersCommand(private val plugin: MedievalFactions) : CommandExe
                     return@Runnable
                 }
                 // send player list of members
-                sender.sendMessage("$AQUA${plugin.language["CommandFactionMembersTitle", faction.name]}")
+                sender.sendMessage("$AQUA${plugin.language["CommandFactionMembersTitle", faction.displayName]}")
                 sender.sendMessage("$AQUA" + faction.members.joinToString { it.playerId.toBukkitPlayer().name ?: "(N/A)" })
             }
         )

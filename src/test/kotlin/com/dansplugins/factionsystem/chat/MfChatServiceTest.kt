@@ -60,6 +60,7 @@ class MfChatServiceTest {
         `when`(flags.color).thenReturn(colorFlag)
         `when`(language["NoRole"]).thenReturn("No Role")
         `when`(faction.name).thenReturn("TestFaction")
+        `when`(faction.displayName).thenReturn("TestFaction")
         `when`(faction.flags).thenReturn(MfFlagValues(plugin, mapOf("color" to FACTION_COLOR)))
         `when`(config.getString("chat.faction.format")).thenReturn(CHAT_FORMAT)
 

@@ -198,6 +198,7 @@ class JooqMfFactionRepository(
                 .set(MF_FACTION.ID, faction.id.value)
                 .set(MF_FACTION.VERSION, 1)
                 .set(MF_FACTION.NAME, faction.name)
+                .set(MF_FACTION.DISPLAY_NAME, faction.displayNameOverride)
                 .set(MF_FACTION.DESCRIPTION, faction.description)
                 .set(MF_FACTION.FLAGS, JSON.valueOf(gson.toJson(faction.flags.valuesByName)))
                 .set(MF_FACTION.PREFIX, faction.prefix)
@@ -227,6 +228,7 @@ class JooqMfFactionRepository(
         } else {
             dsl.update(MF_FACTION)
                 .set(MF_FACTION.NAME, faction.name)
+                .set(MF_FACTION.DISPLAY_NAME, faction.displayNameOverride)
                 .set(MF_FACTION.DESCRIPTION, faction.description)
                 .set(MF_FACTION.FLAGS, JSON.valueOf(gson.toJson(faction.flags.valuesByName)))
                 .set(MF_FACTION.PREFIX, faction.prefix)
@@ -413,7 +415,8 @@ class JooqMfFactionRepository(
             heirId = heirId?.let(::MfPlayerId),
             primaryOwnerSince = primaryOwnerSince,
             primaryOwnerTerm = UUID.fromString(primaryOwnerTerm),
-            adminLeaderless = adminLeaderless
+            adminLeaderless = adminLeaderless,
+            displayNameOverride = displayName
         )
     }
 

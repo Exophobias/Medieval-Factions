@@ -70,17 +70,17 @@ class MfFactionGrantIndependenceCommand(private val plugin: MedievalFactions) : 
                             return@Runnable
                         }
                     }
-                sender.sendMessage("$GREEN${plugin.language["CommandFactionGrantIndependenceSuccess", target.name]}")
+                sender.sendMessage("$GREEN${plugin.language["CommandFactionGrantIndependenceSuccess", target.displayName]}")
                 plugin.server.scheduler.runTask(
                     plugin,
                     Runnable {
                         faction.sendMessage(
-                            plugin.language["VassalGrantedIndependenceNotificationTitle", target.name],
-                            plugin.language["VassalGrantedIndependenceNotificationBody", target.name]
+                            plugin.language["VassalGrantedIndependenceNotificationTitle", target.displayName],
+                            plugin.language["VassalGrantedIndependenceNotificationBody", target.displayName]
                         )
                         target.sendMessage(
-                            plugin.language["FactionGrantedIndependenceNotificationTitle", faction.name],
-                            plugin.language["FactionGrantedIndependenceNotificationBody", faction.name]
+                            plugin.language["FactionGrantedIndependenceNotificationTitle", faction.displayName],
+                            plugin.language["FactionGrantedIndependenceNotificationBody", faction.displayName]
                         )
                     }
                 )

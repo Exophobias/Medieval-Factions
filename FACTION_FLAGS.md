@@ -50,6 +50,8 @@ To set a flag value for your faction:
 - **Set flags:** `mf.flag.set` (default: true)
 - **Force set for other factions:** `mf.force.flag` (default: op)
 
+Admin-managed faction territory also has staff-only protection settings for PvP, player damage, creature spawning, explosions, and fire spread. They are managed with `/f admin protection <faction>` and are not ordinary `/f flag` values or role grants. See [Admin Commands](COMMANDS.md#admin-commands).
+
 ## Available Flags
 
 ### alliesCanInteractWithLand

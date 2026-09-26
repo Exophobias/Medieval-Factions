@@ -109,7 +109,7 @@ class MfFactionVassalizeCommand(private val plugin: MedievalFactions) : CommandE
                             reason = reason
                         )
                     )
-                    sender.sendMessage("$GREEN${plugin.language["CommandFactionVassalizePendingApproval", target.name]}")
+                    sender.sendMessage("$GREEN${plugin.language["CommandFactionVassalizePendingApproval", target.displayName]}")
                     val vassalizeActionLabel = plugin.language["ApprovalRequestTypeVassalize"]
                     plugin.server.scheduler.runTask(
                         plugin,
@@ -117,7 +117,7 @@ class MfFactionVassalizeCommand(private val plugin: MedievalFactions) : CommandE
                             plugin.server.onlinePlayers
                                 .filter { it.hasPermission("mf.approve") }
                                 .forEach { moderator ->
-                                    moderator.sendMessage("${ChatColor.YELLOW}${plugin.language["ApprovalRequestNotification", faction.name, vassalizeActionLabel, target.name, request.id.value]}")
+                                    moderator.sendMessage("${ChatColor.YELLOW}${plugin.language["ApprovalRequestNotification", faction.displayName, vassalizeActionLabel, target.displayName, request.id.value]}")
                                     if (reason != null) {
                                         moderator.sendMessage("${ChatColor.GRAY}${plugin.language["ApprovalRequestReason", reason]}")
                                     }
@@ -137,17 +137,17 @@ class MfFactionVassalizeCommand(private val plugin: MedievalFactions) : CommandE
                     plugin.logger.log(SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
                     return@Runnable
                 }
-                sender.sendMessage("$GREEN${plugin.language["CommandFactionVassalizeSuccess", target.name]}")
+                sender.sendMessage("$GREEN${plugin.language["CommandFactionVassalizeSuccess", target.displayName]}")
                 plugin.server.scheduler.runTask(
                     plugin,
                     Runnable {
                         faction.sendMessage(
-                            plugin.language["FactionVassalizationRequestSentNotificationTitle", target.name],
-                            plugin.language["FactionVassalizationRequestSentNotificationBody", target.name]
+                            plugin.language["FactionVassalizationRequestSentNotificationTitle", target.displayName],
+                            plugin.language["FactionVassalizationRequestSentNotificationBody", target.displayName]
                         )
                         target.sendMessage(
-                            plugin.language["FactionVassalizationRequestReceivedNotificationTitle", faction.name],
-                            plugin.language["FactionVassalizationRequestReceivedNotificationBody", faction.name]
+                            plugin.language["FactionVassalizationRequestReceivedNotificationTitle", faction.displayName],
+                            plugin.language["FactionVassalizationRequestReceivedNotificationBody", faction.displayName]
                         )
                     }
                 )

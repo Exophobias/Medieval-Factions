@@ -542,7 +542,7 @@ These settings define the default values for faction flags when a new faction is
 **Description:** Format for faction-only chat messages.  
 **Available Variables:**
 - `${factionColor}` - Faction's color
-- `${faction}` - Faction name
+- `${faction}` - Faction display name (falls back to its canonical name)
 - `${role}` - Player's role
 - `${displayName}` - Player's display name
 - `${message}` - The chat message

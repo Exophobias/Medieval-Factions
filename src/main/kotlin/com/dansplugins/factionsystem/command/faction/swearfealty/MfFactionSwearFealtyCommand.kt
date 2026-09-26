@@ -97,17 +97,17 @@ class MfFactionSwearFealtyCommand(private val plugin: MedievalFactions) : Comman
                     plugin.logger.log(SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
                     return@Runnable
                 }
-                sender.sendMessage("$GREEN${plugin.language["CommandFactionSwearFealtySuccess", target.name]}")
+                sender.sendMessage("$GREEN${plugin.language["CommandFactionSwearFealtySuccess", target.displayName]}")
                 plugin.server.scheduler.runTask(
                     plugin,
                     Runnable {
                         faction.sendMessage(
-                            plugin.language["FactionFealtySwornNotificationTitle", target.name],
-                            plugin.language["FactionFealtySwornNotificationBody", target.name]
+                            plugin.language["FactionFealtySwornNotificationTitle", target.displayName],
+                            plugin.language["FactionFealtySwornNotificationBody", target.displayName]
                         )
                         target.sendMessage(
-                            plugin.language["FactionNewVassalNotificationTitle", faction.name],
-                            plugin.language["FactionNewVassalNotificationBody", faction.name]
+                            plugin.language["FactionNewVassalNotificationTitle", faction.displayName],
+                            plugin.language["FactionNewVassalNotificationBody", faction.displayName]
                         )
                     }
                 )

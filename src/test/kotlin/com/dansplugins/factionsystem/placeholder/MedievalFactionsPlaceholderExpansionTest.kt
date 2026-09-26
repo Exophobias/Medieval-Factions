@@ -68,9 +68,12 @@ class MedievalFactionsPlaceholderExpansionTest {
         `when`(playerService.getPlayer(player)).thenReturn(mfPlayer)
         `when`(factionService.getFaction(mfPlayer.id)).thenReturn(faction)
         `when`(faction.name).thenReturn("TestFaction")
+        `when`(faction.displayName).thenReturn("People of Olzhar")
 
         val result = uut.onRequest(player, "faction_name")
-        assertEquals("TestFaction", result)
+        assertEquals("People of Olzhar", result)
+
+        assertEquals("TestFaction", uut.onRequest(player, "faction_canonical_name"))
     }
 
     @Test

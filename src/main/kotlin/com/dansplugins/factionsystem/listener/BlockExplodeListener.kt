@@ -2,6 +2,7 @@ package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfBlockPosition
+import com.dansplugins.factionsystem.faction.AdminFactionProtection
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.block.BlockExplodeEvent
@@ -16,5 +17,8 @@ class BlockExplodeListener(private val plugin: MedievalFactions) : Listener {
                 gateService.getGatesByTrigger(MfBlockPosition.fromBukkitBlock(block)).isNotEmpty()
         }
         event.blockList().removeAll(blocks)
+        event.blockList().removeAll { block ->
+            AdminFactionProtectionChecks.denies(plugin, block.location, AdminFactionProtection.EXPLOSIONS)
+        }
     }
 }

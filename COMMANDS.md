@@ -113,19 +113,26 @@ The main faction command can be accessed using any of the following aliases:
 
 Naming a vassal's leader is the only way an heir can be someone who is not already a member. A player belongs to exactly one faction, so such an heir takes yours by leaving their own, and their departure fires that faction's succession in turn - which may pass it to a vassal's leader in the same way, and so on down the chain. If the vassal cannot spare its leader, the nomination is passed over and the ordinary order applies.
 
-### `/faction set [name|description|prefix] [value]` or `/f set [name|description|prefix] [value]`
+### `/faction set [name|displayname|description|prefix] [value]` or `/f set [name|displayname|description|prefix] [value]`
 **Permissions:** 
 - `mf.rename` (default: true) - for name
+- `mf.displayname` (default: true) plus the faction change-name role permission - for your faction's display name
+- `mf.admin` and `mf.admin.displayname` (default: op) - for `--faction` staff targeting
 - `mf.desc` (default: true) - for description
 - `mf.prefix` (default: true) - for prefix
 
 **Description:** Sets various faction properties.  
 **Usage:**
 - `/f set name NewName` - Changes faction name
+- `/f set displayname People of Olzhar` - Shows `People of Olzhar` while keeping `PeopleOfOlzhar` as the faction key
+- `/f set displayname reset` - Restores the faction key as the displayed name
+- `/f set displayname --faction PeopleOfOlzhar People of Olzhar` - Staff form, including leaderless admin factions; use a faction ID or quote a key containing spaces
 - `/f set description "Our faction description"` - Sets faction description
 - `/f set prefix [TAG]` - Sets faction prefix
 
 **Notes:** With `mf.force.rename` (default: op), a faction name or ID can be given before the new name (`/f set name FactionName NewName`) to rename a faction other than the one you are in. As with `mf.force.kick`, the faction-role check still runs against the target faction, so you must also hold that faction's change-name role permission.
+
+Display names are optional, plain text, and limited to 64 characters. They accept letters, digits, spaces, apostrophes, hyphens, underscores, periods, commas, and parentheses. Faction names and IDs remain the keys for commands, uniqueness, and integrations. `%medievalfactions_faction_name%` shows the display name; `%medievalfactions_faction_canonical_name%` exposes the key for integrations.
 
 ### `/faction flag [list|set]` or `/f flag [list|set]`
 **Permissions:** 
@@ -509,6 +516,12 @@ See [FACTION_FLAGS.md](FACTION_FLAGS.md) for a complete list of available flags.
 **Usage:** `/f admin create FactionName`  
 **Notes:** Requires `allowLeaderlessFactions` to be enabled in config.
 
+### `/faction admin protection <faction> [pvp|playerdamage|mobspawning|explosions|firespread] [on|off|reset]` or `/f admin protection ...`
+**Permission:** `mf.admin.protection` (default: op)
+**Description:** Shows or changes protection within an admin-managed faction's claimed chunks.
+**Usage:** `/f admin protection Safe Haven` shows all settings. `/f admin protection Safe Haven pvp off` blocks player attacks; replace `pvp` with `playerdamage` to block all player damage, or `mobspawning` to block all creature spawns. `explosions off` protects blocks and entities from explosions inside the claim; `firespread off` stops natural fire ignition, fire spread, and burning. Use `on` to follow normal server rules and `reset` to remove the override.
+**Notes:** Only factions created with `/f admin create` or designated with `/f admin makeleaderless` qualify. The settings default to `on`, so existing factions retain their behavior. `on` does not override global PvP or spawn rules. Player damage and PvP use the victim's claimed location; mob spawning uses the spawn location. Explosion block filtering uses each affected block's claim, and blast damage uses each entity's location. Fire protection uses the block receiving fire or burn. Existing mobs are not removed.
+
 ### `/faction admin setleader [faction] [player]` or `/f admin setleader [faction] [player]`
 **Permission:** `mf.admin.setleader` (default: op)  
 **Description:** Sets a player as the leader of a faction.  
@@ -588,6 +601,7 @@ The `mf.admin` permission grants access to all admin commands including:
 - `mf.relationship.*` - Manage relationships
 - `mf.power.set` - Set player power
 - `mf.admin.create` - Create leaderless factions
+- `mf.admin.protection` - Set protection in admin-managed faction claims
 - `mf.admin.setleader` - Set faction leaders
 - `mf.migrate` - Migrate between storage backends
 - `mf.approve` - Approve/deny pending faction actions

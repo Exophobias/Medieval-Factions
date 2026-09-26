@@ -96,13 +96,35 @@ class MfFactionInfoCommand(private val plugin: MedievalFactions) : CommandExecut
                     return@Runnable
                 }
                 // send player faction info
-                sender.sendMessage("${BukkitChatColor.AQUA}${plugin.language["CommandFactionInfoTitle", faction.name]}")
+                sender.sendMessage("${BukkitChatColor.AQUA}${plugin.language["CommandFactionInfoTitle", faction.displayName]}")
+                if (faction.displayName != faction.name) {
+                    sender.sendMessage("${BukkitChatColor.GRAY}${plugin.language["CommandFactionInfoCanonicalName", faction.name]}")
+                }
                 if (sender.hasPermission("mf.rename") && senderFaction?.id == faction.id && role?.hasPermission(faction, plugin.factionPermissions.changeName) == true) {
                     sender.spigot().sendMessage(
                         TextComponent(plugin.language["CommandFactionInfoSetName"]).apply {
                             color = SpigotChatColor.GREEN
                             hoverEvent = HoverEvent(SHOW_TEXT, Text(plugin.language["CommandFactionInfoSetNameHover"]))
                             clickEvent = ClickEvent(RUN_COMMAND, "/faction set name")
+                        }
+                    )
+                }
+                val canSetOwnDisplayName =
+                    sender.hasPermission("mf.displayname") && senderFaction?.id == faction.id &&
+                        role?.hasPermission(faction, plugin.factionPermissions.changeName) == true
+                val canSetOtherDisplayName =
+                    sender.hasPermission("mf.admin") && sender.hasPermission("mf.admin.displayname")
+                if (canSetOwnDisplayName || canSetOtherDisplayName) {
+                    val suggestedCommand = if (canSetOwnDisplayName) {
+                        "/faction set displayname "
+                    } else {
+                        "/faction set displayname --faction ${faction.id.value} "
+                    }
+                    sender.spigot().sendMessage(
+                        TextComponent(plugin.language["CommandFactionInfoSetDisplayName"]).apply {
+                            color = SpigotChatColor.GREEN
+                            hoverEvent = HoverEvent(SHOW_TEXT, Text(plugin.language["CommandFactionInfoSetDisplayNameHover"]))
+                            clickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, suggestedCommand)
                         }
                     )
                 }
@@ -151,21 +173,21 @@ class MfFactionInfoCommand(private val plugin: MedievalFactions) : CommandExecut
                 val vassals = plugin.services.factionRelationshipService.getVassals(faction.id).mapNotNull(factionService::getFaction)
                 if (vassals.isNotEmpty()) {
                     sender.sendMessage("${BukkitChatColor.WHITE}${plugin.language["CommandFactionInfoVassalsTitle"]}")
-                    sender.sendMessage("${BukkitChatColor.GRAY}" + vassals.joinToString(transform = MfFaction::name))
+                    sender.sendMessage("${BukkitChatColor.GRAY}" + vassals.joinToString(transform = MfFaction::displayName))
                 }
 
                 // send allies information
                 val allies = plugin.services.factionRelationshipService.getAllies(faction.id).mapNotNull(factionService::getFaction)
                 if (allies.isNotEmpty()) {
                     sender.sendMessage("${BukkitChatColor.WHITE}${plugin.language["CommandFactionInfoAlliesTitle"]}")
-                    sender.sendMessage("${BukkitChatColor.GRAY}" + allies.joinToString(transform = MfFaction::name))
+                    sender.sendMessage("${BukkitChatColor.GRAY}" + allies.joinToString(transform = MfFaction::displayName))
                 }
 
                 // send wars information
                 val atWarWith = plugin.services.factionRelationshipService.getFactionsAtWarWith(faction.id).mapNotNull(factionService::getFaction)
                 if (atWarWith.isNotEmpty()) {
                     sender.sendMessage("${BukkitChatColor.WHITE}${plugin.language["CommandFactionInfoEnemiesTitle"]}")
-                    sender.sendMessage("${BukkitChatColor.GRAY}" + atWarWith.joinToString(transform = MfFaction::name))
+                    sender.sendMessage("${BukkitChatColor.GRAY}" + atWarWith.joinToString(transform = MfFaction::displayName))
                 }
 
                 factionService.fields

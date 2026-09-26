@@ -28,7 +28,7 @@ class FactionInfoBuilder(private val plugin: MedievalFactions) {
         val claimService = plugin.services.claimService
         val playerService = plugin.services.playerService
         return buildString {
-            append("<h1>${faction.name}</h1>")
+            append("<h1>${faction.displayName}</h1>")
             if (plugin.config.getBoolean("dynmap.showDescription")) {
                 append("<h2>Description</h2>")
                 append(faction.description)
@@ -49,7 +49,7 @@ class FactionInfoBuilder(private val plugin: MedievalFactions) {
                 val liege = liegeId?.let(factionService::getFaction)
                 if (liege != null) {
                     append("<h2>Liege</h2>")
-                    append(liege.name)
+                    append(liege.displayName)
                     append("<br />")
                 }
             }
@@ -57,7 +57,7 @@ class FactionInfoBuilder(private val plugin: MedievalFactions) {
                 val vassals = relationshipService.getVassals(faction.id).mapNotNull(factionService::getFaction)
                 if (vassals.isNotEmpty()) {
                     append("<h2>Vassals</h2>")
-                    append(vassals.joinToString(transform = MfFaction::name))
+                    append(vassals.joinToString(transform = MfFaction::displayName))
                     append("<br />")
                 }
             }
@@ -65,7 +65,7 @@ class FactionInfoBuilder(private val plugin: MedievalFactions) {
                 val allies = relationshipService.getAllies(faction.id).mapNotNull(factionService::getFaction)
                 if (allies.isNotEmpty()) {
                     append("<h2>Allies</h2>")
-                    append(allies.joinToString(transform = MfFaction::name))
+                    append(allies.joinToString(transform = MfFaction::displayName))
                     append("<br />")
                 }
             }
@@ -73,7 +73,7 @@ class FactionInfoBuilder(private val plugin: MedievalFactions) {
                 val atWarWith = relationshipService.getFactionsAtWarWith(faction.id).mapNotNull(factionService::getFaction)
                 if (atWarWith.isNotEmpty()) {
                     append("<h2>At war with</h2>")
-                    append(atWarWith.joinToString(transform = MfFaction::name))
+                    append(atWarWith.joinToString(transform = MfFaction::displayName))
                     append("<br />")
                 }
             }

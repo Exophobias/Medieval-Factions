@@ -55,7 +55,7 @@ class DenyApplicationTask(
 
         // Inform the applicant that their application has been denied
         if (targetPlayer.isOnline) {
-            targetPlayer.player?.sendMessage("${org.bukkit.ChatColor.RED}${plugin.language["CommandFactionDenyAppDenied", faction.name]}")
+            targetPlayer.player?.sendMessage("${org.bukkit.ChatColor.RED}${plugin.language["CommandFactionDenyAppDenied", faction.displayName]}")
         }
         sender.sendMessage("${org.bukkit.ChatColor.GREEN}${plugin.language["CommandFactionDenyAppDeniedSender", targetMfPlayer.name.toString()]}")
     }

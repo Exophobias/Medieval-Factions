@@ -76,16 +76,16 @@ class MfFactionDeclareIndependenceCommand(private val plugin: MedievalFactions) 
                         plugin,
                         Runnable {
                             faction.sendMessage(
-                                plugin.language["FactionDeclaredIndependenceWarNotificationTitle", liege.name],
-                                plugin.language["FactionDeclaredIndependenceWarNotificationBody", liege.name]
+                                plugin.language["FactionDeclaredIndependenceWarNotificationTitle", liege.displayName],
+                                plugin.language["FactionDeclaredIndependenceWarNotificationBody", liege.displayName]
                             )
                             liege.sendMessage(
-                                plugin.language["VassalDeclaredIndependenceWarNotificationTitle", faction.name],
-                                plugin.language["VassalDeclaredIndependenceWarNotificationBody", faction.name]
+                                plugin.language["VassalDeclaredIndependenceWarNotificationTitle", faction.displayName],
+                                plugin.language["VassalDeclaredIndependenceWarNotificationBody", faction.displayName]
                             )
                             plugin.server.onlinePlayers.filter { onlinePlayer ->
                                 (faction.members + liege.members).none { member -> member.playerId.toBukkitPlayer().uniqueId == onlinePlayer.uniqueId }
-                            }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionDeclaredIndependenceWar", faction.name, liege.name]}") }
+                            }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionDeclaredIndependenceWar", faction.displayName, liege.displayName]}") }
                         }
                     )
                 } else {
@@ -93,20 +93,20 @@ class MfFactionDeclareIndependenceCommand(private val plugin: MedievalFactions) 
                         plugin,
                         Runnable {
                             faction.sendMessage(
-                                plugin.language["FactionDeclaredIndependenceNotificationTitle", liege.name],
-                                plugin.language["FactionDeclaredIndependenceNotificationBody", liege.name]
+                                plugin.language["FactionDeclaredIndependenceNotificationTitle", liege.displayName],
+                                plugin.language["FactionDeclaredIndependenceNotificationBody", liege.displayName]
                             )
                             liege.sendMessage(
-                                plugin.language["VassalDeclaredIndependenceNotificationTitle", faction.name],
-                                plugin.language["VassalDeclaredIndependenceNotificationBody", faction.name]
+                                plugin.language["VassalDeclaredIndependenceNotificationTitle", faction.displayName],
+                                plugin.language["VassalDeclaredIndependenceNotificationBody", faction.displayName]
                             )
                             plugin.server.onlinePlayers.filter { onlinePlayer ->
                                 (faction.members + liege.members).none { member -> member.playerId.toBukkitPlayer().uniqueId == onlinePlayer.uniqueId }
-                            }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionDeclaredIndependence", faction.name, liege.name]}") }
+                            }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionDeclaredIndependence", faction.displayName, liege.displayName]}") }
                         }
                     )
                 }
-                sender.sendMessage("${ChatColor.GREEN}${plugin.language["CommandFactionDeclareIndependenceSuccess", liege.name]}")
+                sender.sendMessage("${ChatColor.GREEN}${plugin.language["CommandFactionDeclareIndependenceSuccess", liege.displayName]}")
             }
         )
         return true

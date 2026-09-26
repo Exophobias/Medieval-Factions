@@ -74,7 +74,7 @@ class MfFactionDeclareWarCommand(private val plugin: MedievalFactions) : Command
                 if (existingRelationships.any { it.type == AT_WAR } &&
                     reverseRelationships.any { it.type == AT_WAR }
                 ) {
-                    sender.sendMessage("$RED${plugin.language["CommandFactionDeclareWarAlreadyAtWar", target.name]}")
+                    sender.sendMessage("$RED${plugin.language["CommandFactionDeclareWarAlreadyAtWar", target.displayName]}")
                     return@Runnable
                 }
                 if (existingRelationships.any { it.type == ALLY } && reverseRelationships.any { it.type == ALLY }) {
@@ -104,7 +104,7 @@ class MfFactionDeclareWarCommand(private val plugin: MedievalFactions) : Command
                             reason = reason
                         )
                     )
-                    sender.sendMessage("$GREEN${plugin.language["CommandFactionDeclareWarPendingApproval", target.name]}")
+                    sender.sendMessage("$GREEN${plugin.language["CommandFactionDeclareWarPendingApproval", target.displayName]}")
                     plugin.server.scheduler.runTask(
                         plugin,
                         Runnable {
@@ -112,7 +112,7 @@ class MfFactionDeclareWarCommand(private val plugin: MedievalFactions) : Command
                             plugin.server.onlinePlayers
                                 .filter { it.hasPermission("mf.approve") }
                                 .forEach { moderator ->
-                                    moderator.sendMessage("${ChatColor.YELLOW}${plugin.language["ApprovalRequestNotification", faction.name, warActionLabel, target.name, request.id.value]}")
+                                    moderator.sendMessage("${ChatColor.YELLOW}${plugin.language["ApprovalRequestNotification", faction.displayName, warActionLabel, target.displayName, request.id.value]}")
                                     if (reason != null) {
                                         moderator.sendMessage("${ChatColor.GRAY}${plugin.language["ApprovalRequestReason", reason]}")
                                     }
@@ -127,21 +127,21 @@ class MfFactionDeclareWarCommand(private val plugin: MedievalFactions) : Command
                         plugin.logger.log(SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
                         return@Runnable
                     }
-                sender.sendMessage("${ChatColor.GREEN}${plugin.language["CommandFactionDeclareWarSuccess", target.name]}")
+                sender.sendMessage("${ChatColor.GREEN}${plugin.language["CommandFactionDeclareWarSuccess", target.displayName]}")
                 plugin.server.scheduler.runTask(
                     plugin,
                     Runnable {
                         faction.sendMessage(
-                            plugin.language["FactionAtWarNotificationTitle", target.name],
-                            plugin.language["FactionAtWarNotificationBody", target.name]
+                            plugin.language["FactionAtWarNotificationTitle", target.displayName],
+                            plugin.language["FactionAtWarNotificationBody", target.displayName]
                         )
                         target.sendMessage(
-                            plugin.language["FactionAtWarNotificationTitle", faction.name],
-                            plugin.language["FactionAtWarNotificationBody", faction.name]
+                            plugin.language["FactionAtWarNotificationTitle", faction.displayName],
+                            plugin.language["FactionAtWarNotificationBody", faction.displayName]
                         )
                         plugin.server.onlinePlayers.filter { onlinePlayer ->
                             (faction.members + target.members).none { member -> member.playerId.toBukkitPlayer().uniqueId == onlinePlayer.uniqueId }
-                        }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionDeclaredWar", faction.name, target.name]}") }
+                        }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionDeclaredWar", faction.displayName, target.displayName]}") }
                     }
                 )
             }

@@ -4,6 +4,7 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.anyArg
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.event.FactionCreatedEvent
+import com.dansplugins.factionsystem.api.event.FactionDisplayNameChangedEvent
 import com.dansplugins.factionsystem.api.event.FactionMemberJoinedEvent
 import com.dansplugins.factionsystem.api.impl.ApiFactionLifecycleListener
 import com.dansplugins.factionsystem.api.impl.DefaultMedievalFactionsApi
@@ -388,6 +389,41 @@ class MfFactionMutationLifecycleTest {
         drainMainTasks(tasks)
         assertEquals(1, events.filterIsInstance<FactionCreatedEvent>().size)
         assertTrue(events.filterIsInstance<FactionMemberJoinedEvent>().isEmpty())
+    }
+
+    @Test
+    fun displayNameChangeNotifiesOnlyAfterCommittedSave() {
+        val faction = createFaction("PeopleOfOlzhar", listOf(player()))
+        events.clear()
+        val tasks = queueMainTasks()
+        repository.beforeWrite = {
+            assertEquals("PeopleOfOlzhar", current(faction).displayName)
+            assertTrue(events.filterIsInstance<FactionDisplayNameChangedEvent>().isEmpty())
+        }
+        eventProbe = { event ->
+            if (event is FactionDisplayNameChangedEvent) {
+                assertEquals("People of Olzhar", current(faction).displayName)
+                assertFalse(event.isAsynchronous)
+            }
+        }
+
+        service.save(current(faction).copy(displayNameOverride = "People of Olzhar"))
+            .onFailure { throw it.reason.cause }
+        assertTrue(events.filterIsInstance<FactionDisplayNameChangedEvent>().isEmpty())
+        drainMainTasks(tasks)
+        val changes = events.filterIsInstance<FactionDisplayNameChangedEvent>()
+        assertEquals(1, changes.size)
+        assertEquals(FactionId(faction.id.value), changes.single().faction)
+        assertEquals("PeopleOfOlzhar", changes.single().previousDisplayName)
+        assertEquals("People of Olzhar", changes.single().displayName)
+
+        repository.beforeWrite = {}
+        repository.failSave = true
+        events.clear()
+        assertTrue(service.save(current(faction).copy(displayNameOverride = "Other Name")) is Failure)
+        drainMainTasks(tasks)
+        assertTrue(events.filterIsInstance<FactionDisplayNameChangedEvent>().isEmpty())
+        assertEquals("People of Olzhar", current(faction).displayName)
     }
 
     @Test

@@ -54,21 +54,21 @@ class MfFactionApproveCommand(private val plugin: MedievalFactions) : CommandExe
                                 plugin.logger.log(SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
                                 return@Runnable
                             }
-                        sender.sendMessage("$GREEN${plugin.language["CommandFactionApproveWarSuccess", faction.name, target.name]}")
+                        sender.sendMessage("$GREEN${plugin.language["CommandFactionApproveWarSuccess", faction.displayName, target.displayName]}")
                         plugin.server.scheduler.runTask(
                             plugin,
                             Runnable {
                                 faction.sendMessage(
-                                    plugin.language["FactionAtWarNotificationTitle", target.name],
-                                    plugin.language["FactionAtWarNotificationBody", target.name]
+                                    plugin.language["FactionAtWarNotificationTitle", target.displayName],
+                                    plugin.language["FactionAtWarNotificationBody", target.displayName]
                                 )
                                 target.sendMessage(
-                                    plugin.language["FactionAtWarNotificationTitle", faction.name],
-                                    plugin.language["FactionAtWarNotificationBody", faction.name]
+                                    plugin.language["FactionAtWarNotificationTitle", faction.displayName],
+                                    plugin.language["FactionAtWarNotificationBody", faction.displayName]
                                 )
                                 plugin.server.onlinePlayers.filter { onlinePlayer ->
                                     (faction.members + target.members).none { member -> member.playerId.toBukkitPlayer().uniqueId == onlinePlayer.uniqueId }
-                                }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionDeclaredWar", faction.name, target.name]}") }
+                                }.forEach { onlinePlayer -> onlinePlayer.sendMessage("$RED${plugin.language["FactionDeclaredWar", faction.displayName, target.displayName]}") }
                             }
                         )
                     }
@@ -82,33 +82,33 @@ class MfFactionApproveCommand(private val plugin: MedievalFactions) : CommandExe
                         }
                         val reverseRelationships = factionRelationshipService.getRelationships(target.id, faction.id)
                         if (reverseRelationships.any { it.type == MfFactionRelationshipType.ALLY }) {
-                            sender.sendMessage("$GREEN${plugin.language["CommandFactionApproveAllySuccess", faction.name, target.name]}")
+                            sender.sendMessage("$GREEN${plugin.language["CommandFactionApproveAllySuccess", faction.displayName, target.displayName]}")
                             plugin.server.scheduler.runTask(
                                 plugin,
                                 Runnable {
                                     faction.sendMessage(
-                                        plugin.language["FactionAllyNotificationTitle", target.name],
-                                        plugin.language["FactionAllyNotificationBody", target.name]
+                                        plugin.language["FactionAllyNotificationTitle", target.displayName],
+                                        plugin.language["FactionAllyNotificationBody", target.displayName]
                                     )
                                     target.sendMessage(
-                                        plugin.language["FactionAllyNotificationTitle", faction.name],
-                                        plugin.language["FactionAllyNotificationBody", faction.name]
+                                        plugin.language["FactionAllyNotificationTitle", faction.displayName],
+                                        plugin.language["FactionAllyNotificationBody", faction.displayName]
                                     )
                                 }
                             )
                         } else {
-                            sender.sendMessage("$GREEN${plugin.language["CommandFactionApproveAllyRequestSuccess", faction.name, target.name]}")
+                            sender.sendMessage("$GREEN${plugin.language["CommandFactionApproveAllyRequestSuccess", faction.displayName, target.displayName]}")
                             plugin.server.scheduler.runTask(
                                 plugin,
                                 Runnable {
                                     val requesterName = request.requesterId.toBukkitPlayer().name ?: plugin.language["UnknownPlayer"]
                                     faction.sendMessage(
-                                        plugin.language["FactionAllyRequestSentNotificationTitle", requesterName, target.name],
-                                        plugin.language["FactionAllyRequestSentNotificationBody", requesterName, target.name]
+                                        plugin.language["FactionAllyRequestSentNotificationTitle", requesterName, target.displayName],
+                                        plugin.language["FactionAllyRequestSentNotificationBody", requesterName, target.displayName]
                                     )
                                     target.sendMessage(
-                                        plugin.language["FactionAllyRequestReceivedNotificationTitle", requesterName, faction.name],
-                                        plugin.language["FactionAllyRequestReceivedNotificationBody", requesterName, faction.name]
+                                        plugin.language["FactionAllyRequestReceivedNotificationTitle", requesterName, faction.displayName],
+                                        plugin.language["FactionAllyRequestReceivedNotificationBody", requesterName, faction.displayName]
                                     )
                                 }
                             )
@@ -122,17 +122,17 @@ class MfFactionApproveCommand(private val plugin: MedievalFactions) : CommandExe
                             plugin.logger.log(SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
                             return@Runnable
                         }
-                        sender.sendMessage("$GREEN${plugin.language["CommandFactionApproveVassalizeSuccess", faction.name, target.name]}")
+                        sender.sendMessage("$GREEN${plugin.language["CommandFactionApproveVassalizeSuccess", faction.displayName, target.displayName]}")
                         plugin.server.scheduler.runTask(
                             plugin,
                             Runnable {
                                 faction.sendMessage(
-                                    plugin.language["FactionVassalizationRequestSentNotificationTitle", target.name],
-                                    plugin.language["FactionVassalizationRequestSentNotificationBody", target.name]
+                                    plugin.language["FactionVassalizationRequestSentNotificationTitle", target.displayName],
+                                    plugin.language["FactionVassalizationRequestSentNotificationBody", target.displayName]
                                 )
                                 target.sendMessage(
-                                    plugin.language["FactionVassalizationRequestReceivedNotificationTitle", faction.name],
-                                    plugin.language["FactionVassalizationRequestReceivedNotificationBody", faction.name]
+                                    plugin.language["FactionVassalizationRequestReceivedNotificationTitle", faction.displayName],
+                                    plugin.language["FactionVassalizationRequestReceivedNotificationBody", faction.displayName]
                                 )
                             }
                         )

@@ -4,6 +4,7 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.WarEndNotice
 import com.dansplugins.factionsystem.api.event.FactionCreatedEvent
+import com.dansplugins.factionsystem.api.event.FactionDisplayNameChangedEvent
 import com.dansplugins.factionsystem.api.event.FactionMemberJoinedEvent
 import com.dansplugins.factionsystem.api.event.FactionMemberLeftEvent
 import com.dansplugins.factionsystem.api.event.FactionPrimaryOwnerChangedEvent
@@ -138,6 +139,9 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
     }
 
     private fun saveWithinFixtureBoundary(faction: MfFaction): MfFaction {
+        require(faction.displayNameOverride == null || MfFactionDisplayName.isValid(faction.displayNameOverride)) {
+            "Invalid faction display name"
+        }
         val plan = mutableListOf<SaveMutation>()
         val lifecycle = SaveLifecycle()
         var committed = false
@@ -512,6 +516,15 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                         FactionId(result.id.value),
                         previous.primaryOwnerId?.toUuidOrNull(),
                         result.primaryOwnerId?.toUuidOrNull()
+                    )
+                )
+            }
+            if (previous != null && previous.displayName != result.displayName) {
+                fireOnMainThread(
+                    FactionDisplayNameChangedEvent(
+                        FactionId(result.id.value),
+                        previous.displayName,
+                        result.displayName
                     )
                 )
             }

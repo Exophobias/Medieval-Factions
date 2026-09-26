@@ -40,7 +40,7 @@ class AsyncPlayerChatListener(private val plugin: MedievalFactions) : Listener {
                 }
             )
         } else if (isDefaultChatFormattingEnabled) {
-            event.format = "${ChatColor.WHITE}[${ChatColor.of(faction.flags[plugin.flags.color])}${faction.prefix ?: faction.name}${ChatColor.WHITE}] %s: %s"
+            event.format = "${ChatColor.WHITE}[${ChatColor.of(faction.flags[plugin.flags.color])}${faction.prefix ?: faction.displayName}${ChatColor.WHITE}] %s: %s"
         }
     }
 }

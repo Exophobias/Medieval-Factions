@@ -95,7 +95,7 @@ class MfFactionJoinCommand(private val plugin: MedievalFactions) : CommandExecut
                     plugin.language["FactionNewMemberNotificationBody", sender.name]
                 )
                 sender.sendMessage(
-                    "$GREEN${plugin.language["CommandFactionJoinSuccess", faction.name]}"
+                    "$GREEN${plugin.language["CommandFactionJoinSuccess", faction.displayName]}"
                 )
                 try {
                     factionService.cancelAllApplicationsForPlayer(mfPlayer)
@@ -109,13 +109,13 @@ class MfFactionJoinCommand(private val plugin: MedievalFactions) : CommandExecut
     }
 
     private fun confirmJoin(player: Player, faction: MfFaction) {
-        player.sendMessage("$RED${plugin.language["CommandFactionJoinConfirmNoInvitation", faction.name]}")
+        player.sendMessage("$RED${plugin.language["CommandFactionJoinConfirmNoInvitation", faction.displayName]}")
         player.spigot().sendMessage(
             TextComponent(
                 plugin.language["CommandFactionJoinConfirmNoInvitationConfirmButton"]
             ).apply {
                 color = SpigotChatColor.GREEN
-                hoverEvent = HoverEvent(SHOW_TEXT, Text(plugin.language["CommandFactionJoinConfirmNoInvitationConfirmButtonHover", faction.name]))
+                hoverEvent = HoverEvent(SHOW_TEXT, Text(plugin.language["CommandFactionJoinConfirmNoInvitationConfirmButtonHover", faction.displayName]))
                 clickEvent = ClickEvent(RUN_COMMAND, "/faction join ${faction.id.value} -f")
             }
         )

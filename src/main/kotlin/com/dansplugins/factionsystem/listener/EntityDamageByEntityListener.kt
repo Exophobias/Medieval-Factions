@@ -16,6 +16,10 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
 
     @EventHandler
     fun onEntityDamageByEntity(event: EntityDamageByEntityEvent) {
+        if (AdminFactionProtectionChecks.deniesDamage(plugin, event)) {
+            event.isCancelled = true
+            return
+        }
         val damaged = event.entity
         val damager = event.damager
         val damagerPlayer: Player? = when (damager) {

@@ -76,8 +76,8 @@ class MfFactionBreakAllianceCommand(private val plugin: MedievalFactions) : Comm
                             plugin.language["FactionAllianceBrokenNotificationBody", target.name]
                         )
                         target.sendMessage(
-                            plugin.language["FactionAllianceBrokenNotificationTitle", faction.name],
-                            plugin.language["FactionAllianceBrokenNotificationBody", faction.name]
+                            plugin.language["FactionAllianceBrokenNotificationTitle", faction.displayName],
+                            plugin.language["FactionAllianceBrokenNotificationBody", faction.displayName]
                         )
                     }
                 )

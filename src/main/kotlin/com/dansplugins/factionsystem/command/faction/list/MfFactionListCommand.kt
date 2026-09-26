@@ -47,7 +47,7 @@ class MfFactionListCommand(private val plugin: MedievalFactions) : CommandExecut
                                         TextComponent(
                                             plugin.language[
                                                 "CommandFactionListItem",
-                                                faction.name
+                                                faction.displayName
                                             ]
                                         ).apply {
                                             color = SpigotChatColor.AQUA

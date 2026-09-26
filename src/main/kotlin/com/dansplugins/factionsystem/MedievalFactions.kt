@@ -43,6 +43,7 @@ import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.law.JooqMfLawRepository
 import com.dansplugins.factionsystem.law.MfLawRepository
 import com.dansplugins.factionsystem.law.MfLawService
+import com.dansplugins.factionsystem.listener.AdminFactionFireListener
 import com.dansplugins.factionsystem.listener.AreaEffectCloudApplyListener
 import com.dansplugins.factionsystem.listener.AsyncPlayerChatListener
 import com.dansplugins.factionsystem.listener.AsyncPlayerPreLoginListener
@@ -393,6 +394,7 @@ class MedievalFactions : JavaPlugin() {
             AsyncPlayerPreLoginListener(this),
             BlockBreakListener(this),
             BlockBurnListener(this),
+            AdminFactionFireListener(this),
             BlockExplodeListener(this),
             BlockPistonExtendListener(this),
             BlockPistonRetractListener(this),
@@ -540,7 +542,7 @@ class MedievalFactions : JavaPlugin() {
                     } else {
                         player.spigot().sendMessage(
                             ACTION_BAR,
-                            *TextComponent.fromLegacyText("${ChatColor.of(faction.flags[flags.color])}${faction.name}")
+                            *TextComponent.fromLegacyText("${ChatColor.of(faction.flags[flags.color])}${faction.displayName}")
                         )
                     }
                 }

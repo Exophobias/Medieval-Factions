@@ -36,7 +36,7 @@ class MfFactionClaimCheckCommand(private val plugin: MedievalFactions) : Command
                     sender.sendMessage("$GREEN${plugin.language["CommandFactionCheckClaimNotClaimed"]}")
                     return@Runnable
                 }
-                sender.sendMessage("$GREEN${plugin.language["CommandFactionCheckClaimClaimed", faction.name]}")
+                sender.sendMessage("$GREEN${plugin.language["CommandFactionCheckClaimClaimed", faction.displayName]}")
             }
         )
         return true

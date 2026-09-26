@@ -379,7 +379,7 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
                                 plugin,
                                 Runnable {
                                     players.forEach { player ->
-                                        val title = "${ChatColor.of(faction.flags[plugin.flags.color])}${faction.name}"
+                                        val title = "${ChatColor.of(faction.flags[plugin.flags.color])}${faction.displayName}"
                                         val subtitle = "${ChatColor.of(faction.flags[plugin.flags.color])}${faction.description}"
                                         if (plugin.config.getBoolean("factions.titleTerritoryIndicator")) {
                                             player.resetTitle()

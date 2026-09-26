@@ -160,7 +160,7 @@ class MfFactionFlagListCommand(private val plugin: MedievalFactions) : CommandEx
             plugin.language,
             lazy {
                 arrayOf(
-                    TextComponent(plugin.language["CommandFactionFlagListTitle", faction.name]).apply {
+                    TextComponent(plugin.language["CommandFactionFlagListTitle", faction.displayName]).apply {
                         color = SpigotChatColor.AQUA
                         isBold = true
                     }

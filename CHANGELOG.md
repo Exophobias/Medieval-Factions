@@ -15,6 +15,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Patriam fork
 
 #### Added
+- **Staff-managed territory protection for admin factions.** `/f admin protection` can block PvP,
+  player damage, creature spawning, explosions and natural fire spread in an admin faction's claims.
+  Each setting is independent and defaults to existing server behavior. Only factions created with
+  `/f admin create` or designated with `/f admin makeleaderless` can use these settings.
+- **Optional faction display names.** `/f set displayname People of Olzhar` gives a faction named
+  `PeopleOfOlzhar` a readable label in MedievalFactions messages, territory titles, maps, chat and
+  placeholders. The canonical name remains the command and integration lookup key. Staff can set a
+  leaderless faction's label with `--faction`, and `reset` restores the canonical name as the label.
 - **A stable consumer API** under `com.dansplugins.factionsystem.api`, so a dependent plugin never has
   to name an MF internal: `createFaction`, `disbandFaction`, `transferMembers`, `transferAllClaims`,
   `renounceLiege`, `swearFealty`, `declareWar`, a positional `claim(faction, worldId, x, z)`,

@@ -139,10 +139,10 @@ class MfFactionInviteCommand(private val plugin: MedievalFactions) : CommandExec
                 if (targetOnlinePlayer != null) {
                     targetOnlinePlayer.spigot().sendMessage(
                         *arrayOf(
-                            TextComponent(plugin.language["CommandFactionInviteReceived", faction.name] + " ").apply {
+                            TextComponent(plugin.language["CommandFactionInviteReceived", faction.displayName] + " ").apply {
                                 color = SpigotChatColor.GRAY
                             },
-                            TextComponent(plugin.language["CommandFactionInviteAccept", faction.name]).apply {
+                            TextComponent(plugin.language["CommandFactionInviteAccept", faction.displayName]).apply {
                                 color = SpigotChatColor.GREEN
                                 hoverEvent = HoverEvent(SHOW_TEXT, Text(plugin.language["CommandFactionInviteAcceptHover"]))
                                 clickEvent = ClickEvent(RUN_COMMAND, "/faction join ${faction.id.value}")
@@ -153,8 +153,8 @@ class MfFactionInviteCommand(private val plugin: MedievalFactions) : CommandExec
                     plugin.services.notificationService.sendNotification(
                         targetMfPlayer.id,
                         MfNotification(
-                            plugin.language["CommandFactionInviteReceivedNotificationTitle", faction.name],
-                            plugin.language["CommandFactionInviteReceivedNotificationBody", faction.name]
+                            plugin.language["CommandFactionInviteReceivedNotificationTitle", faction.displayName],
+                            plugin.language["CommandFactionInviteReceivedNotificationBody", faction.displayName]
                         )
                     )
                 }

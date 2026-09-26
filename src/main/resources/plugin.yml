@@ -260,6 +260,12 @@ permissions:
   mf.rename:
     description: Allows you to rename your faction
     default: true
+  mf.displayname:
+    description: Allows changing your faction's plain-text display name with the change-name faction permission
+    default: true
+  mf.admin.displayname:
+    description: Allows staff to set another faction's display name, including leaderless admin factions
+    default: op
   mf.desc:
     description: Allows you to change your faction's description
     default: true
@@ -415,6 +421,9 @@ permissions:
   mf.admin.setleader:
     description: Allows setting a player as the leader of a faction
     default: op
+  mf.admin.protection:
+    description: Allows setting protection rules for admin-managed faction territory
+    default: op
   mf.dpc:
     description: Allows managing DPC community API integration settings
     default: op
@@ -434,5 +443,7 @@ permissions:
     - mf.admin.create
     - mf.admin.makeleaderless
     - mf.admin.setleader
+    - mf.admin.displayname
+    - mf.admin.protection
     - mf.approve
     - mf.migrate

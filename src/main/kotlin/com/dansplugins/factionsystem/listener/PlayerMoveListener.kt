@@ -96,7 +96,7 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
                     plugin,
                     Runnable {
                         val title = if (newChunkFaction != null) {
-                            "${ChatColor.of(newChunkFaction.flags[plugin.flags.color])}${newChunkFaction.name}"
+                            "${ChatColor.of(newChunkFaction.flags[plugin.flags.color])}${newChunkFaction.displayName}"
                         } else {
                             "${ChatColor.of(plugin.config.getString("wilderness.color"))}${plugin.language["Wilderness"]}"
                         }

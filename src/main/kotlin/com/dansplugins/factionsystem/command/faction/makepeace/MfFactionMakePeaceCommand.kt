@@ -86,12 +86,12 @@ class MfFactionMakePeaceCommand(private val plugin: MedievalFactions) : CommandE
                         plugin,
                         Runnable {
                             faction.sendMessage(
-                                plugin.language["FactionPeaceRequestSentNotificationTitle", sender.name, target.name],
-                                plugin.language["FactionPeaceRequestSentNotificationBody", sender.name, target.name]
+                                plugin.language["FactionPeaceRequestSentNotificationTitle", sender.name, target.displayName],
+                                plugin.language["FactionPeaceRequestSentNotificationBody", sender.name, target.displayName]
                             )
                             target.sendMessage(
-                                plugin.language["FactionPeaceRequestReceivedNotificationTitle", sender.name, faction.name],
-                                plugin.language["FactionPeaceRequestReceivedNotificationBody", sender.name, faction.name]
+                                plugin.language["FactionPeaceRequestReceivedNotificationTitle", sender.name, faction.displayName],
+                                plugin.language["FactionPeaceRequestReceivedNotificationBody", sender.name, faction.displayName]
                             )
                         }
                     )
@@ -101,12 +101,12 @@ class MfFactionMakePeaceCommand(private val plugin: MedievalFactions) : CommandE
                         plugin,
                         Runnable {
                             faction.sendMessage(
-                                plugin.language["FactionPeaceMadeNotificationTitle", target.name],
-                                plugin.language["FactionPeaceMadeNotificationBody", target.name]
+                                plugin.language["FactionPeaceMadeNotificationTitle", target.displayName],
+                                plugin.language["FactionPeaceMadeNotificationBody", target.displayName]
                             )
                             target.sendMessage(
-                                plugin.language["FactionPeaceMadeNotificationTitle", faction.name],
-                                plugin.language["FactionPeaceMadeNotificationBody", faction.name]
+                                plugin.language["FactionPeaceMadeNotificationTitle", faction.displayName],
+                                plugin.language["FactionPeaceMadeNotificationBody", faction.displayName]
                             )
                         }
                     )

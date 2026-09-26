@@ -75,8 +75,8 @@ class MfFactionDeclineVassalizationCommand(private val plugin: MedievalFactions)
                             plugin.language["FactionVassalizationRequestDeclinedNotificationBody", target.name]
                         )
                         target.sendMessage(
-                            plugin.language["FactionVassalizationRequestRejectedNotificationTitle", faction.name],
-                            plugin.language["FactionVassalizationRequestRejectedNotificationBody", faction.name]
+                            plugin.language["FactionVassalizationRequestRejectedNotificationTitle", faction.displayName],
+                            plugin.language["FactionVassalizationRequestRejectedNotificationBody", faction.displayName]
                         )
                     }
                 )

@@ -31,6 +31,12 @@
           "minLength": 1,
           "description": "Faction name"
         },
+        "displayNameOverride": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Optional plain-text display name; omitted for canonical-name fallback"
+        },
         "description": {
           "type": "string",
           "description": "Faction description"

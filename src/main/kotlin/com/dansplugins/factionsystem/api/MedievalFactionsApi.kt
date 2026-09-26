@@ -98,7 +98,7 @@ interface MedievalFactionsApi {
     fun getFaction(id: FactionId): FactionView?
 
     /**
-     * Look a faction up by its display name.
+     * Look a faction up by its canonical name, independent of its display name.
      *
      * Named distinctly from [getFaction] rather than overloading it: [FactionId] wraps a [String], so
      * an overload taking a bare `String` is trivially selected by accident when a caller has an id in

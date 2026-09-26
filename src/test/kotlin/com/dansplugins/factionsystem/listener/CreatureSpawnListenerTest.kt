@@ -3,6 +3,9 @@ package com.dansplugins.factionsystem.listener
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.faction.MfFaction
+import com.dansplugins.factionsystem.faction.MfFactionId
+import com.dansplugins.factionsystem.faction.MfFactionService
 import com.dansplugins.factionsystem.service.Services
 import org.bukkit.Bukkit
 import org.bukkit.Chunk
@@ -20,6 +23,7 @@ import org.mockito.Mockito.mockStatic
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import java.util.UUID
 
 class CreatureSpawnListenerTest {
 
@@ -27,6 +31,7 @@ class CreatureSpawnListenerTest {
     private lateinit var config: FileConfiguration
     private lateinit var services: Services
     private lateinit var claimService: MfClaimService
+    private lateinit var factionService: MfFactionService
     private lateinit var uut: CreatureSpawnListener
     private lateinit var mockedBukkit: MockedStatic<Bukkit>
 
@@ -39,10 +44,12 @@ class CreatureSpawnListenerTest {
         config = mock(FileConfiguration::class.java)
         services = mock(Services::class.java)
         claimService = mock(MfClaimService::class.java)
+        factionService = mock(MfFactionService::class.java)
 
         `when`(plugin.config).thenReturn(config)
         `when`(plugin.services).thenReturn(services)
         `when`(services.claimService).thenReturn(claimService)
+        `when`(services.factionService).thenReturn(factionService)
         `when`(config.getBoolean("factions.mobsSpawnInFactionTerritory")).thenReturn(false)
         `when`(config.getStringList("factions.allowedMobSpawnReasons")).thenReturn(emptyList())
 
@@ -82,7 +89,9 @@ class CreatureSpawnListenerTest {
         `when`(event.location).thenReturn(location)
         `when`(location.chunk).thenReturn(chunk)
         `when`(event.spawnReason).thenReturn(CreatureSpawnEvent.SpawnReason.NATURAL)
-        `when`(claimService.getClaim(chunk)).thenReturn(mock(MfClaimedChunk::class.java))
+        val factionId = MfFactionId.generate()
+        `when`(claimService.getClaim(chunk)).thenReturn(MfClaimedChunk(UUID.randomUUID(), 0, 0, factionId))
+        `when`(factionService.getFaction(factionId)).thenReturn(mock(MfFaction::class.java))
         return event
     }
 }

@@ -27,6 +27,9 @@ interface FactionView {
 
     val id: FactionId
     val name: String
+    /** Player-facing label. [name] remains the canonical lookup name. */
+    val displayName: String
+        get() = name
     val description: String
 
     /** The faction's home/core location, or null if unset or its world is not loaded. */

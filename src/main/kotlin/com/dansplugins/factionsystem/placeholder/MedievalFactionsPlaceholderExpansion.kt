@@ -31,6 +31,7 @@ class MedievalFactionsPlaceholderExpansion(private val plugin: MedievalFactions)
         if (player == null) return null
         return when (val paramsLowercase = params.lowercase()) {
             "faction_name" -> getFactionName(player)
+            "faction_canonical_name" -> getFactionCanonicalName(player)
             "faction_prefix" -> getFactionPrefix(player)
             "faction_total_claimed_chunks" -> getFactionTotalClaimedChunks(player)
             "faction_cumulative_power" -> getFactionPower(player)
@@ -98,13 +99,19 @@ class MedievalFactionsPlaceholderExpansion(private val plugin: MedievalFactions)
     private fun getFactionName(player: OfflinePlayer): String {
         val faction = getPlayerFaction(player)
             ?: return (plugin.config.getString("factions.factionlessFactionName") ?: "Factionless")
+        return faction.displayName
+    }
+
+    private fun getFactionCanonicalName(player: OfflinePlayer): String {
+        val faction = getPlayerFaction(player)
+            ?: return (plugin.config.getString("factions.factionlessFactionName") ?: "Factionless")
         return faction.name
     }
 
     private fun getFactionPrefix(player: OfflinePlayer): String {
         val faction = getPlayerFaction(player)
             ?: return (plugin.config.getString("factions.factionlessFactionName") ?: "Factionless")
-        return faction.prefix ?: faction.name
+        return faction.prefix ?: faction.displayName
     }
 
     private fun getFactionTotalClaimedChunks(player: OfflinePlayer): String {
@@ -178,7 +185,7 @@ class MedievalFactionsPlaceholderExpansion(private val plugin: MedievalFactions)
         val factionService = plugin.services.factionService
         val relationshipService = plugin.services.factionRelationshipService
         val liegeId = relationshipService.getRelationships(faction.id, LIEGE).singleOrNull()?.targetId ?: return "N/A"
-        return factionService.getFaction(liegeId)?.name ?: "N/A"
+        return factionService.getFaction(liegeId)?.displayName ?: "N/A"
     }
 
     private fun getFactionPopulation(player: OfflinePlayer): String {
@@ -219,7 +226,7 @@ class MedievalFactionsPlaceholderExpansion(private val plugin: MedievalFactions)
         if (claim != null) {
             val factionService = plugin.services.factionService
             val faction = factionService.getFaction(claim.factionId)
-            if (faction != null) return faction.name
+            if (faction != null) return faction.displayName
         }
         return "Wilderness"
     }
