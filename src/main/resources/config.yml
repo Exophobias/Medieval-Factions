@@ -1,5 +1,5 @@
 # Independent operator-configuration schema. Do not change this to the plugin/JAR version.
-config-version: 2
+config-version: 3
 version: @version@
 language: en-US
 storage:
@@ -121,7 +121,12 @@ factions:
   maxMembers: -1
   claimFillMaxChunks: 100
   claimFillMaxDepth: 50
-  allowLeaderlessFactions: false  # When true, factions can exist without any members. When the last member leaves, the faction and its claims remain intact. Operators can create leaderless factions using /faction admin create.
+  # Master switch that permits a faction to have no members.
+  allowLeaderlessFactions: false
+  # When true, an ordinary last-member departure still disbands the faction. Staff can designate
+  # an existing faction with /faction admin makeleaderless so it survives becoming empty.
+  # Set false to retain schema 2 behavior where any faction can become empty.
+  adminOnlyLeaderlessFactions: true
   defaults:
     flags:
       alliesCanInteractWithLand: false

@@ -39,8 +39,7 @@ class MfFactionLeaveCommand(private val plugin: MedievalFactions) : CommandExecu
                     return@Runnable
                 }
                 if (faction.members.size == 1) {
-                    val allowLeaderlessFactions = plugin.config.getBoolean("factions.allowLeaderlessFactions")
-                    if (allowLeaderlessFactions) {
+                    if (faction.canRemainLeaderless) {
                         // Remove the member but keep the faction
                         factionService.save(faction.copy(members = emptyList()))
                             .onFailure {

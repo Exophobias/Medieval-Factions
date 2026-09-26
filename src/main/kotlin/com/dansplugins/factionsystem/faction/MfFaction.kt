@@ -82,8 +82,13 @@ data class MfFaction(
      * the migration identity for an owner whose tenure predates this field; it is still a valid
      * compare-and-set token and is replaced the next time the seat moves.
      */
-    val primaryOwnerTerm: UUID = UUID(0L, 0L)
+    val primaryOwnerTerm: UUID = UUID(0L, 0L),
+    /** Staff-designated faction that may remain without a leader or members. */
+    val adminLeaderless: Boolean = false
 ) {
+    val canRemainLeaderless: Boolean
+        get() = plugin.config.getBoolean("factions.allowLeaderlessFactions") &&
+            (!plugin.config.getBoolean("factions.adminOnlyLeaderlessFactions") || adminLeaderless)
 
     val memberPower
         get() = members.sumOf { plugin.services.playerService.getPlayer(it.playerId)?.power ?: 0.0 }
@@ -287,10 +292,10 @@ data class MfFaction(
             return if (survivingHeir == heirId) this else copy(heirId = survivingHeir)
         }
         val successor = policySuccessor ?: successorToPrimaryOwner
-        if (successor == null && !plugin.config.getBoolean("factions.allowLeaderlessFactions")) {
+        if (successor == null && !canRemainLeaderless) {
             throw NoSuccessorException(
                 "Faction ${id.value} lost its primary owner with nobody to inherit, " +
-                    "and factions.allowLeaderlessFactions forbids a faction without one."
+                    "and the leaderless-faction policy forbids a faction without one."
             )
         }
         return copy(primaryOwnerId = successor, heirId = survivingHeir?.takeIf { it != successor })

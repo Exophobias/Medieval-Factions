@@ -63,7 +63,7 @@ import java.util.regex.Pattern;
 public final class ConfigLifecycle {
 
     public static final String VERSION_KEY = "config-version";
-    public static final int CURRENT_VERSION = 2;
+    public static final int CURRENT_VERSION = 3;
     private static final String OLD_DPC_URL = "https://dansplugins.com/api/v1/factions";
     private static final String CURRENT_DPC_URL = "https://api.dansplugins.com/api/v1/factions";
     private static final Pattern DECIMAL_INTEGER = Pattern.compile("0|[1-9][0-9]*");
@@ -235,7 +235,8 @@ public final class ConfigLifecycle {
                         ? installedText : migratedSerialization;
                 migration = switch (workingVersion) {
                     case 0 -> migrateZeroToOne(sourceYaml, schemaOneTemplate(bundledYaml));
-                    case 1 -> migrateOneToTwo(sourceYaml, bundledYaml);
+                    case 1 -> migrateOneToTwo(sourceYaml, schemaTwoTemplate(bundledYaml));
+                    case 2 -> migrateTwoToThree(sourceYaml, bundledYaml);
                     default -> null;
                 };
             } catch (RuntimeException failure) {
@@ -398,6 +399,15 @@ public final class ConfigLifecycle {
 
     /** Reconstructs the published schema-1 template for the first migration edge. */
     private static String schemaOneTemplate(String bundledYaml) {
+        return priorSchemaTemplate(bundledYaml, 1);
+    }
+
+    /** Reconstructs schema 2 before the admin-only leaderless-faction rule existed. */
+    private static String schemaTwoTemplate(String bundledYaml) {
+        return priorSchemaTemplate(bundledYaml, 2);
+    }
+
+    private static String priorSchemaTemplate(String bundledYaml, int version) {
         LoaderOptions loaderOptions = new LoaderOptions();
         loaderOptions.setAllowDuplicateKeys(false);
         loaderOptions.setProcessComments(true);
@@ -411,16 +421,21 @@ public final class ConfigLifecycle {
         if (!(root instanceof MappingNode mapping)) {
             throw new IllegalStateException("the bundled configuration must have a mapping root");
         }
-        replaceTemplateValue(mapping, VERSION_KEY, 1, yaml);
-        removeTemplateKey(mapping, "storage");
-        removeTemplateKey(mapping, "usage-reporting");
+        replaceTemplateValue(mapping, VERSION_KEY, version, yaml);
         Node factions = unwrap(mapping.getValue().get(tupleIndex(mapping, "factions")).getValueNode());
         if (factions instanceof MappingNode factionMapping) {
-            removeTemplateKey(factionMapping, "nonMembersCanInteractWithEntities");
+            removeTemplateKey(factionMapping, "adminOnlyLeaderlessFactions");
         }
-        Node dpcApi = unwrap(mapping.getValue().get(tupleIndex(mapping, "dpc-api")).getValueNode());
-        if (dpcApi instanceof MappingNode dpcMapping) {
-            replaceTemplateValue(dpcMapping, "url", OLD_DPC_URL, yaml);
+        if (version == 1) {
+            removeTemplateKey(mapping, "storage");
+            removeTemplateKey(mapping, "usage-reporting");
+            if (factions instanceof MappingNode factionMapping) {
+                removeTemplateKey(factionMapping, "nonMembersCanInteractWithEntities");
+            }
+            Node dpcApi = unwrap(mapping.getValue().get(tupleIndex(mapping, "dpc-api")).getValueNode());
+            if (dpcApi instanceof MappingNode dpcMapping) {
+                replaceTemplateValue(dpcMapping, "url", OLD_DPC_URL, yaml);
+            }
         }
         StringWriter output = new StringWriter();
         yaml.serialize(mapping, output);
@@ -460,6 +475,20 @@ public final class ConfigLifecycle {
         // Only the exact old bundled default is corrected. A custom endpoint remains untouched.
         String updated = serializePluginUpdates(canonical.serialized(), bundledYaml,
                 Map.of("dpc-api.url", CURRENT_DPC_URL));
+        try {
+            return new Migration(parse(updated), updated);
+        } catch (InvalidConfigurationException failure) {
+            throw new IllegalStateException("the migrated configuration could not be parsed", failure);
+        }
+    }
+
+    /** Preserves schema-2 behavior for ordinary last-member departures when enabled. */
+    private static Migration migrateTwoToThree(String installedYaml, String bundledYaml) {
+        Migration canonical = canonicalize(installedYaml, bundledYaml);
+        boolean previouslyAllowed = Boolean.TRUE.equals(
+                canonical.configuration().get("factions.allowLeaderlessFactions"));
+        String updated = serializePluginUpdates(canonical.serialized(), bundledYaml,
+                Map.of("factions.adminOnlyLeaderlessFactions", !previouslyAllowed));
         try {
             return new Migration(parse(updated), updated);
         } catch (InvalidConfigurationException failure) {

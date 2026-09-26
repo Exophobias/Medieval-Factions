@@ -157,6 +157,23 @@ class MfFactionMutationLifecycleTest {
     }
 
     @Test
+    fun adminOnlyPolicyRejectsAnEmptyOrdinaryFactionButKeepsAStaffDesignatedOne() {
+        val owner = player()
+        val faction = createFaction("Admin designation", listOf(owner))
+        `when`(config.getBoolean("factions.adminOnlyLeaderlessFactions")).thenReturn(true)
+
+        val withoutMembers = current(faction).copy(members = emptyList(), primaryOwnerId = null)
+        assertTrue(service.save(withoutMembers) is Failure)
+        assertEquals(listOf(owner), current(faction).members.map { it.playerId })
+
+        val designated = service.save(withoutMembers.copy(adminLeaderless = true))
+            .onFailure { throw it.reason.cause }
+        assertTrue(designated.adminLeaderless)
+        assertTrue(designated.members.isEmpty())
+        assertNull(designated.primaryOwnerId)
+    }
+
+    @Test
     fun deleteWaitsThroughCommittedSavePublicationBeforeRemovingFaction() {
         val member = MfPlayerId(UUID.randomUUID().toString())
         val faction = createFaction("Lifecycle", listOf(member))

@@ -15,6 +15,7 @@ import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.failure.UnreadableJsonFileException
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.google.gson.Gson
+import org.json.JSONObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -168,6 +169,37 @@ class JsonMfFactionRepositoryTest {
         assertNotNull(read)
         assertNull(read?.home)
         assertNull(read?.prefix)
+    }
+
+    @Test
+    fun `round trips the staff leaderless marker across insert and update`() {
+        val owner = role("Owner")
+        val id = MfFactionId.generate()
+        val first = repository.upsert(
+            faction(id = id, roles = MfFactionRoles(owner.id, listOf(owner))).copy(adminLeaderless = true)
+        )
+
+        assertTrue(repository.getFaction(id)!!.adminLeaderless)
+        assertTrue(
+            JSONObject(File(tempDir.toFile(), "factions.json").readText())
+            .getJSONArray("factions").getJSONObject(0).getBoolean("adminLeaderless")
+        )
+
+        repository.upsert(first.copy(adminLeaderless = false))
+        assertFalse(repository.getFaction(id)!!.adminLeaderless)
+    }
+
+    @Test
+    fun `legacy JSON faction without marker defaults to regular`() {
+        val owner = role("Owner")
+        val id = MfFactionId.generate()
+        repository.upsert(faction(id = id, roles = MfFactionRoles(owner.id, listOf(owner))))
+        val file = File(tempDir.toFile(), "factions.json")
+        val legacy = JSONObject(file.readText())
+        legacy.getJSONArray("factions").getJSONObject(0).remove("adminLeaderless")
+        file.writeText(legacy.toString())
+
+        assertFalse(repository.getFaction(id)!!.adminLeaderless)
     }
 
     @Test

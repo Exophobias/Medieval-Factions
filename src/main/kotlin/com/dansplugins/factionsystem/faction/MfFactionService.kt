@@ -228,6 +228,14 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         }
 
         factionToSave = fireSaveGates(previous, factionToSave)
+        if (plugin.config.getBoolean("factions.adminOnlyLeaderlessFactions") &&
+            factionToSave.members.isEmpty() && !factionToSave.adminLeaderless &&
+            (previous == null || previous.members.isNotEmpty())
+        ) {
+            throw IllegalStateException(
+                "Faction ${requested.id.value} cannot become empty without staff designation"
+            )
+        }
         val removed = previous?.members?.map(MfFactionMember::playerId).orEmpty() -
             factionToSave.members.map(MfFactionMember::playerId)
 

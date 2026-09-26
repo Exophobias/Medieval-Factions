@@ -282,6 +282,16 @@ class MfFactionPrimaryOwnerTest {
     }
 
     @Test
+    fun onlyStaffDesignatedFactionsMayLoseTheirLastHeadWhenAdminOnlyIsEnabled() {
+        allowLeaderlessFactions(true)
+        `when`(config.getBoolean("factions.adminOnlyLeaderlessFactions")).thenReturn(true)
+
+        val emptied = newFaction().copy(members = emptyList())
+        assertThrows(NoSuccessorException::class.java) { emptied.withPrimaryOwnerSuccession() }
+        assertNull(emptied.copy(adminLeaderless = true).withPrimaryOwnerSuccession().primaryOwnerId)
+    }
+
+    @Test
     fun anEmptiedFactionIsRefusedWhereTheConfigForbidsLeaderlessFactions() {
         allowLeaderlessFactions(false)
 

@@ -222,6 +222,7 @@ class JooqMfFactionRepository(
                 .set(MF_FACTION.PRIMARY_OWNER_SINCE, faction.primaryOwnerSince)
                 .set(MF_FACTION.PRIMARY_OWNER_TERM, faction.primaryOwnerTerm.toString())
                 .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
+                .set(MF_FACTION.ADMIN_LEADERLESS, faction.adminLeaderless)
                 .execute()
         } else {
             dsl.update(MF_FACTION)
@@ -250,6 +251,7 @@ class JooqMfFactionRepository(
                 .set(MF_FACTION.PRIMARY_OWNER_SINCE, faction.primaryOwnerSince)
                 .set(MF_FACTION.PRIMARY_OWNER_TERM, faction.primaryOwnerTerm.toString())
                 .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
+                .set(MF_FACTION.ADMIN_LEADERLESS, faction.adminLeaderless)
                 .set(MF_FACTION.VERSION, faction.version + 1)
                 .where(MF_FACTION.ID.eq(faction.id.value))
                 .and(MF_FACTION.VERSION.eq(faction.version))
@@ -410,7 +412,8 @@ class JooqMfFactionRepository(
             primaryOwnerId = primaryOwnerId?.let(::MfPlayerId),
             heirId = heirId?.let(::MfPlayerId),
             primaryOwnerSince = primaryOwnerSince,
-            primaryOwnerTerm = UUID.fromString(primaryOwnerTerm)
+            primaryOwnerTerm = UUID.fromString(primaryOwnerTerm),
+            adminLeaderless = adminLeaderless
         )
     }
 

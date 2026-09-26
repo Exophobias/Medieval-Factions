@@ -121,12 +121,13 @@ class MfFactionCommandExtensionTest {
             }
         )
 
-        val handled = command.onCommand(sender, bukkitCommand, "f", arrayOf("help", "9"))
-
-        assertTrue(handled)
+        // Built-in help grows over time, so the extension row may move to a later page.
+        (1..20).forEach { page ->
+            assertTrue(command.onCommand(sender, bukkitCommand, "f", arrayOf("help", page.toString())))
+        }
         assertTrue(
             messages.any { "/f justifywar <cause> <target>" in it },
-            "extension help row missing from rendered page: $messages"
+            "extension help row missing from rendered help: $messages"
         )
         assertFalse(messages.any { "/f causes admin" in it })
     }

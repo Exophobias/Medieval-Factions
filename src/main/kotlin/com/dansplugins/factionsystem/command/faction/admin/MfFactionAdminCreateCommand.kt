@@ -55,7 +55,8 @@ class MfFactionAdminCreateCommand(private val plugin: MedievalFactions) : Comman
                     id = factionId,
                     name = factionName,
                     roles = roles,
-                    members = emptyList()
+                    members = emptyList(),
+                    adminLeaderless = true
                 )
 
                 val createdFaction = factionService.save(faction).onFailure { failure ->

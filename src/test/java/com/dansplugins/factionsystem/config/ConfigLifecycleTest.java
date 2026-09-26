@@ -46,6 +46,11 @@ class ConfigLifecycleTest {
         assertTrue(created.compatible());
         assertArrayEquals(template.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(config));
         assertArrayEquals(Files.readAllBytes(config), created.snapshot().fileBytes());
+        assertEquals(3, created.snapshot().configuration().getInt("config-version"));
+        assertFalse(created.snapshot().configuration().getBoolean(
+                "factions.allowLeaderlessFactions"));
+        assertTrue(created.snapshot().configuration().getBoolean(
+                "factions.adminOnlyLeaderlessFactions"));
         assertOwnerOnly(config);
 
         byte[] currentBytes = Files.readAllBytes(config);
@@ -70,7 +75,7 @@ class ConfigLifecycleTest {
         assertEquals(0, result.sourceVersion());
         assertNull(result.backup());
         assertOwnerOnly(config);
-        assertEquals(2, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(3, result.snapshot().configuration().getInt("config-version"));
         assertEquals(7, result.snapshot().configuration().getInt("players.initialPower"));
         assertEquals(42, result.snapshot().configuration().getInt("factions.maxMembers"));
         assertEquals("historical-database-secret",
@@ -83,6 +88,8 @@ class ConfigLifecycleTest {
                 .getBoolean("factions.integration-extension.nested.retained"));
         assertTrue(result.snapshot().configuration()
                 .getBoolean("third-party-hooks.audit.enabled"));
+        assertTrue(result.snapshot().configuration()
+                .getBoolean("factions.adminOnlyLeaderlessFactions"));
         assertFalse(result.detail().contains("historical-database-secret"));
         assertFalse(result.detail().contains("historical-dpc-secret"));
         try (var files = Files.list(temporaryDirectory)) {
@@ -131,6 +138,7 @@ class ConfigLifecycleTest {
                   demesneCurve:
                     enabled: true
                     freeChunks: 48
+                  allowLeaderlessFactions: true
                 extension:
                   retained: preserved
                 """, StandardCharsets.UTF_8);
@@ -139,7 +147,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(1, result.sourceVersion());
-        assertEquals(2, result.installedVersion());
+        assertEquals(3, result.installedVersion());
         assertNull(result.backup());
         var values = result.snapshot().configuration();
         assertEquals("operator-database-secret", values.getString("database.password"));
@@ -153,6 +161,8 @@ class ConfigLifecycleTest {
         assertEquals("operator-trace-key", values.getString("usage-reporting.key"));
         assertTrue(values.getBoolean("factions.demesneCurve.enabled"));
         assertEquals(48, values.getInt("factions.demesneCurve.freeChunks"));
+        assertTrue(values.getBoolean("factions.allowLeaderlessFactions"));
+        assertFalse(values.getBoolean("factions.adminOnlyLeaderlessFactions"));
         assertEquals("preserved", values.getString("extension.retained"));
         assertFalse(values.contains("factions.nonMembersCanInteractWithEntities"));
         assertOwnerOnly(config);
@@ -177,6 +187,78 @@ class ConfigLifecycleTest {
                 result.snapshot().configuration().getString("dpc-api.url"));
         assertFalse(result.snapshot().configuration().getBoolean("usage-reporting.enabled"));
         assertEquals("database", result.snapshot().configuration().getString("storage.type"));
+        assertTrue(result.snapshot().configuration()
+                .getBoolean("factions.adminOnlyLeaderlessFactions"));
+    }
+
+    @Test
+    void schemaTwoMigrationPreservesLeaderlessCreationAccessAndOperatorValues()
+            throws Exception {
+        for (boolean previouslyAllowed : List.of(false, true)) {
+            Path directory = temporaryDirectory.resolve("schema-two-" + previouslyAllowed);
+            Files.createDirectories(directory);
+            Path config = directory.resolve("config.yml");
+            Files.writeString(config, """
+                    config-version: 2
+                    database:
+                      password: operator-database-secret
+                    factions:
+                      allowLeaderlessFactions: %s
+                      integration-extension:
+                        retained: true
+                    extension:
+                      retained: preserved
+                    """.formatted(previouslyAllowed), StandardCharsets.UTF_8);
+
+            ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+            assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
+            assertEquals(2, result.sourceVersion());
+            assertEquals(3, result.installedVersion());
+            assertEquals(previouslyAllowed,
+                    result.snapshot().configuration().getBoolean(
+                            "factions.allowLeaderlessFactions"));
+            assertEquals(!previouslyAllowed,
+                    result.snapshot().configuration().getBoolean(
+                            "factions.adminOnlyLeaderlessFactions"));
+            assertEquals("operator-database-secret",
+                    result.snapshot().configuration().getString("database.password"));
+            assertTrue(result.snapshot().configuration().getBoolean(
+                    "factions.integration-extension.retained"));
+            assertEquals("preserved", result.snapshot().configuration()
+                    .getString("extension.retained"));
+            assertOwnerOnly(config);
+            byte[] migratedBytes = Files.readAllBytes(config);
+            assertEquals(ConfigLifecycle.State.CURRENT,
+                    ConfigLifecycle.prepare(config, bundledTemplate()).state());
+            assertArrayEquals(migratedBytes, Files.readAllBytes(config));
+            try (var files = Files.list(directory)) {
+                assertEquals(1L, files.count(), "schema migration must not create a backup");
+            }
+        }
+    }
+
+    @Test
+    void schemaZeroLeaderlessOptInMigratesThroughEverySchema() throws Exception {
+        Path config = temporaryDirectory.resolve("config.yml");
+        Files.writeString(config, """
+                factions:
+                  allowLeaderlessFactions: true
+                extension:
+                  retained: preserved
+                """, StandardCharsets.UTF_8);
+
+        ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+        assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
+        assertEquals(0, result.sourceVersion());
+        assertEquals(3, result.installedVersion());
+        assertTrue(result.snapshot().configuration().getBoolean(
+                "factions.allowLeaderlessFactions"));
+        assertFalse(result.snapshot().configuration().getBoolean(
+                "factions.adminOnlyLeaderlessFactions"));
+        assertEquals("preserved", result.snapshot().configuration()
+                .getString("extension.retained"));
     }
 
     @Test
@@ -228,7 +310,7 @@ class ConfigLifecycleTest {
         String template = bundledTemplate();
         String unversioned = template.replaceFirst(
                 "(?s)\\A# Independent operator-configuration schema\\.[^\\r\\n]*\\R"
-                        + "config-version: 2\\R",
+                        + "config-version: 3\\R",
                 ""
         );
         Files.writeString(config, unversioned, StandardCharsets.UTF_8);
@@ -267,7 +349,7 @@ class ConfigLifecycleTest {
                 "config-version: 01\n",
                 "config-version: 1.0\n",
                 "config-version: nope\n",
-                "config-version: 3\n",
+                "config-version: 4\n",
                 "config-version: 1\ndpc-api:\n  key:\n",
                 "config-version: 1\nitems: [one, null]\n",
                 "config-version: 1\n1: credential-shaped-value\n",
@@ -296,7 +378,7 @@ class ConfigLifecycleTest {
     @Test
     void flowRootPlainMarkerIsAcceptedWithoutRewriting() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] flow = "{config-version: 2, database: {password: flow-secret}, extension: {x: 3}}\n"
+        byte[] flow = "{config-version: 3, database: {password: flow-secret}, extension: {x: 3}}\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, flow);
 
@@ -335,7 +417,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(2, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(3, result.snapshot().configuration().getInt("config-version"));
         assertNull(result.backup());
     }
 
@@ -358,7 +440,7 @@ class ConfigLifecycleTest {
     void currentKnownLeafWithWrongPhysicalTypeIsValueSafeAndUnchanged() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 2\n" +
+                "config-version: 3\n" +
                     "database:\n" +
                     "  password:\n" +
                     "    leaked-child: credential-shaped-value\n"
@@ -393,7 +475,7 @@ class ConfigLifecycleTest {
     void knownStringListCannotSilentlyDropMappingEntries() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 2\n" +
+                "config-version: 3\n" +
                     "factions:\n" +
                     "  blockedClaimWorlds:\n" +
                     "  - valid-world\n" +
@@ -439,7 +521,7 @@ class ConfigLifecycleTest {
     @Test
     void freshInstallRaceNeverOverwritesAnArrivingOperatorFile() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] arriving = "config-version: 2\nsecret: arriving-secret\n"
+        byte[] arriving = "config-version: 3\nsecret: arriving-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
 
         ConfigLifecycle.Result result = ConfigLifecycle.prepare(
@@ -461,7 +543,7 @@ class ConfigLifecycleTest {
     void postWriteRaceIsRereadExactlyAndNeverActivated() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] legacy = "players:\n  initialPower: 9\n".getBytes(StandardCharsets.UTF_8);
-        byte[] raced = "config-version: 2\ndatabase:\n  password: raced-secret\n"
+        byte[] raced = "config-version: 3\ndatabase:\n  password: raced-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, legacy);
 
@@ -512,7 +594,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         Files.writeString(
                 config,
-                "config-version: 2\nthird-party-extension:\n  retained: true\n",
+                "config-version: 3\nthird-party-extension:\n  retained: true\n",
                 StandardCharsets.UTF_8
         );
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
@@ -536,7 +618,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
         byte[] operatorEdit = (
-                "config-version: 2\n" +
+                "config-version: 3\n" +
                     "dpc-api:\n" +
                     "  enabled: false\n" +
                     "  key: operator-new-secret\n"
