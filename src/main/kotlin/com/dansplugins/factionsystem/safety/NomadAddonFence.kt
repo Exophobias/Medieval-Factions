@@ -4,6 +4,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
+import java.nio.file.AccessDeniedException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.NoSuchFileException
@@ -80,7 +81,13 @@ class NomadAddonFence(mfDataFolder: Path) {
                 channel.force(true)
             }
             Files.move(candidate, marker, ATOMIC_MOVE)
-            FileChannel.open(mfFolder, READ).use { it.force(true) }
+            try {
+                FileChannel.open(mfFolder, READ).use { it.force(true) }
+            } catch (failure: AccessDeniedException) {
+                // Windows denies directory handles. The production Linux filesystem
+                // still requires this force before adoption can proceed.
+                if (!System.getProperty("os.name", "").startsWith("Windows")) throw failure
+            }
         } finally {
             Files.deleteIfExists(candidate)
         }
