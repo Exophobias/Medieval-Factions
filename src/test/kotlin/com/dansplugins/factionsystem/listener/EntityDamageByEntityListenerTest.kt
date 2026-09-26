@@ -1,6 +1,9 @@
 package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.MercenaryCombatProvider
+import com.dansplugins.factionsystem.faction.MfFaction
+import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.duel.MfDuel
 import com.dansplugins.factionsystem.duel.MfDuelId
 import com.dansplugins.factionsystem.duel.MfDuelService
@@ -9,8 +12,10 @@ import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
 import com.dansplugins.factionsystem.service.Services
+import org.bukkit.Server
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.entity.Player
+import org.bukkit.entity.Projectile
 import org.bukkit.event.entity.EntityDamageByEntityEvent
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -18,6 +23,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.bukkit.plugin.ServicesManager
 import java.util.UUID
 
 class EntityDamageByEntityListenerTest {
@@ -139,5 +145,43 @@ class EntityDamageByEntityListenerTest {
         uut.onEntityDamageByEntity(event)
 
         verify(event, never()).isCancelled = true
+    }
+
+    @Test
+    fun mercenaryAllowPermitsCrossFactionMeleeWithoutWar() {
+        crossFactionWithProvider(MercenaryCombatProvider.Decision.ALLOW)
+        `when`(config.getBoolean("pvp.warRequiredForPlayersOfDifferentFactions")).thenReturn(true)
+
+        uut.onEntityDamageByEntity(event)
+
+        verify(event, never()).isCancelled = true
+    }
+
+    @Test
+    fun mercenaryDenyBlocksCrossFactionProjectileDamageBeforeWarLookup() {
+        crossFactionWithProvider(MercenaryCombatProvider.Decision.DENY)
+        val projectile = mock(Projectile::class.java)
+        `when`(projectile.shooter).thenReturn(damager)
+        `when`(event.damager).thenReturn(projectile)
+
+        uut.onEntityDamageByEntity(event)
+
+        verify(event).isCancelled = true
+    }
+
+    private fun crossFactionWithProvider(decision: MercenaryCombatProvider.Decision) {
+        val attackingFaction = mock(MfFaction::class.java)
+        val defendingFaction = mock(MfFaction::class.java)
+        `when`(attackingFaction.id).thenReturn(MfFactionId("attacker"))
+        `when`(defendingFaction.id).thenReturn(MfFactionId("victim"))
+        `when`(factionService.getFaction(damagerMfPlayer.id)).thenReturn(attackingFaction)
+        `when`(factionService.getFaction(damagedMfPlayer.id)).thenReturn(defendingFaction)
+
+        val server = mock(Server::class.java)
+        val manager = mock(ServicesManager::class.java)
+        val provider = MercenaryCombatProvider { _, _ -> decision }
+        `when`(plugin.server).thenReturn(server)
+        `when`(server.servicesManager).thenReturn(manager)
+        `when`(manager.load(MercenaryCombatProvider::class.java)).thenReturn(provider)
     }
 }

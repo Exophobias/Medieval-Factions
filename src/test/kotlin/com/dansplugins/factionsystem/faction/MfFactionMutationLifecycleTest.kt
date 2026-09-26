@@ -4,6 +4,7 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.anyArg
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.event.FactionCreatedEvent
+import com.dansplugins.factionsystem.api.event.FactionDisbandAttemptEvent
 import com.dansplugins.factionsystem.api.event.FactionMemberJoinedEvent
 import com.dansplugins.factionsystem.api.impl.ApiFactionLifecycleListener
 import com.dansplugins.factionsystem.api.impl.DefaultMedievalFactionsApi
@@ -632,6 +633,27 @@ class MfFactionMutationLifecycleTest {
         drainMainTasks(tasks)
         assertEquals(1, events.filterIsInstance<FactionMemberJoinedEvent>().size)
         assertTrue(events.filterIsInstance<FactionCreatedEvent>().isEmpty())
+    }
+
+    @Test
+    fun stableDisbandAttemptVetoAlsoProtectsAtomicMemberTransfer() {
+        val member = player()
+        val source = createFaction("TransferVetoSource", listOf(member))
+        val destination = createFaction("TransferVetoDestination", listOf(player()))
+        events.clear()
+        eventProbe = { event ->
+            if (event is FactionDisbandAttemptEvent && event.faction == FactionId(source.id.value)) {
+                event.isCancelled = true
+            }
+        }
+
+        val result = service.transferAllMembers(source.id, destination.id, listOf(member))
+
+        assertTrue(result is Failure)
+        assertSame(source, current(source))
+        assertSame(source, repository.rows[source.id])
+        assertEquals(1, events.filterIsInstance<FactionDisbandAttemptEvent>().size)
+        assertTrue(events.none { it is FactionDeletedEvent })
     }
 
     private fun queueMainTasks(): MutableList<Runnable> {

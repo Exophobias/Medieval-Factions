@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.MercenaryCombatProvider.Decision
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
 import org.bukkit.entity.Player
@@ -40,20 +41,32 @@ class AreaEffectCloudApplyListener(private val plugin: MedievalFactions) : Liste
             val damagerDuel = duelService.getDuel(damagerMfPlayer.id)
             val damagedDuel = duelService.getDuel(damagedMfPlayer.id)
             if (damagerDuel != null && damagedDuel != null && damagerDuel.id == damagedDuel.id) {
-                return
+                continue
+            }
+            if (damagerDuel != null || damagedDuel != null) {
+                event.affectedEntities.remove(damaged)
+                continue
             }
             val damagedFaction = factionService.getFaction(damagedMfPlayer.id)
             if (damagerFaction == null || damagedFaction == null) {
                 if (!plugin.config.getBoolean("pvp.enabledForFactionlessPlayers")) {
                     event.affectedEntities.remove(damaged)
                 }
-                return
+                continue
             }
             if (damagerFaction.id == damagedFaction.id) {
                 if (!plugin.config.getBoolean("pvp.friendlyFire") && !damagerFaction.flags[plugin.flags.allowFriendlyFire]) {
                     event.affectedEntities.remove(damaged)
                 }
-                return
+                continue
+            }
+            when (MercenaryCombatGate.decide(plugin, damager.uniqueId, damaged.uniqueId)) {
+                Decision.ALLOW -> continue
+                Decision.DENY -> {
+                    event.affectedEntities.remove(damaged)
+                    continue
+                }
+                Decision.ABSTAIN -> Unit
             }
             val relationshipService = plugin.services.factionRelationshipService
             val relationships = relationshipService.getRelationships(damagerFaction.id, damagedFaction.id)
@@ -62,7 +75,7 @@ class AreaEffectCloudApplyListener(private val plugin: MedievalFactions) : Liste
                 if (plugin.config.getBoolean("pvp.warRequiredForPlayersOfDifferentFactions")) {
                     event.affectedEntities.remove(damaged)
                 }
-                return
+                continue
             }
         }
     }

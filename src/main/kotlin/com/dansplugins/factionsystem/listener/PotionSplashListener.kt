@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.MercenaryCombatProvider.Decision
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
 import org.bukkit.entity.Player
@@ -42,20 +43,32 @@ class PotionSplashListener(private val plugin: MedievalFactions) : Listener {
             val damagerDuel = duelService.getDuel(damagerMfPlayer.id)
             val damagedDuel = duelService.getDuel(damagedMfPlayer.id)
             if (damagerDuel != null && damagedDuel != null && damagerDuel.id == damagedDuel.id) {
-                return
+                continue
+            }
+            if (damagerDuel != null || damagedDuel != null) {
+                event.setIntensity(damaged, 0.0)
+                continue
             }
             val damagedFaction = factionService.getFaction(damagedMfPlayer.id)
             if (damagerFaction == null || damagedFaction == null) {
                 if (!plugin.config.getBoolean("pvp.enabledForFactionlessPlayers")) {
                     event.setIntensity(damaged, 0.0)
                 }
-                return
+                continue
             }
             if (damagerFaction.id == damagedFaction.id) {
                 if (!plugin.config.getBoolean("pvp.friendlyFire") && !damagerFaction.flags[plugin.flags.allowFriendlyFire]) {
                     event.setIntensity(damaged, 0.0)
                 }
-                return
+                continue
+            }
+            when (MercenaryCombatGate.decide(plugin, damager.uniqueId, damaged.uniqueId)) {
+                Decision.ALLOW -> continue
+                Decision.DENY -> {
+                    event.setIntensity(damaged, 0.0)
+                    continue
+                }
+                Decision.ABSTAIN -> Unit
             }
             val relationshipService = plugin.services.factionRelationshipService
             val relationships = relationshipService.getRelationships(damagerFaction.id, damagedFaction.id)
@@ -64,7 +77,7 @@ class PotionSplashListener(private val plugin: MedievalFactions) : Listener {
                 if (plugin.config.getBoolean("pvp.warRequiredForPlayersOfDifferentFactions")) {
                     event.setIntensity(damaged, 0.0)
                 }
-                return
+                continue
             }
         }
     }

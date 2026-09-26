@@ -5,6 +5,8 @@ import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.api.ClaimOverrideProvider
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.event.FactionClaimAttemptEvent
+import com.dansplugins.factionsystem.api.event.FactionUnclaimAllAttemptEvent
+import com.dansplugins.factionsystem.api.event.FactionUnclaimAttemptEvent
 import com.dansplugins.factionsystem.api.impl.ApiClaimEventBridge
 import com.dansplugins.factionsystem.area.MfChunkPosition
 import com.dansplugins.factionsystem.event.faction.FactionClaimEvent
@@ -232,6 +234,13 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
 
     fun save(claim: MfClaimedChunk) = persist(claim, validateNewClaimWorld = true, requireExisting = false)
 
+    /** Wait until every claim mutation already holding the lock has finished. */
+    fun mutationBarrier() = mutationLock.withLock { Unit }
+
+    /** Create wilderness land only while it is still unclaimed, under the claim mutation lock. */
+    fun claimIfUnclaimed(claim: MfClaimedChunk) =
+        persist(claim, validateNewClaimWorld = true, requireExisting = false, requireUnclaimed = true)
+
     /**
      * Change the owner of a claim that is already present, without consulting Bukkit's world
      * registry. Recovery workers move persisted land by UUID and coordinates off the server thread;
@@ -259,13 +268,19 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         claim: MfClaimedChunk,
         validateNewClaimWorld: Boolean,
         requireExisting: Boolean,
-        expectedOwner: MfFactionId? = null
+        expectedOwner: MfFactionId? = null,
+        requireUnclaimed: Boolean = false
     ) = mutationLock.withLock {
         resultFrom {
             if (wildernessReservations.isReserved(claim.worldId, claim.x, claim.z)) {
                 throw EventCancelledException("Land is temporarily reserved; retry shortly")
             }
             val prior = claimsByKey[ClaimKey(claim)]
+            if (requireUnclaimed) {
+                require(prior == null) {
+                    "Claim at ${claim.worldId}:${claim.x},${claim.z} is no longer wilderness"
+                }
+            }
             if (requireExisting) {
                 requireNotNull(prior) { "No existing claim at ${claim.worldId}:${claim.x},${claim.z}" }
             }
@@ -427,6 +442,15 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             require(live.factionId !in deletingFactions) {
                 "Faction ${live.factionId.value} is being deleted"
             }
+            val apiEvent = FactionUnclaimAttemptEvent(
+                FactionId(live.factionId.value),
+                live.worldId,
+                live.x,
+                live.z,
+                !plugin.server.isPrimaryThread
+            )
+            ChildMutationCallbackGuard.callEvent(plugin, apiEvent)
+            if (apiEvent.isCancelled) throw EventCancelledException("Unclaim refused by a plugin")
             val event = FactionUnclaimEvent(live.factionId, live, !plugin.server.isPrimaryThread)
             ChildMutationCallbackGuard.callEvent(plugin, event)
             if (event.isCancelled) throw EventCancelledException("Event cancelled")
@@ -490,16 +514,19 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         }
     }
 
-    // Deliberately fires nothing, neither MF's own FactionUnclaimEvent nor the API's
-    // ClaimOwnerChangedEvent. This is the disband and /f unclaimall path, and a large faction can put
-    // thousands of chunks through it at once; scheduling a Bukkit event per chunk would stall a tick.
-    // The API documents the gap on ClaimOwnerChangedEvent and tells consumers to run a periodic
-    // reconciliation sweep as a backstop. Do not "fix" this by adding a per-claim event without
-    // measuring what it does to a disband of a realm-sized faction.
+    // One cancellable pre-write event for the whole operation, but no per-chunk notifications.
+    // A large faction can put thousands of chunks through /f unclaimall at once; scheduling an
+    // event per chunk would stall a tick. Faction deletion uses a separate database cascade.
     @JvmName("deleteAllClaimsByFactionId")
     fun deleteAllClaims(factionId: MfFactionId) = mutationLock.withLock {
         resultFrom {
             require(factionId !in deletingFactions) { "Faction ${factionId.value} is being deleted" }
+            val apiEvent = FactionUnclaimAllAttemptEvent(
+                FactionId(factionId.value),
+                !plugin.server.isPrimaryThread
+            )
+            ChildMutationCallbackGuard.callEvent(plugin, apiEvent)
+            if (apiEvent.isCancelled) throw EventCancelledException("Bulk unclaim refused by a plugin")
             val result = repository.deleteAll(factionId)
             evictAllClaimsLocked(factionId)
             return@resultFrom result

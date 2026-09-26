@@ -170,6 +170,13 @@ interface MedievalFactionsApi {
     fun getClaimAt(world: World, chunkX: Int, chunkZ: Int): ClaimView?
 
     /**
+     * The claim at durable world identity and chunk coordinates, without resolving a Bukkit world
+     * or loading a chunk. Useful for recovery while that world is unloaded. This is one lookup in
+     * MF's in-memory claim index and is safe from any thread.
+     */
+    fun getClaimAt(worldId: UUID, chunkX: Int, chunkZ: Int): ClaimView?
+
+    /**
      * Every chunk [faction] holds, grouped by the world it is in.
      *
      * The inverse of [getClaimAt]: that answers "who owns this chunk", this answers "what does this
@@ -206,6 +213,22 @@ interface MedievalFactionsApi {
      * which materialises every chunk to count them.
      */
     fun getClaimCount(faction: FactionId): Int
+
+    /**
+     * Wait for claim mutations already in progress to release MF's claim lock. Call from a worker
+     * thread after installing an inline claim-attempt veto, then re-read claims before changing a
+     * faction's policy. New mutations remain subject to the veto after this method returns.
+     * This method performs no write and must not be called from an MF event callback.
+     */
+    fun claimMutationBarrier()
+
+    /**
+     * Wait for relationship mutations already in progress to release MF's relationship lock.
+     * Call from a worker thread after installing an inline war-start veto, then re-read war rows
+     * before changing a faction's policy. This method performs no write and must not be called
+     * from an MF event callback.
+     */
+    fun warMutationBarrier()
 
     /**
      * The power level of the given player, or `0.0` if MedievalFactions has no record of them.
@@ -368,6 +391,20 @@ interface MedievalFactionsApi {
     fun claim(faction: FactionId, worldId: UUID, chunkX: Int, chunkZ: Int): ApiResult
 
     /**
+     * Claim wilderness only if it is still unclaimed when MF holds its claim mutation lock.
+     *
+     * Unlike positional [claim], this never takes a chunk from another faction or re-saves a
+     * chunk already owned by [faction]. The comparison and write share one serialised mutation,
+     * so a preflight lookup racing another claimant cannot turn into an overclaim. It uses only
+     * world identity and chunk coordinates and never loads terrain. Ordinary blocked-world checks
+     * and cancellable claim events still apply. This is one chunk, not an atomic multi-chunk claim;
+     * the caller must handle partial progress across several calls.
+     *
+     * Writes block on JDBC and belong off the main thread.
+     */
+    fun claimIfUnclaimed(faction: FactionId, worldId: UUID, chunkX: Int, chunkZ: Int): ApiResult
+
+    /**
      * Re-own one persisted claim only if [expectedOwner] still holds it.
      *
      * This is the compare-and-transfer counterpart to positional [claim]. It never creates land:
@@ -388,6 +425,18 @@ interface MedievalFactionsApi {
     ): ApiResult
 
     fun unclaim(chunk: Chunk): ApiResult
+
+    /**
+     * Release one chunk only if [expectedOwner] still owns it, without loading terrain.
+     *
+     * The ownership comparison, cancellable single-unclaim events, database delete, and cache
+     * update are serialised by MF's claim mutation lock. A chunk that is wilderness or changed
+     * hands is left untouched and returns a failure. This call does not check player permissions;
+     * the plugin using it decides who may request the operation. Several calls are not atomic.
+     *
+     * Writes block on JDBC and belong off the main thread.
+     */
+    fun unclaimIfOwned(expectedOwner: FactionId, worldId: UUID, chunkX: Int, chunkZ: Int): ApiResult
 
     /** Ends any war between the two factions by removing the war relationship in both directions. */
     fun forcePeace(faction: FactionId, otherFaction: FactionId): ApiResult

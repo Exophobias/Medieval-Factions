@@ -198,6 +198,19 @@ class DefaultMedievalFactionsApiTest {
     }
 
     @Test
+    fun worldIdClaimLookupWorksWhenNoBukkitWorldIsLoaded() {
+        val worldId = UUID.randomUUID()
+        val stored = MfClaimedChunk(worldId, 3, 7, MfFactionId("f1"))
+        `when`(claimService.getClaim(worldId, 3, 7)).thenReturn(stored)
+
+        val result = api.getClaimAt(worldId, 3, 7)
+
+        assertEquals(FactionId("f1"), result?.factionId)
+        verify(claimService).getClaim(worldId, 3, 7)
+        verifyNoMoreInteractions(claimService)
+    }
+
+    @Test
     fun positionalClaimWritesDurableWorldIdentityWithoutBukkitLookup() {
         val worldId = UUID.randomUUID()
         val expected = MfClaimedChunk(worldId, 3, 7, MfFactionId("f1"))
@@ -222,6 +235,32 @@ class DefaultMedievalFactionsApiTest {
         assertTrue(result.isSuccess)
         verify(claimService).transferOwnership(requested)
         verify(claimService, never()).save(requested)
+    }
+
+    @Test
+    fun conditionalClaimUsesTheLockedWildernessPathWithoutLoadingAChunk() {
+        val worldId = UUID.randomUUID()
+        val requested = MfClaimedChunk(worldId, 3, 7, MfFactionId("f1"))
+        `when`(claimService.claimIfUnclaimed(requested)).thenReturn(Success(requested))
+
+        val result = api.claimIfUnclaimed(FactionId("f1"), worldId, 3, 7)
+
+        assertTrue(result.isSuccess)
+        verify(claimService).claimIfUnclaimed(requested)
+        verifyNoMoreInteractions(claimService)
+    }
+
+    @Test
+    fun positionalUnclaimPassesTheExpectedOwnerWithoutLoadingAChunk() {
+        val worldId = UUID.randomUUID()
+        val expected = MfClaimedChunk(worldId, 3, 7, MfFactionId("f1"))
+        `when`(claimService.delete(expected)).thenReturn(Success(Unit))
+
+        val result = api.unclaimIfOwned(FactionId("f1"), worldId, 3, 7)
+
+        assertTrue(result.isSuccess)
+        verify(claimService).delete(expected)
+        verifyNoMoreInteractions(claimService)
     }
 
     @Test

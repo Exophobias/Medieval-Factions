@@ -5,9 +5,12 @@ import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.WildernessReservationStatus
 import com.dansplugins.factionsystem.api.event.ClaimOwnerChangedEvent
 import com.dansplugins.factionsystem.api.event.FactionClaimAttemptEvent
+import com.dansplugins.factionsystem.api.event.FactionUnclaimAllAttemptEvent
+import com.dansplugins.factionsystem.api.event.FactionUnclaimAttemptEvent
 import com.dansplugins.factionsystem.api.event.FactionUnclaimedChunkEvent
 import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.event.faction.FactionClaimEvent
+import com.dansplugins.factionsystem.event.faction.FactionUnclaimEvent
 import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
@@ -41,6 +44,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.logging.Logger
 
@@ -65,6 +69,8 @@ class MfClaimServiceTest {
 
     /** When set, every FactionClaimAttemptEvent is vetoed, standing in for a consumer that refuses. */
     private var vetoAttempts = false
+    private var vetoUnclaim = false
+    private var vetoUnclaimAll = false
 
     private val factionA = MfFactionId("faction-a")
     private val factionB = MfFactionId("faction-b")
@@ -77,6 +83,8 @@ class MfClaimServiceTest {
         world = UUID.randomUUID()
         firedEvents.clear()
         vetoAttempts = false
+        vetoUnclaim = false
+        vetoUnclaimAll = false
         plugin = mock(MedievalFactions::class.java)
         `when`(plugin.logger).thenReturn(mock(Logger::class.java))
 
@@ -93,6 +101,12 @@ class MfClaimServiceTest {
             val event = invocation.getArgument(0, Event::class.java)
             firedEvents.add(event)
             if (vetoAttempts && event is FactionClaimAttemptEvent) {
+                event.isCancelled = true
+            }
+            if (vetoUnclaim && event is FactionUnclaimAttemptEvent) {
+                event.isCancelled = true
+            }
+            if (vetoUnclaimAll && event is FactionUnclaimAllAttemptEvent) {
                 event.isCancelled = true
             }
             null
@@ -319,6 +333,104 @@ class MfClaimServiceTest {
     }
 
     @Test
+    fun conditionalClaimRefusesOwnedLandBeforeAnyClaimEvent() {
+        val service = serviceWith(claim(0, 0, factionA))
+
+        val result = service.claimIfUnclaimed(claim(0, 0, factionB))
+
+        assertTrue(result is Failure)
+        assertEquals(factionA, service.getClaim(world, 0, 0)?.factionId)
+        assertEquals(0, service.getClaimCount(factionB))
+        assertTrue(firedEvents.isEmpty())
+    }
+
+    @Test
+    fun conditionalClaimCannotOvertakeACommittedButUnpublishedClaim() {
+        val repository = BlockingClaimRepository()
+        val service = MfClaimService(plugin, repository)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val first = executor.submit(java.util.concurrent.Callable { service.save(claim(0, 0, factionA)) })
+            assertTrue(repository.firstCommitted.await(5, TimeUnit.SECONDS))
+            val second = executor.submit(java.util.concurrent.Callable { service.claimIfUnclaimed(claim(0, 0, factionB)) })
+            repository.releaseFirst.countDown()
+
+            assertFalse(first.get(5, TimeUnit.SECONDS) is Failure<*>)
+            val secondResult = second.get(5, TimeUnit.SECONDS)
+            assertTrue(
+                secondResult is Failure<*>,
+                "result=$secondResult cache=${service.getClaim(world, 0, 0)} database=${repository.current()}"
+            )
+            assertEquals(factionA, repository.current()?.factionId)
+            assertEquals(1L, repository.secondEntered.count, "the loser must never enter the repository")
+            assertEquals(0, service.getClaimCount(factionB))
+        } finally {
+            repository.releaseFirst.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun claimMutationBarrierWaitsForAnInFlightClaim() {
+        val repository = BlockingClaimRepository()
+        val service = MfClaimService(plugin, repository)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val claimWrite = executor.submit { service.save(claim(0, 0, factionA)) }
+            assertTrue(repository.firstCommitted.await(5, TimeUnit.SECONDS))
+            val barrier = executor.submit { service.mutationBarrier() }
+            org.junit.jupiter.api.Assertions.assertThrows(TimeoutException::class.java) {
+                barrier.get(200, TimeUnit.MILLISECONDS)
+            }
+
+            repository.releaseFirst.countDown()
+            claimWrite.get(5, TimeUnit.SECONDS)
+            barrier.get(5, TimeUnit.SECONDS)
+            assertEquals(factionA, service.getClaim(world, 0, 0)?.factionId)
+        } finally {
+            repository.releaseFirst.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun singleUnclaimVetoRunsBeforeInternalEventAndLeavesClaimIntact() {
+        val live = claim(0, 0, factionA)
+        val service = serviceWith(live)
+        vetoUnclaim = true
+
+        val result = service.delete(live)
+
+        assertTrue(result is Failure)
+        val attempt = firedEvents.filterIsInstance<FactionUnclaimAttemptEvent>().single()
+        assertEquals(FactionId(factionA.value), attempt.faction)
+        assertEquals(world, attempt.worldId)
+        assertEquals(0, attempt.chunkX)
+        assertEquals(0, attempt.chunkZ)
+        assertTrue(attempt.isAsynchronous)
+        assertTrue(firedEvents.none { it is FactionUnclaimEvent || it is FactionUnclaimedChunkEvent })
+        assertEquals(live, service.getClaim(world, 0, 0))
+        assertEquals(1, service.getClaimCount(factionA))
+    }
+
+    @Test
+    fun bulkUnclaimVetoLeavesEveryClaimIntact() {
+        val a00 = claim(0, 0, factionA)
+        val a10 = claim(1, 0, factionA)
+        val service = serviceWith(a00, a10)
+        vetoUnclaimAll = true
+
+        val result = service.deleteAllClaims(factionA)
+
+        assertTrue(result is Failure)
+        val attempt = firedEvents.filterIsInstance<FactionUnclaimAllAttemptEvent>().single()
+        assertEquals(FactionId(factionA.value), attempt.faction)
+        assertTrue(attempt.isAsynchronous)
+        assertEquals(setOf(a00, a10), service.getClaims(factionA).toSet())
+        assertTrue(firedEvents.none { it is FactionUnclaimedChunkEvent || it is ClaimOwnerChangedEvent })
+    }
+
+    @Test
     fun deleteAllClaimsClearsOnlyThatFaction() {
         val service = serviceWith(claim(0, 0, factionA), claim(1, 0, factionA), claim(2, 0, factionB))
 
@@ -534,13 +646,11 @@ class MfClaimServiceTest {
     }
 
     /**
-     * The documented gap. deleteAllClaims goes straight to the repository so a realm-sized disband
-     * does not schedule thousands of Bukkit events, which means a consumer tracking tenancy needs a
-     * reconciliation sweep as a backstop. This test exists to make that silence deliberate: if
-     * somebody later wires an event into the bulk path, they have to come here and say so.
+     * Bulk unclaim has one pre-write veto but no per-chunk post-write notifications. A consumer
+     * tracking tenancy still needs a reconciliation sweep as a backstop.
      */
     @Test
-    fun bulkUnclaimReportsNothingAtAll() {
+    fun bulkUnclaimReportsNoPerChunkEvents() {
         val service = serviceWith(claim(0, 0, factionA), claim(1, 0, factionA))
         firedEvents.clear()
 

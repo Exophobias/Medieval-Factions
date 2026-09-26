@@ -4,6 +4,7 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.WarEndNotice
 import com.dansplugins.factionsystem.api.event.FactionCreatedEvent
+import com.dansplugins.factionsystem.api.event.FactionDisbandAttemptEvent
 import com.dansplugins.factionsystem.api.event.FactionMemberJoinedEvent
 import com.dansplugins.factionsystem.api.event.FactionMemberLeftEvent
 import com.dansplugins.factionsystem.api.event.FactionPrimaryOwnerChangedEvent
@@ -632,9 +633,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                 "No faction with id ${destinationId.value}"
             }
 
-            val disband = FactionDisbandEvent(sourceId, !plugin.server.isPrimaryThread)
-            plugin.server.pluginManager.callEvent(disband)
-            if (disband.isCancelled) throw EventCancelledException("Event cancelled")
+            fireDisbandGates(sourceId)
 
             // A legacy partial attempt may already have admitted one of these exact members. Keep
             // the existing row and add only the missing ids; the atomic delete below repairs the
@@ -755,6 +754,16 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         val warEnds: List<WarEndNotice>
     )
 
+    private fun fireDisbandGates(factionId: MfFactionId) {
+        val apiEvent = FactionDisbandAttemptEvent(FactionId(factionId.value), !plugin.server.isPrimaryThread)
+        plugin.server.pluginManager.callEvent(apiEvent)
+        if (apiEvent.isCancelled) throw EventCancelledException("Disband refused by a plugin")
+
+        val event = FactionDisbandEvent(factionId, !plugin.server.isPrimaryThread)
+        plugin.server.pluginManager.callEvent(event)
+        if (event.isCancelled) throw EventCancelledException("Event cancelled")
+    }
+
     @JvmName("deleteFactionByFactionId")
     fun delete(factionId: MfFactionId): Result4k<Unit, ServiceFailure> = resultFrom {
         beginFactionDeletion(factionId)
@@ -762,11 +771,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             val faction = requireNotNull(getFaction(factionId)) {
                 "No faction with id ${factionId.value}"
             }
-            val event = FactionDisbandEvent(factionId, !plugin.server.isPrimaryThread)
-            plugin.server.pluginManager.callEvent(event)
-            if (event.isCancelled) {
-                throw EventCancelledException("Event cancelled")
-            }
+            fireDisbandGates(factionId)
 
             val claimService = plugin.services.claimService
             val gateService = plugin.services.gateService
