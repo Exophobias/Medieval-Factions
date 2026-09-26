@@ -1,5 +1,5 @@
 # Independent operator-configuration schema. Do not change this to the plugin/JAR version.
-config-version: 3
+config-version: 4
 version: @version@
 language: en-US
 storage:
@@ -118,6 +118,7 @@ factions:
   vassalizeDeclarationRequiresApproval: false
   factionlessFactionName: Factionless
   factionHomeTeleportDelay: 5
+  factionHomeCooldownMinutes: 30 # Per-player cooldown after a successful /f home teleport. 0 disables it.
   maxMembers: -1
   claimFillMaxChunks: 100
   claimFillMaxDepth: 50

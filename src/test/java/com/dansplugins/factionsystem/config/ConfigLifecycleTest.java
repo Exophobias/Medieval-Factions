@@ -46,11 +46,13 @@ class ConfigLifecycleTest {
         assertTrue(created.compatible());
         assertArrayEquals(template.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(config));
         assertArrayEquals(Files.readAllBytes(config), created.snapshot().fileBytes());
-        assertEquals(3, created.snapshot().configuration().getInt("config-version"));
+        assertEquals(4, created.snapshot().configuration().getInt("config-version"));
         assertFalse(created.snapshot().configuration().getBoolean(
                 "factions.allowLeaderlessFactions"));
         assertTrue(created.snapshot().configuration().getBoolean(
                 "factions.adminOnlyLeaderlessFactions"));
+        assertEquals(30, created.snapshot().configuration().getInt(
+                "factions.factionHomeCooldownMinutes"));
         assertOwnerOnly(config);
 
         byte[] currentBytes = Files.readAllBytes(config);
@@ -75,7 +77,7 @@ class ConfigLifecycleTest {
         assertEquals(0, result.sourceVersion());
         assertNull(result.backup());
         assertOwnerOnly(config);
-        assertEquals(3, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(4, result.snapshot().configuration().getInt("config-version"));
         assertEquals(7, result.snapshot().configuration().getInt("players.initialPower"));
         assertEquals(42, result.snapshot().configuration().getInt("factions.maxMembers"));
         assertEquals("historical-database-secret",
@@ -90,6 +92,8 @@ class ConfigLifecycleTest {
                 .getBoolean("third-party-hooks.audit.enabled"));
         assertTrue(result.snapshot().configuration()
                 .getBoolean("factions.adminOnlyLeaderlessFactions"));
+        assertEquals(30, result.snapshot().configuration().getInt(
+                "factions.factionHomeCooldownMinutes"));
         assertFalse(result.detail().contains("historical-database-secret"));
         assertFalse(result.detail().contains("historical-dpc-secret"));
         try (var files = Files.list(temporaryDirectory)) {
@@ -108,6 +112,8 @@ class ConfigLifecycleTest {
         assertTrue(factionKeys.indexOf("demesneCurve") < factionKeys.indexOf("contiguousClaims"));
         assertTrue(factionKeys.indexOf("allowLeaderlessFactions")
                 < factionKeys.indexOf("integration-extension"));
+        assertEquals(factionKeys.indexOf("factionHomeTeleportDelay") + 1,
+                factionKeys.indexOf("factionHomeCooldownMinutes"));
 
         byte[] migratedBytes = Files.readAllBytes(config);
         ConfigLifecycle.Result second = ConfigLifecycle.prepare(config, bundledTemplate());
@@ -147,7 +153,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(1, result.sourceVersion());
-        assertEquals(3, result.installedVersion());
+        assertEquals(4, result.installedVersion());
         assertNull(result.backup());
         var values = result.snapshot().configuration();
         assertEquals("operator-database-secret", values.getString("database.password"));
@@ -163,6 +169,7 @@ class ConfigLifecycleTest {
         assertEquals(48, values.getInt("factions.demesneCurve.freeChunks"));
         assertTrue(values.getBoolean("factions.allowLeaderlessFactions"));
         assertFalse(values.getBoolean("factions.adminOnlyLeaderlessFactions"));
+        assertEquals(30, values.getInt("factions.factionHomeCooldownMinutes"));
         assertEquals("preserved", values.getString("extension.retained"));
         assertFalse(values.contains("factions.nonMembersCanInteractWithEntities"));
         assertOwnerOnly(config);
@@ -214,13 +221,15 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(2, result.sourceVersion());
-            assertEquals(3, result.installedVersion());
+            assertEquals(4, result.installedVersion());
             assertEquals(previouslyAllowed,
                     result.snapshot().configuration().getBoolean(
                             "factions.allowLeaderlessFactions"));
             assertEquals(!previouslyAllowed,
                     result.snapshot().configuration().getBoolean(
                             "factions.adminOnlyLeaderlessFactions"));
+            assertEquals(30, result.snapshot().configuration().getInt(
+                    "factions.factionHomeCooldownMinutes"));
             assertEquals("operator-database-secret",
                     result.snapshot().configuration().getString("database.password"));
             assertTrue(result.snapshot().configuration().getBoolean(
@@ -239,6 +248,90 @@ class ConfigLifecycleTest {
     }
 
     @Test
+    void schemaThreeMigrationAddsCooldownWithoutLosingChoicesOrExtensions()
+            throws Exception {
+        for (String configuredCooldown : List.of("", "0", "17")) {
+            Path directory = temporaryDirectory.resolve("schema-three-" +
+                    (configuredCooldown.isEmpty() ? "default" : configuredCooldown));
+            Files.createDirectories(directory);
+            Path config = directory.resolve("config.yml");
+            String cooldownLine = configuredCooldown.isEmpty() ? ""
+                    : "  factionHomeCooldownMinutes: " + configuredCooldown + "\n";
+            Files.writeString(config, """
+                    config-version: 3
+                    database:
+                      password: operator-database-secret
+                    factions:
+                      factionHomeTeleportDelay: 9
+                    %s  integration-extension:
+                        retained: true
+                    third-party-extension:
+                      retained: preserved
+                    """.formatted(cooldownLine), StandardCharsets.UTF_8);
+
+            ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+            assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
+            assertEquals(3, result.sourceVersion());
+            assertEquals(4, result.installedVersion());
+            assertEquals(configuredCooldown.isEmpty() ? 30 : Integer.parseInt(configuredCooldown),
+                    result.snapshot().configuration().getInt(
+                            "factions.factionHomeCooldownMinutes"));
+            assertEquals(9, result.snapshot().configuration().getInt(
+                    "factions.factionHomeTeleportDelay"));
+            assertEquals("operator-database-secret", result.snapshot().configuration()
+                    .getString("database.password"));
+            assertTrue(result.snapshot().configuration()
+                    .getBoolean("factions.integration-extension.retained"));
+            assertEquals("preserved", result.snapshot().configuration()
+                    .getString("third-party-extension.retained"));
+            List<String> factionKeys = new ArrayList<>(result.snapshot().configuration()
+                    .getConfigurationSection("factions").getKeys(false));
+            assertEquals(factionKeys.indexOf("factionHomeTeleportDelay") + 1,
+                    factionKeys.indexOf("factionHomeCooldownMinutes"));
+            assertTrue(factionKeys.indexOf("factionHomeCooldownMinutes")
+                    < factionKeys.indexOf("integration-extension"));
+            assertNull(result.backup());
+            assertOwnerOnly(config);
+            byte[] migratedBytes = Files.readAllBytes(config);
+            assertEquals(ConfigLifecycle.State.CURRENT,
+                    ConfigLifecycle.prepare(config, bundledTemplate()).state());
+            assertArrayEquals(migratedBytes, Files.readAllBytes(config));
+            try (var files = Files.list(directory)) {
+                assertEquals(1L, files.count(), "schema migration must not create a backup");
+            }
+        }
+    }
+
+    @Test
+    void invalidFactionHomeCooldownIsRejectedWithoutChangingInstalledBytes()
+            throws Exception {
+        for (int schema : List.of(3, 4)) {
+            for (String value : List.of("-1", "'30'", "2147483648")) {
+                Path directory = temporaryDirectory.resolve("invalid-home-cooldown-"
+                        + schema + "-" + value.replaceAll("[^0-9]", "x"));
+                Files.createDirectories(directory);
+                Path config = directory.resolve("config.yml");
+                byte[] original = ("config-version: " + schema + "\n"
+                        + "factions:\n  factionHomeCooldownMinutes: " + value + "\n")
+                        .getBytes(StandardCharsets.UTF_8);
+                Files.write(config, original);
+
+                ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+                assertEquals(ConfigLifecycle.State.INVALID, result.state(), result.detail());
+                assertEquals("invalid configuration at factions.factionHomeCooldownMinutes",
+                        result.detail());
+                assertArrayEquals(original, Files.readAllBytes(config));
+                assertNull(result.backup());
+                try (var files = Files.list(directory)) {
+                    assertEquals(1L, files.count(), "invalid config must not create artifacts");
+                }
+            }
+        }
+    }
+
+    @Test
     void schemaZeroLeaderlessOptInMigratesThroughEverySchema() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         Files.writeString(config, """
@@ -252,11 +345,13 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(3, result.installedVersion());
+        assertEquals(4, result.installedVersion());
         assertTrue(result.snapshot().configuration().getBoolean(
                 "factions.allowLeaderlessFactions"));
         assertFalse(result.snapshot().configuration().getBoolean(
                 "factions.adminOnlyLeaderlessFactions"));
+        assertEquals(30, result.snapshot().configuration().getInt(
+                "factions.factionHomeCooldownMinutes"));
         assertEquals("preserved", result.snapshot().configuration()
                 .getString("extension.retained"));
     }
@@ -310,7 +405,7 @@ class ConfigLifecycleTest {
         String template = bundledTemplate();
         String unversioned = template.replaceFirst(
                 "(?s)\\A# Independent operator-configuration schema\\.[^\\r\\n]*\\R"
-                        + "config-version: 3\\R",
+                        + "config-version: 4\\R",
                 ""
         );
         Files.writeString(config, unversioned, StandardCharsets.UTF_8);
@@ -349,7 +444,7 @@ class ConfigLifecycleTest {
                 "config-version: 01\n",
                 "config-version: 1.0\n",
                 "config-version: nope\n",
-                "config-version: 4\n",
+                "config-version: 5\n",
                 "config-version: 1\ndpc-api:\n  key:\n",
                 "config-version: 1\nitems: [one, null]\n",
                 "config-version: 1\n1: credential-shaped-value\n",
@@ -378,7 +473,7 @@ class ConfigLifecycleTest {
     @Test
     void flowRootPlainMarkerIsAcceptedWithoutRewriting() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] flow = "{config-version: 3, database: {password: flow-secret}, extension: {x: 3}}\n"
+        byte[] flow = "{config-version: 4, database: {password: flow-secret}, extension: {x: 3}}\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, flow);
 
@@ -417,7 +512,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(3, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(4, result.snapshot().configuration().getInt("config-version"));
         assertNull(result.backup());
     }
 
@@ -440,7 +535,7 @@ class ConfigLifecycleTest {
     void currentKnownLeafWithWrongPhysicalTypeIsValueSafeAndUnchanged() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 3\n" +
+                "config-version: 4\n" +
                     "database:\n" +
                     "  password:\n" +
                     "    leaked-child: credential-shaped-value\n"
@@ -475,7 +570,7 @@ class ConfigLifecycleTest {
     void knownStringListCannotSilentlyDropMappingEntries() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 3\n" +
+                "config-version: 4\n" +
                     "factions:\n" +
                     "  blockedClaimWorlds:\n" +
                     "  - valid-world\n" +
@@ -521,7 +616,7 @@ class ConfigLifecycleTest {
     @Test
     void freshInstallRaceNeverOverwritesAnArrivingOperatorFile() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] arriving = "config-version: 3\nsecret: arriving-secret\n"
+        byte[] arriving = "config-version: 4\nsecret: arriving-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
 
         ConfigLifecycle.Result result = ConfigLifecycle.prepare(
@@ -543,7 +638,7 @@ class ConfigLifecycleTest {
     void postWriteRaceIsRereadExactlyAndNeverActivated() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] legacy = "players:\n  initialPower: 9\n".getBytes(StandardCharsets.UTF_8);
-        byte[] raced = "config-version: 3\ndatabase:\n  password: raced-secret\n"
+        byte[] raced = "config-version: 4\ndatabase:\n  password: raced-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, legacy);
 
@@ -594,7 +689,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         Files.writeString(
                 config,
-                "config-version: 3\nthird-party-extension:\n  retained: true\n",
+                "config-version: 4\nthird-party-extension:\n  retained: true\n",
                 StandardCharsets.UTF_8
         );
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
@@ -618,7 +713,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
         byte[] operatorEdit = (
-                "config-version: 3\n" +
+                "config-version: 4\n" +
                     "dpc-api:\n" +
                     "  enabled: false\n" +
                     "  key: operator-new-secret\n"
