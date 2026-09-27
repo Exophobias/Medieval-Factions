@@ -12,8 +12,14 @@ class FactionJoinEvent(
     override val factionId: MfFactionId,
     @get:JvmName("getPlayerId")
     override val playerId: MfPlayerId,
+    /** Size of the complete roster proposed by this save, including every arrival. */
+    val proposedMemberCount: Int,
     isAsync: Boolean
 ) : Event(isAsync), FactionEvent, PlayerEvent, Cancellable {
+
+    /** Preserve callers of the original constructor; a negative count means unavailable. */
+    constructor(factionId: MfFactionId, playerId: MfPlayerId, isAsync: Boolean) :
+        this(factionId, playerId, -1, isAsync)
 
     companion object {
         @JvmStatic private val handlers: HandlerList = HandlerList()

@@ -65,6 +65,7 @@ class ApiFactionLifecycleListener(private val plugin: MedievalFactions) : Listen
         val apiEvent = FactionJoinEvent(
             FactionId(event.factionId.value),
             event.playerId.value,
+            event.proposedMemberCount,
             event.isAsynchronous
         )
         plugin.server.pluginManager.callEvent(apiEvent)

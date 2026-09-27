@@ -231,11 +231,11 @@ interface MedievalFactionsApi {
     fun warMutationBarrier()
 
     /**
-     * Wait for an already-started disband or atomic member transfer that deletes [faction] to
-     * finish. Call from a worker thread after installing a [event.FactionDisbandAttemptEvent]
-     * veto, then re-read the faction before changing its policy. New deletion attempts remain
-     * subject to the veto. This method performs no write and must not be called from an MF event
-     * callback.
+     * Wait for faction saves, disbands and atomic member transfers already in progress for
+     * [faction] to finish, including postcommit callbacks. Call from a worker thread after
+     * installing the applicable inline mutation vetoes, then re-read the faction before changing
+     * its policy. New mutations remain subject to those vetoes. This method performs no write and
+     * must not be called from an MF event callback.
      */
     fun factionDeletionBarrier(faction: FactionId)
 

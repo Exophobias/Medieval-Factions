@@ -545,6 +545,31 @@ class MfFactionMutationLifecycleTest {
     }
 
     @Test
+    fun proposedRosterCountLetsPolicyRejectBulkAdmissionBeforeCommit() {
+        val faction = createFaction("BulkAdmission", List(4) { player() })
+        val first = player()
+        val second = player()
+        events.clear()
+        eventProbe = { event ->
+            if (event is FactionJoinEvent && event.proposedMemberCount > 5) {
+                event.isCancelled = true
+            }
+        }
+
+        val denied = service.save(withArrivals(faction, first, listOf(second)))
+
+        assertTrue(denied is Failure)
+        assertEquals(4, current(faction).members.size)
+        assertEquals(4, repository.rows[faction.id]?.members?.size)
+        assertEquals(6, events.filterIsInstance<FactionJoinEvent>().single().proposedMemberCount)
+
+        events.clear()
+        service.save(withArrivals(faction, first)).onFailure { throw it.reason.cause }
+        assertEquals(5, current(faction).members.size)
+        assertEquals(5, events.filterIsInstance<FactionJoinEvent>().single().proposedMemberCount)
+    }
+
+    @Test
     fun cancelledJoinAndSuccessfulRetryNotifyOnlyTheCommittedArrival() {
         val faction = createFaction("CancelledJoin", listOf(player()))
         val arrival = player()
@@ -690,6 +715,57 @@ class MfFactionMutationLifecycleTest {
         assertSame(source, repository.rows[source.id])
         assertEquals(1, events.filterIsInstance<FactionDisbandAttemptEvent>().size)
         assertTrue(events.none { it is FactionDeletedEvent })
+    }
+
+    @Test
+    fun factionDeletionBarrierAlsoWaitsForInFlightMemberSave() {
+        val faction = createFaction("BarrierSave", listOf(player()))
+        val arrival = player()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val barrierStarted = CountDownLatch(1)
+        val barrierFinished = CountDownLatch(1)
+        val saveFailure = AtomicReference<Throwable?>()
+        val barrierFailure = AtomicReference<Throwable?>()
+        val membersAfterBarrier = AtomicReference<Int?>()
+        eventProbe = { event ->
+            if (event is FactionJoinEvent && event.factionId == faction.id) {
+                entered.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+            }
+        }
+
+        val saving = thread(name = "barrier-member-save") {
+            try {
+                service.save(withArrivals(faction, arrival)).onFailure { throw it.reason.cause }
+            } catch (failure: Throwable) {
+                saveFailure.set(failure)
+            }
+        }
+        assertTrue(entered.await(5, TimeUnit.SECONDS))
+        val barrier = thread(name = "faction-save-drain-barrier") {
+            try {
+                barrierStarted.countDown()
+                api.factionDeletionBarrier(FactionId(faction.id.value))
+                membersAfterBarrier.set(current(faction).members.size)
+            } catch (failure: Throwable) {
+                barrierFailure.set(failure)
+            } finally {
+                barrierFinished.countDown()
+            }
+        }
+        try {
+            assertTrue(barrierStarted.await(5, TimeUnit.SECONDS))
+            assertFalse(barrierFinished.await(200, TimeUnit.MILLISECONDS))
+        } finally {
+            release.countDown()
+        }
+        assertTrue(barrierFinished.await(5, TimeUnit.SECONDS))
+        saving.join(5000)
+        barrier.join(5000)
+        assertNull(saveFailure.get())
+        assertNull(barrierFailure.get())
+        assertEquals(2, membersAfterBarrier.get())
     }
 
     @Test

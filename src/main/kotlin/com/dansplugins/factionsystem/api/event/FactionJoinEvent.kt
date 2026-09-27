@@ -10,6 +10,9 @@ import org.bukkit.event.HandlerList
  *
  * [playerIdValue] is the raw player ID from MedievalFactions. Consumers must validate it before
  * using it as a Bukkit UUID; an invalid value must not silently become an eligibility bypass.
+ * [proposedMemberCount] counts the complete roster proposed by the same save, so a multi-member
+ * transfer can be rejected before any member is admitted. A negative value means unavailable and
+ * must be rejected by a policy that needs the count.
  * Initial members of a newly created faction do not fire this event. Inspect
  * [FactionCreateEvent.memberIdValues] to validate the complete initial roster instead.
  *
@@ -19,8 +22,13 @@ import org.bukkit.event.HandlerList
 class FactionJoinEvent(
     val factionId: FactionId,
     val playerIdValue: String,
+    val proposedMemberCount: Int,
     isAsync: Boolean
 ) : Event(isAsync), Cancellable {
+
+    /** Preserve existing Java/Kotlin callers; a negative count means unavailable. */
+    constructor(factionId: FactionId, playerIdValue: String, isAsync: Boolean) :
+        this(factionId, playerIdValue, -1, isAsync)
 
     private var cancel: Boolean = false
 

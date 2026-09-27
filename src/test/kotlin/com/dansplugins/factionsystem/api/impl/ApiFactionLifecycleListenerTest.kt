@@ -55,14 +55,23 @@ class ApiFactionLifecycleListenerTest {
             }
             null
         }.`when`(manager).callEvent(any(Event::class.java))
-        val internal = MfFactionJoinEvent(MfFactionId("realm"), MfPlayerId("malformed-player-id"), true)
+        val internal = MfFactionJoinEvent(MfFactionId("realm"), MfPlayerId("malformed-player-id"), 6, true)
 
         ApiFactionLifecycleListener(plugin).onFactionJoin(internal)
 
         assertTrue(internal.isCancelled)
         assertEquals("realm", observed?.factionId?.value)
         assertEquals("malformed-player-id", observed?.playerIdValue)
+        assertEquals(6, observed?.proposedMemberCount)
         assertTrue(observed?.isAsynchronous == true)
+        assertEquals(
+            -1,
+            FactionJoinEvent(FactionId("old"), "old-player", false).proposedMemberCount
+        )
+        assertEquals(
+            -1,
+            MfFactionJoinEvent(MfFactionId("old"), MfPlayerId("old-player"), false).proposedMemberCount
+        )
     }
 
     @Test

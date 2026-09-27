@@ -378,10 +378,13 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         }
     }
 
-    /** Wait until an already-started disband or atomic source-faction transfer has finished. */
+    /** Wait until earlier faction saves, disbands or atomic source transfers have finished. */
     fun deletionBarrier(factionId: MfFactionId) {
+        check(saveLifecycleDepth.get() == 0) {
+            "Cannot wait for faction mutations from inside a faction-save callback"
+        }
         commitLock(factionId).withLock {
-            while (factionId in deletingFactions) {
+            while (factionId in deletingFactions || (activeSaveLifecycles[factionId] ?: 0) > 0) {
                 lifecycleIdle(factionId).await()
             }
         }
@@ -421,7 +424,9 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         val added = requested.members.map(MfFactionMember::playerId) -
             previous.members.map(MfFactionMember::playerId)
         for (member in added) {
-            val event = FactionJoinEvent(requested.id, member, !plugin.server.isPrimaryThread)
+            val event = FactionJoinEvent(
+                requested.id, member, requested.members.size, !plugin.server.isPrimaryThread
+            )
             plugin.server.pluginManager.callEvent(event)
             if (event.isCancelled) throw EventCancelledException("Event cancelled")
         }
