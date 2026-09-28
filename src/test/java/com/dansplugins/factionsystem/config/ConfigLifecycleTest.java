@@ -46,7 +46,7 @@ class ConfigLifecycleTest {
         assertTrue(created.compatible());
         assertArrayEquals(template.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(config));
         assertArrayEquals(Files.readAllBytes(config), created.snapshot().fileBytes());
-        assertEquals(5, created.snapshot().configuration().getInt("config-version"));
+        assertEquals(6, created.snapshot().configuration().getInt("config-version"));
         assertFalse(created.snapshot().configuration().getBoolean(
                 "factions.allowLeaderlessFactions"));
         assertTrue(created.snapshot().configuration().getBoolean(
@@ -55,6 +55,10 @@ class ConfigLifecycleTest {
                 "factions.factionHomeCooldownMinutes"));
         assertEquals(4, created.snapshot().configuration().getInt(
                 "factions.defaults.flags.maxEmbassyChunks"));
+        assertFalse(created.snapshot().configuration().getBoolean("api.enabled"));
+        assertEquals("127.0.0.1", created.snapshot().configuration().getString("api.host"));
+        assertEquals(8080, created.snapshot().configuration().getInt("api.port"));
+        assertFalse(created.snapshot().configuration().getBoolean("usage-reporting.enabled"));
         assertOwnerOnly(config);
 
         byte[] currentBytes = Files.readAllBytes(config);
@@ -79,7 +83,7 @@ class ConfigLifecycleTest {
         assertEquals(0, result.sourceVersion());
         assertNull(result.backup());
         assertOwnerOnly(config);
-        assertEquals(5, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(6, result.snapshot().configuration().getInt("config-version"));
         assertEquals(7, result.snapshot().configuration().getInt("players.initialPower"));
         assertEquals(42, result.snapshot().configuration().getInt("factions.maxMembers"));
         assertEquals("historical-database-secret",
@@ -157,7 +161,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(1, result.sourceVersion());
-        assertEquals(5, result.installedVersion());
+        assertEquals(6, result.installedVersion());
         assertNull(result.backup());
         var values = result.snapshot().configuration();
         assertEquals("operator-database-secret", values.getString("database.password"));
@@ -226,7 +230,7 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(2, result.sourceVersion());
-            assertEquals(5, result.installedVersion());
+            assertEquals(6, result.installedVersion());
             assertEquals(previouslyAllowed,
                     result.snapshot().configuration().getBoolean(
                             "factions.allowLeaderlessFactions"));
@@ -280,7 +284,7 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(3, result.sourceVersion());
-            assertEquals(5, result.installedVersion());
+            assertEquals(6, result.installedVersion());
             assertEquals(configuredCooldown.isEmpty() ? 30 : Integer.parseInt(configuredCooldown),
                     result.snapshot().configuration().getInt(
                             "factions.factionHomeCooldownMinutes"));
@@ -340,7 +344,7 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(4, result.sourceVersion());
-            assertEquals(5, result.installedVersion());
+            assertEquals(6, result.installedVersion());
             var values = result.snapshot().configuration();
             assertEquals(configuredMaximum.isEmpty() ? 4 : Integer.parseInt(configuredMaximum),
                     values.getInt("factions.defaults.flags.maxEmbassyChunks"));
@@ -385,7 +389,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(4, result.sourceVersion());
-        assertEquals(5, result.installedVersion());
+        assertEquals(6, result.installedVersion());
         assertEquals("operator-database-secret",
                 result.snapshot().configuration().getString("database.password"));
         assertEquals("operator-extension",
@@ -401,6 +405,164 @@ class ConfigLifecycleTest {
         assertArrayEquals(migrated, Files.readAllBytes(config));
         try (var files = Files.list(temporaryDirectory)) {
             assertEquals(1L, files.count(), "migration must not create a backup");
+        }
+    }
+
+    @Test
+    void schemaFiveMigrationAddsApiDefaultsWithoutLosingSecretsOrExtensions() throws Exception {
+        Path config = temporaryDirectory.resolve("config.yml");
+        Files.writeString(config, """
+                config-version: 5
+                database:
+                  password: operator-database-secret
+                dpc-api:
+                  key: operator-dpc-secret
+                usage-reporting:
+                  endpoint: https://operator.example.test/trace
+                  key: operator-trace-secret
+                factions:
+                  defaults:
+                    flags:
+                      maxEmbassyChunks: 9
+                third-party-extension:
+                  retained: preserved
+                """, StandardCharsets.UTF_8);
+
+        ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+        assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
+        assertEquals(5, result.sourceVersion());
+        assertEquals(6, result.installedVersion());
+        var values = result.snapshot().configuration();
+        assertFalse(values.getBoolean("api.enabled"));
+        assertEquals("127.0.0.1", values.getString("api.host"));
+        assertEquals(8080, values.getInt("api.port"));
+        assertFalse(values.getBoolean("usage-reporting.enabled"));
+        assertEquals("operator-database-secret", values.getString("database.password"));
+        assertEquals("operator-dpc-secret", values.getString("dpc-api.key"));
+        assertEquals("operator-trace-secret", values.getString("usage-reporting.key"));
+        assertEquals("https://operator.example.test/trace", values.getString("usage-reporting.endpoint"));
+        assertEquals(9, values.getInt("factions.defaults.flags.maxEmbassyChunks"));
+        assertEquals("preserved", values.getString("third-party-extension.retained"));
+        assertKnownKeysPrecedeExtensions(load(bundledTemplate()), values);
+        List<String> rootKeys = new ArrayList<>(values.getKeys(false));
+        assertEquals(rootKeys.indexOf("api") + 1, rootKeys.indexOf("dpc-api"));
+        assertFalse(result.detail().contains("secret"));
+        assertNull(result.backup());
+        assertOwnerOnly(config);
+        byte[] migrated = Files.readAllBytes(config);
+        assertEquals(ConfigLifecycle.State.CURRENT,
+                ConfigLifecycle.prepare(config, bundledTemplate()).state());
+        assertArrayEquals(migrated, Files.readAllBytes(config));
+        try (var files = Files.list(temporaryDirectory)) {
+            assertEquals(1L, files.count(), "migration must not create a backup");
+        }
+    }
+
+    @Test
+    void schemaFiveMigrationPreservesExplicitApiAndTelemetryChoicesAtPortBounds()
+            throws Exception {
+        for (int port : List.of(1, 65535)) {
+            Path directory = temporaryDirectory.resolve("api-port-" + port);
+            Files.createDirectories(directory);
+            Path config = directory.resolve("config.yml");
+            Files.writeString(config, """
+                    config-version: 5
+                    api:
+                      enabled: true
+                      host: 0.0.0.0
+                      port: %s
+                      extension-key: operator-api-secret
+                    usage-reporting:
+                      enabled: true
+                      key: operator-trace-secret
+                    """.formatted(port), StandardCharsets.UTF_8);
+
+            ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+            assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
+            assertEquals(5, result.sourceVersion());
+            assertEquals(6, result.installedVersion());
+            var values = result.snapshot().configuration();
+            assertTrue(values.getBoolean("api.enabled"));
+            assertEquals("0.0.0.0", values.getString("api.host"));
+            assertEquals(port, values.getInt("api.port"));
+            assertEquals("operator-api-secret", values.getString("api.extension-key"));
+            assertTrue(values.getBoolean("usage-reporting.enabled"));
+            assertEquals("operator-trace-secret", values.getString("usage-reporting.key"));
+            assertEquals(List.of("enabled", "host", "port", "extension-key"),
+                    new ArrayList<>(values.getConfigurationSection("api").getKeys(false)));
+            assertFalse(result.detail().contains("secret"));
+            assertNull(result.backup());
+            byte[] migrated = Files.readAllBytes(config);
+            assertEquals(ConfigLifecycle.State.CURRENT,
+                    ConfigLifecycle.prepare(config, bundledTemplate()).state());
+            assertArrayEquals(migrated, Files.readAllBytes(config));
+            try (var files = Files.list(directory)) {
+                assertEquals(1L, files.count(), "migration must not create a backup");
+            }
+        }
+    }
+
+    @Test
+    void invalidApiValuesRefuseMigrationAndCurrentConfigWithoutWrites() throws Exception {
+        List<String> invalid = List.of(
+                "api: disabled\n",
+                "api:\n  enabled: 'false'\n",
+                "api:\n  host: '   '\n",
+                "api:\n  host: 127\n",
+                "api:\n  port: -1\n",
+                "api:\n  port: 0\n",
+                "api:\n  port: 65536\n",
+                "api:\n  port: 4294975376\n",
+                "api:\n  port: '8080'\n",
+                "api:\n  port: 8080.5\n",
+                "api:\n  port: true\n",
+                "api:\n  port: {}\n"
+        );
+        for (int schema : List.of(5, 6)) {
+            for (int index = 0; index < invalid.size(); index++) {
+                Path directory = temporaryDirectory.resolve("invalid-api-" + schema + "-" + index);
+                Files.createDirectories(directory);
+                Path config = directory.resolve("config.yml");
+                byte[] original = ("config-version: " + schema + "\n" + invalid.get(index)
+                        + "database:\n  password: operator-database-secret\n")
+                        .getBytes(StandardCharsets.UTF_8);
+                Files.write(config, original);
+
+                ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+                assertEquals(ConfigLifecycle.State.INVALID, result.state(), result.detail());
+                assertTrue(result.detail().startsWith("invalid configuration at api"));
+                assertFalse(result.detail().contains("operator-database-secret"));
+                assertArrayEquals(original, Files.readAllBytes(config));
+                assertNull(result.snapshot());
+                assertNull(result.backup());
+                try (var files = Files.list(directory)) {
+                    assertEquals(1L, files.count(), "invalid config must not create artifacts");
+                }
+            }
+        }
+    }
+
+    @Test
+    void invalidApiUpdateRetainsPhysicalAndRuntimeLastKnownGood() throws Exception {
+        Path config = temporaryDirectory.resolve("config.yml");
+        ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
+        byte[] original = Files.readAllBytes(config);
+
+        ConfigLifecycle.Result refused = ConfigLifecycle.update(config, bundledTemplate(),
+                prepared.snapshot(), Map.of("api.enabled", true, "api.port", 65536));
+
+        assertEquals(ConfigLifecycle.State.INVALID, refused.state(), refused.detail());
+        assertEquals("invalid configuration at api.port", refused.detail());
+        assertArrayEquals(original, Files.readAllBytes(config));
+        assertFalse(prepared.snapshot().configuration().getBoolean("api.enabled"));
+        assertEquals(8080, prepared.snapshot().configuration().getInt("api.port"));
+        assertNull(refused.snapshot());
+        assertNull(refused.backup());
+        try (var files = Files.list(temporaryDirectory)) {
+            assertEquals(1L, files.count(), "refused update must not create artifacts");
         }
     }
 
@@ -436,7 +598,7 @@ class ConfigLifecycleTest {
     @Test
     void invalidEmbassyAllowanceIsRejectedAcrossEverySchemaWithoutWrites()
             throws Exception {
-        for (int schema : List.of(0, 1, 2, 3, 4, 5)) {
+        for (int schema : List.of(0, 1, 2, 3, 4, 5, 6)) {
             List<String> invalid = List.of("-1", "4097", "2147483648", "'4'", "4.0", "true");
             for (int index = 0; index < invalid.size(); index++) {
                 Path directory = temporaryDirectory.resolve("invalid-embassy-" + schema + "-" + index);
@@ -464,7 +626,7 @@ class ConfigLifecycleTest {
     @Test
     void sparseCurrentConfigReadsEmbassyDefaultWithoutWritingMissingKeys() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] original = "config-version: 5\n".getBytes(StandardCharsets.UTF_8);
+        byte[] original = "config-version: 6\n".getBytes(StandardCharsets.UTF_8);
         Files.write(config, original);
 
         ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
@@ -472,13 +634,16 @@ class ConfigLifecycleTest {
         assertEquals(ConfigLifecycle.State.CURRENT, result.state(), result.detail());
         assertEquals(4, result.snapshot().configuration().getInt(
                 "factions.defaults.flags.maxEmbassyChunks"));
+        assertFalse(result.snapshot().configuration().getBoolean("api.enabled"));
+        assertEquals("127.0.0.1", result.snapshot().configuration().getString("api.host"));
+        assertEquals(8080, result.snapshot().configuration().getInt("api.port"));
         assertArrayEquals(original, Files.readAllBytes(config));
     }
 
     @Test
     void invalidFactionHomeCooldownIsRejectedWithoutChangingInstalledBytes()
             throws Exception {
-        for (int schema : List.of(3, 4, 5)) {
+        for (int schema : List.of(3, 4, 5, 6)) {
             for (String value : List.of("-1", "'30'", "2147483648")) {
                 Path directory = temporaryDirectory.resolve("invalid-home-cooldown-"
                         + schema + "-" + value.replaceAll("[^0-9]", "x"));
@@ -517,7 +682,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(5, result.installedVersion());
+        assertEquals(6, result.installedVersion());
         assertTrue(result.snapshot().configuration().getBoolean(
                 "factions.allowLeaderlessFactions"));
         assertFalse(result.snapshot().configuration().getBoolean(
@@ -577,7 +742,7 @@ class ConfigLifecycleTest {
         String template = bundledTemplate();
         String unversioned = template.replaceFirst(
                 "(?s)\\A# Independent operator-configuration schema\\.[^\\r\\n]*\\R"
-                        + "config-version: 5\\R",
+                        + "config-version: 6\\R",
                 ""
         );
         Files.writeString(config, unversioned, StandardCharsets.UTF_8);
@@ -616,7 +781,7 @@ class ConfigLifecycleTest {
                 "config-version: 01\n",
                 "config-version: 1.0\n",
                 "config-version: nope\n",
-                "config-version: 6\n",
+                "config-version: 7\n",
                 "config-version: 1\ndpc-api:\n  key:\n",
                 "config-version: 1\nitems: [one, null]\n",
                 "config-version: 1\n1: credential-shaped-value\n",
@@ -645,7 +810,7 @@ class ConfigLifecycleTest {
     @Test
     void flowRootPlainMarkerIsAcceptedWithoutRewriting() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] flow = "{config-version: 5, database: {password: flow-secret}, extension: {x: 3}}\n"
+        byte[] flow = "{config-version: 6, database: {password: flow-secret}, extension: {x: 3}}\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, flow);
 
@@ -684,7 +849,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(5, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(6, result.snapshot().configuration().getInt("config-version"));
         assertNull(result.backup());
     }
 
@@ -707,7 +872,7 @@ class ConfigLifecycleTest {
     void currentKnownLeafWithWrongPhysicalTypeIsValueSafeAndUnchanged() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 5\n" +
+                "config-version: 6\n" +
                     "database:\n" +
                     "  password:\n" +
                     "    leaked-child: credential-shaped-value\n"
@@ -742,7 +907,7 @@ class ConfigLifecycleTest {
     void knownStringListCannotSilentlyDropMappingEntries() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 5\n" +
+                "config-version: 6\n" +
                     "factions:\n" +
                     "  blockedClaimWorlds:\n" +
                     "  - valid-world\n" +
@@ -788,7 +953,7 @@ class ConfigLifecycleTest {
     @Test
     void freshInstallRaceNeverOverwritesAnArrivingOperatorFile() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] arriving = "config-version: 5\nsecret: arriving-secret\n"
+        byte[] arriving = "config-version: 6\nsecret: arriving-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
 
         ConfigLifecycle.Result result = ConfigLifecycle.prepare(
@@ -810,7 +975,7 @@ class ConfigLifecycleTest {
     void postWriteRaceIsRereadExactlyAndNeverActivated() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] legacy = "players:\n  initialPower: 9\n".getBytes(StandardCharsets.UTF_8);
-        byte[] raced = "config-version: 5\ndatabase:\n  password: raced-secret\n"
+        byte[] raced = "config-version: 6\ndatabase:\n  password: raced-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, legacy);
 
@@ -861,7 +1026,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         Files.writeString(
                 config,
-                "config-version: 5\nthird-party-extension:\n  retained: true\n",
+                "config-version: 6\nthird-party-extension:\n  retained: true\n",
                 StandardCharsets.UTF_8
         );
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
@@ -885,7 +1050,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
         byte[] operatorEdit = (
-                "config-version: 5\n" +
+                "config-version: 6\n" +
                     "dpc-api:\n" +
                     "  enabled: false\n" +
                     "  key: operator-new-secret\n"
@@ -977,7 +1142,7 @@ class ConfigLifecycleTest {
 
     private static String anchoredSequenceTemplate() {
         return """
-                config-version: 5
+                config-version: 6
                 database:
                   password: default-password
                 gates:

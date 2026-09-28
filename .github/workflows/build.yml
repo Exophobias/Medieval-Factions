@@ -102,6 +102,19 @@ jobs:
         if: needs.changes.outputs.docs_only != 'true'
         run: ./gradlew clean build
 
+      - name: Test and package Paper 26.3 compatibility
+        if: needs.changes.outputs.docs_only != 'true'
+        run: ./gradlew -PminecraftVersion=26.3 test shadowJar verifyMinecraftApi
+
+      # Use the upstream bytecode/member checker for this fork's declared target.
+      - name: Check Bukkit API use against every supported Minecraft version
+        if: needs.changes.outputs.docs_only != 'true'
+        run: |
+          curl -fsSL -o /tmp/check_api_compat.py \
+            https://raw.githubusercontent.com/Dans-Plugins/release-gates/v12/gates/check_api_compat.py
+          python3 /tmp/check_api_compat.py --versions minecraft-versions.json build/libs
+
+
   docker-build:
     runs-on: ubuntu-latest
     needs: changes

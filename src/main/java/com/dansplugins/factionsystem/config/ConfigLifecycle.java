@@ -64,7 +64,7 @@ import java.util.regex.Pattern;
 public final class ConfigLifecycle {
 
     public static final String VERSION_KEY = "config-version";
-    public static final int CURRENT_VERSION = 5;
+    public static final int CURRENT_VERSION = 6;
     private static final String OLD_DPC_URL = "https://dansplugins.com/api/v1/factions";
     private static final String CURRENT_DPC_URL = "https://api.dansplugins.com/api/v1/factions";
     private static final Pattern DECIMAL_INTEGER = Pattern.compile("0|[1-9][0-9]*");
@@ -239,7 +239,8 @@ public final class ConfigLifecycle {
                     case 1 -> migrateOneToTwo(sourceYaml, schemaTwoTemplate(bundledYaml));
                     case 2 -> migrateTwoToThree(sourceYaml, schemaThreeTemplate(bundledYaml));
                     case 3 -> migrateThreeToFour(sourceYaml, schemaFourTemplate(bundledYaml));
-                    case 4 -> migrateFourToFive(sourceYaml, bundledYaml);
+                    case 4 -> migrateFourToFive(sourceYaml, schemaFiveTemplate(bundledYaml));
+                    case 5 -> migrateFiveToSix(sourceYaml, bundledYaml);
                     default -> null;
                 };
             } catch (RuntimeException failure) {
@@ -420,6 +421,11 @@ public final class ConfigLifecycle {
         return priorSchemaTemplate(bundledYaml, 4);
     }
 
+    /** Reconstructs schema 5 before the opt-in REST API existed. */
+    private static String schemaFiveTemplate(String bundledYaml) {
+        return priorSchemaTemplate(bundledYaml, 5);
+    }
+
     private static String priorSchemaTemplate(String bundledYaml, int version) {
         LoaderOptions loaderOptions = new LoaderOptions();
         loaderOptions.setAllowDuplicateKeys(false);
@@ -435,7 +441,12 @@ public final class ConfigLifecycle {
             throw new IllegalStateException("the bundled configuration must have a mapping root");
         }
         replaceTemplateValue(mapping, VERSION_KEY, version, yaml);
-        Node factions = unwrap(mapping.getValue().get(tupleIndex(mapping, "factions")).getValueNode());
+        if (version < 6) {
+            removeTemplateKey(mapping, "api");
+        }
+        int factionsIndex = tupleIndex(mapping, "factions");
+        Node factions = factionsIndex < 0 ? null
+                : unwrap(mapping.getValue().get(factionsIndex).getValueNode());
         if (factions instanceof MappingNode factionMapping) {
             if (version < 4) {
                 removeTemplateKey(factionMapping, "factionHomeCooldownMinutes");
@@ -448,7 +459,7 @@ public final class ConfigLifecycle {
             if (defaults instanceof MappingNode defaultsMapping) {
                 Node flags = unwrap(defaultsMapping.getValue().get(
                         tupleIndex(defaultsMapping, "flags")).getValueNode());
-                if (flags instanceof MappingNode flagMapping) {
+                if (flags instanceof MappingNode flagMapping && version < 5) {
                     removeTemplateKey(flagMapping, "maxEmbassyChunks");
                 }
             }
@@ -528,6 +539,11 @@ public final class ConfigLifecycle {
 
     /** Adds the embassy-area allowance without replacing an explicit extension value. */
     private static Migration migrateFourToFive(String installedYaml, String bundledYaml) {
+        return canonicalize(installedYaml, bundledYaml);
+    }
+
+    /** Adds the opt-in REST API while retaining explicit operator settings. */
+    private static Migration migrateFiveToSix(String installedYaml, String bundledYaml) {
         return canonicalize(installedYaml, bundledYaml);
     }
 
@@ -901,6 +917,16 @@ public final class ConfigLifecycle {
                 }
             } catch (DateTimeParseException failure) {
                 throw new ValidationException("duels.duration");
+            }
+        }
+        String apiHost = configured.getString("api.host");
+        if (apiHost != null && apiHost.isBlank()) {
+            throw new ValidationException("api.host");
+        }
+        if (configured.contains("api.port")) {
+            long apiPort = ((Number) configured.get("api.port")).longValue();
+            if (apiPort < 1 || apiPort > 65535) {
+                throw new ValidationException("api.port");
             }
         }
         if (configured.contains("dpc-api.sync-interval-minutes")

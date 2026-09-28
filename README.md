@@ -45,6 +45,9 @@ The development of the fifth major version of MF was led by [alyphen](https://gi
 3) Restart your server.
 4) (Optional) Configure your preferred storage backend in `config.yml` (database or JSON).
 
+### Supported Minecraft Versions
+This Patriam fork targets **Paper 26.3 with Java 25**, as listed in [`minecraft-versions.json`](minecraft-versions.json). Its shipping test/build gate uses that API; upstream support for older Minecraft versions does not apply to this fork.
+
 ### Storage Options
 Medieval Factions supports two data storage backends:
 - **Database Storage** (default) - Uses embedded H2, or a MariaDB/MySQL server
@@ -68,6 +71,7 @@ Dynmap has been integrated with this plugin. In order to be able to view claimed
 - [Configuration Guide](CONFIG.md) - Detailed config options
 - [Faction Flags](FACTION_FLAGS.md) - Faction flag reference
 - [Database Querying Guide](DATABASE_QUERYING.md) - How to query the database directly
+- [REST API Usage Guide](API_USAGE.md) - The opt-in HTTP API for integrating other plugins and tools
 
 ### Wiki & Additional Resources
 - [Wiki Guide](https://github.com/Dans-Plugins/Medieval-Factions/wiki/Guide)

@@ -8,7 +8,7 @@ plugins {
 
 group = "com.dansplugins"
 // Keep the published API coordinate used by the Patriam consumer graph for this upstream merge.
-// The upstream source base is 6.0.1-SNAPSHOT; a coordinated coordinate bump is a separate release.
+// The upstream source base is 6.1.1-SNAPSHOT; a coordinated coordinate bump is a separate release.
 version = "5.9.0-patriam.1-SNAPSHOT"
 
 def minecraftVersion = providers.gradleProperty("minecraftVersion").getOrElse("26.2")
@@ -61,12 +61,19 @@ dependencies {
     implementation 'com.zaxxer:HikariCP:5.0.1'
     implementation 'com.google.code.gson:gson:2.9.0'
     implementation 'com.github.everit-org.json-schema:org.everit.json.schema:1.14.2' // JSON schema validation
-    implementation 'org.slf4j:slf4j-api:1.8.0-beta4'
+    // 2.0.7 is what the build actually resolves: Javalin/Jetty pull slf4j-api 2.0.x
+    // and it wins over the 1.8.0-beta4 that used to be declared here. Declaring it
+    // explicitly keeps the file honest about the version MfSlf4jServiceProvider is
+    // written against.
+    implementation 'org.slf4j:slf4j-api:2.0.7'
     implementation 'com.github.Dans-Plugins:Mailboxes:v1.1'
     implementation 'com.rpkit:rpk-core-bukkit:2.3.2:all'
     implementation 'com.rpkit:rpk-player-lib-bukkit:2.3.2:all'
     implementation 'com.rpkit:rpk-notification-lib-bukkit:2.3.2:all'
     implementation 'com.rpkit:rpk-lock-lib-bukkit:2.3.2:all'
+    implementation 'io.javalin:javalin:5.6.3'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.3'
+    implementation 'com.fasterxml.jackson.module:jackson-module-kotlin:2.15.3'
     jooqGenerator 'org.jooq:jooq-meta-extensions:3.19.1'
 
     // Use the Kotlin JUnit 5 integration.
@@ -194,6 +201,15 @@ shadowJar {
         include(dependency('com.h2database:h2'))
         include(dependency('com.zaxxer:HikariCP'))
         include(dependency('com.google.code.gson:gson'))
+        include(dependency('io.javalin:javalin'))
+        // Jetty's HTTP, IO, servlet and websocket support are required transitively by Javalin.
+        include(dependency('org.eclipse.jetty:.*'))
+        include(dependency('org.eclipse.jetty.websocket:.*'))
+        include(dependency('jakarta.servlet:jakarta.servlet-api'))
+        include(dependency('com.fasterxml.jackson.core:jackson-databind'))
+        include(dependency('com.fasterxml.jackson.core:jackson-core'))
+        include(dependency('com.fasterxml.jackson.core:jackson-annotations'))
+        include(dependency('com.fasterxml.jackson.module:jackson-module-kotlin'))
         // everit's own transitive dependencies (commons-validator, handy-uri-templates) are deliberately
         // not shaded in: they are only reached by the "format" keyword validators for email/hostname/ip/
         // uri-template, which the schemas under src/main/resources/schemas do not use. Adding one of those
@@ -221,6 +237,9 @@ shadowJar {
     relocate 'org.reactivestreams', 'com.dansplugins.factionsystem.shadow.org.reactivestreams'
     relocate 'org.everit', 'com.dansplugins.factionsystem.shadow.org.everit'
     relocate 'org.json', 'com.dansplugins.factionsystem.shadow.org.json'
+    relocate 'io.javalin', 'com.dansplugins.factionsystem.shadow.io.javalin'
+    relocate 'org.eclipse.jetty', 'com.dansplugins.factionsystem.shadow.org.eclipse.jetty'
+    relocate 'com.fasterxml.jackson', 'com.dansplugins.factionsystem.shadow.com.fasterxml.jackson'
 }
 
 // The stable API, on its own, as com.dansplugins:medieval-factions-api.
@@ -247,6 +266,9 @@ tasks.register('apiJar', Jar) {
     from(sourceSets.main.output) {
         include 'com/dansplugins/factionsystem/api/**'
         exclude 'com/dansplugins/factionsystem/api/impl/**'
+        exclude 'com/dansplugins/factionsystem/api/MfApiServer*'
+        exclude 'com/dansplugins/factionsystem/api/controller/**'
+        exclude 'com/dansplugins/factionsystem/api/dto/**'
     }
 }
 

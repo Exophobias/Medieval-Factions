@@ -1,7 +1,8 @@
 package com.dansplugins.factionsystem
 
-import com.dansplugins.factionsystem.approval.MfApprovalRequestService
 import com.dansplugins.factionsystem.api.ApiResult
+import com.dansplugins.factionsystem.api.MfApiServer
+import com.dansplugins.factionsystem.approval.MfApprovalRequestService
 import com.dansplugins.factionsystem.chat.JooqMfChatChannelMessageRepository
 import com.dansplugins.factionsystem.chat.MfChatChannelMessageRepository
 import com.dansplugins.factionsystem.chat.MfChatService
@@ -58,12 +59,12 @@ import com.dansplugins.factionsystem.listener.BlockPistonExtendListener
 import com.dansplugins.factionsystem.listener.BlockPistonRetractListener
 import com.dansplugins.factionsystem.listener.BlockPlaceListener
 import com.dansplugins.factionsystem.listener.CreatureSpawnListener
+import com.dansplugins.factionsystem.listener.EmbassyBoundaryListener
+import com.dansplugins.factionsystem.listener.EmbassyWarListener
 import com.dansplugins.factionsystem.listener.EntityDamageByEntityListener
 import com.dansplugins.factionsystem.listener.EntityDamageListener
 import com.dansplugins.factionsystem.listener.EntityExplodeListener
 import com.dansplugins.factionsystem.listener.EntityInteractionProtection
-import com.dansplugins.factionsystem.listener.EmbassyBoundaryListener
-import com.dansplugins.factionsystem.listener.EmbassyWarListener
 import com.dansplugins.factionsystem.listener.InventoryClickListener
 import com.dansplugins.factionsystem.listener.InventoryMoveItemListener
 import com.dansplugins.factionsystem.listener.LingeringPotionSplashListener
@@ -123,8 +124,8 @@ import org.flywaydb.core.Flyway
 import org.jooq.DSLContext
 import org.jooq.conf.Settings
 import org.jooq.impl.DSL
-import java.nio.charset.StandardCharsets
 import java.io.IOException
+import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalTime
@@ -140,6 +141,7 @@ class MedievalFactions : JavaPlugin() {
         private set
 
     private var dataSource: DataSource? = null
+    private var apiServer: MfApiServer? = null
 
     @Volatile
     private var activeConfigSnapshot: ConfigLifecycle.Snapshot? = null
@@ -443,22 +445,35 @@ class MedievalFactions : JavaPlugin() {
             playerMoveListener.registerStorageMountMovement()
         } catch (failure: IllegalStateException) {
             embassyService.blockNewAgreements("Embassies require Paper's storage-mount movement protection")
-            logger.log(java.util.logging.Level.SEVERE,
-                "Embassy offers and acceptance are unavailable: ${failure.message}", failure)
+            logger.log(
+                java.util.logging.Level.SEVERE,
+                "Embassy offers and acceptance are unavailable: ${failure.message}",
+                failure
+            )
         }
 
         // Remove occupants who lose guest membership or remain inside when a war ends.
-        server.scheduler.runTaskTimer(this, Runnable {
+        server.scheduler.runTaskTimer(
+            this,
+            Runnable {
             playerMoveListener.sweepEmbassyOccupants()
-        }, 20L, 20L)
+        },
+            20L,
+            20L
+        )
 
         registerCommand("faction", MfFactionCommand(this))
-        server.scheduler.runTaskTimerAsynchronously(this, Runnable {
+        server.scheduler.runTaskTimerAsynchronously(
+            this,
+            Runnable {
             val result = embassyService.sweep()
             if (result is dev.forkhandles.result4k.Failure) {
                 logger.warning("Embassy expiry sweep failed: ${result.reason.message}")
             }
-        }, 20L * 60L, 20L * 60L * 20L)
+        },
+            20L * 60L,
+            20L * 60L * 20L
+        )
         registerCommand("lock", MfLockCommand(this))
         registerCommand("unlock", MfUnlockCommand(this))
         registerCommand("accessors", MfAccessorsCommand(this))
@@ -601,6 +616,8 @@ class MedievalFactions : JavaPlugin() {
             syncIntervalTicks
         )
 
+        apiServer = MfApiServer(this).also { it.start() }
+
         // Publish only after every startup phase succeeded; a half-enabled plugin is unavailable.
         server.servicesManager.register(
             com.dansplugins.factionsystem.api.WildernessReservationApi::class.java,
@@ -671,8 +688,10 @@ class MedievalFactions : JavaPlugin() {
     private fun checkNomadAddon(requireEnabled: Boolean): Boolean {
         val addon = server.pluginManager.getPlugin("PatriamNomads")
         val issue = try {
-            nomadAddonFence.startupIssue(addon != null,
-                if (requireEnabled) addon?.isEnabled ?: false else null)
+            nomadAddonFence.startupIssue(
+                addon != null,
+                if (requireEnabled) addon?.isEnabled ?: false else null
+            )
         } catch (failure: IOException) {
             shutdownForNomad("Nomad addon marker cannot be validated: ${failure.message}")
             return false
@@ -875,6 +894,8 @@ class MedievalFactions : JavaPlugin() {
     }
 
     override fun onDisable() {
+        apiServer?.stop()
+        apiServer = null
         servicesOrNull?.claimService?.wildernessReservations?.close()
         trace.close()
 

@@ -20,8 +20,8 @@ import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.failure.ServiceFailureType
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
-import dev.forkhandles.result4k.mapFailure
 import dev.forkhandles.result4k.Failure
+import dev.forkhandles.result4k.mapFailure
 import dev.forkhandles.result4k.resultFrom
 import net.md_5.bungee.api.ChatColor
 import net.md_5.bungee.api.ChatMessageType.ACTION_BAR
@@ -48,6 +48,8 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
     }
 
     private val claimsByKey: MutableMap<ClaimKey, MfClaimedChunk> = ConcurrentHashMap()
+    val claims: List<MfClaimedChunk>
+        get() = claimsByKey.values.toList()
 
     // Secondary index: faction id -> the set of that faction's claim keys. Maintained alongside
     // claimsByKey at every mutation point (init/save/delete/deleteAll) so that per-faction reads
