@@ -401,6 +401,17 @@ class TraceClientTest {
     }
 
     @Test
+    void missingOrBlankKey_doesNotCreateServerWideConfig(@TempDir Path plugins) {
+        for (String key : new String[] {null, "", " "}) {
+            TraceClient client = TraceClient.builder(baseUrl(), "MyPlugin").key(key)
+                    .enabled(true).serverWideConfig(plugins.toFile()).build();
+            assertEquals(TraceClient.REASON_NO_KEY, client.disabledReason());
+            assertFalse(Files.exists(plugins.resolve("trace/config.yml")));
+            client.close();
+        }
+    }
+
+    @Test
     void serverWideConfig_enabledFalseDisablesWithTheServerWideReason(@TempDir Path plugins) throws Exception {
         // Arrange
         Path file = plugins.resolve("trace").resolve("config.yml");
