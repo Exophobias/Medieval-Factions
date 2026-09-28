@@ -187,6 +187,7 @@ shadowJar {
         include(dependency('org.jetbrains.kotlin:kotlin-stdlib-common'))
         include(dependency('org.jetbrains:annotations'))
         include(dependency('org.jetbrains.kotlin:kotlin-stdlib-jdk7'))
+        include(dependency('org.jetbrains.kotlin:kotlin-reflect'))
         include(dependency('org.bstats:bstats-bukkit'))
         include(dependency('org.bstats:bstats-base'))
         include(dependency('dev.forkhandles:result4k'))
@@ -205,6 +206,7 @@ shadowJar {
         // Jetty's HTTP, IO, servlet and websocket support are required transitively by Javalin.
         include(dependency('org.eclipse.jetty:.*'))
         include(dependency('org.eclipse.jetty.websocket:.*'))
+        include(dependency('org.eclipse.jetty.toolchain:jetty-jakarta-servlet-api'))
         include(dependency('jakarta.servlet:jakarta.servlet-api'))
         include(dependency('com.fasterxml.jackson.core:jackson-databind'))
         include(dependency('com.fasterxml.jackson.core:jackson-core'))
