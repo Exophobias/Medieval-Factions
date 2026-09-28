@@ -21,10 +21,10 @@ import org.bukkit.command.CommandSender
 import org.bukkit.command.TabCompleter
 import org.bukkit.entity.Player
 import org.bukkit.inventory.InventoryHolder
-import java.time.Instant
 import java.time.Duration
-import java.util.UUID
+import java.time.Instant
 import java.util.PriorityQueue
+import java.util.UUID
 import kotlin.math.abs
 
 /**
@@ -45,7 +45,7 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
             return true
         }
         if (args.isEmpty() || args[0].equals("help", ignoreCase = true)) {
-            sender.sendMessage("${AQUA}/f embassy offer <realm> [chunks], accept, decline, revoke, release, finish, seize, passage, info, list")
+            sender.sendMessage("$AQUA/f embassy offer <realm> [chunks], accept, decline, revoke, release, finish, seize, passage, info, list")
             sender.sendMessage("${GRAY}Stand in the plot to offer or accept. Revoke/release/seize/passage/info can name <world UUID>:<chunkX>,<chunkZ>.")
             sender.sendMessage("${GRAY}Use 4 for four connected chunks in your land, starting here; the default is 1. Offers last 7 days; clearing lasts 14 peaceful days.")
             return true
@@ -65,7 +65,9 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
                 sender.sendMessage("${RED}Use a plot from /f embassy list: <world UUID>:<chunkX>,<chunkZ>.")
                 return true
             }
-        } else Plot(parcel.world.uid, parcel.x, parcel.z)
+        } else {
+            Plot(parcel.world.uid, parcel.x, parcel.z)
+        }
         val embassies = plugin.services.embassyService
         if (verb == "list") {
             val rows = embassies.listFor(faction.id)
@@ -84,8 +86,10 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
         }
         val existing = embassies.getAt(selected.worldId, selected.x, selected.z)
         if (verb == "info") {
-            sender.sendMessage(existing?.let { "${AQUA}${describe(it)}" }
-                ?: "${GRAY}There is no embassy offer or plot in this chunk.")
+            sender.sendMessage(
+                existing?.let { "${AQUA}${describe(it)}" }
+                ?: "${GRAY}There is no embassy offer or plot in this chunk."
+            )
             return true
         }
         val hostVerb = verb == "offer" || verb == "revoke"
@@ -114,11 +118,13 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
                 guest = namedGuest
                 count = 1
             } else {
-                guest = if (offerArgs.size > 1) factionService.getFaction(offerArgs.dropLast(1).joinToString(" "))
+                guest = if (offerArgs.size > 1) {
+                    factionService.getFaction(offerArgs.dropLast(1).joinToString(" "))
                     ?: run {
                         sender.sendMessage("${RED}Name another existing realm as the guest.")
                         return true
-                    } else {
+                    }
+                } else {
                     sender.sendMessage("${RED}Name another existing realm as the guest.")
                     return true
                 }
@@ -163,13 +169,19 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
             sender.sendMessage("${RED}There is no embassy agreement in this chunk.")
             return true
         }
-        if (hostVerb && existing.hostId != faction.id || guestVerb && existing.guestId != faction.id ||
-            conquerorVerb && existing.conquerorId != faction.id) {
+        if ((hostVerb && existing.hostId != faction.id) || (guestVerb && existing.guestId != faction.id) ||
+            (conquerorVerb && existing.conquerorId != faction.id)
+        ) {
             sender.sendMessage("${RED}Your realm is not the authority for this embassy action.")
             return true
         }
-        val other = factionService.getFaction(if (hostVerb || conquerorVerb) existing.guestId
-            else existing.conquerorId ?: existing.hostId)
+        val other = factionService.getFaction(
+            if (hostVerb || conquerorVerb) {
+            existing.guestId
+        } else {
+            existing.conquerorId ?: existing.hostId
+        }
+        )
         when (verb) {
             "accept" -> {
                 val pending = embassies.pendingOfferAt(parcel.world.uid, parcel.x, parcel.z)
@@ -183,9 +195,12 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
                 if (parcel.world.players.any { occupant ->
                         (occupant.location.chunk.x to occupant.location.chunk.z) in area &&
                             factionService.getFaction(MfPlayerId(occupant.uniqueId.toString()))?.id != faction.id &&
-                            !(occupant.hasPermission("mf.bypass") &&
-                                plugin.services.playerService.getPlayer(occupant)?.isBypassEnabled == true)
-                    }) {
+                            !(
+                                occupant.hasPermission("mf.bypass") &&
+                                plugin.services.playerService.getPlayer(occupant)?.isBypassEnabled == true
+                            )
+                    }
+                ) {
                     sender.sendMessage("${RED}Everyone outside the guest realm must leave all offered chunks before acceptance.")
                     return true
                 }
@@ -215,9 +230,16 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
                 sender.sendMessage("${GREEN}Embassy cleared and returned to the current landholder.")
                 other?.sendMessage("Embassy cleared", "${faction.displayName} finished clearing ${location(existing)}.")
             }
-            "seize", "passage" -> report(sender, embassies.chooseConquest(
-                faction.id, selected.worldId, selected.x, selected.z, verb == "passage"
-            )) {
+            "seize", "passage" -> report(
+                sender,
+                embassies.chooseConquest(
+                faction.id,
+                    selected.worldId,
+                    selected.x,
+                    selected.z,
+                    verb == "passage"
+            )
+            ) {
                 if (it == null) {
                     sender.sendMessage("${GREEN}Embassy property seized; your realm now controls the chunk.")
                     other?.sendMessage("Embassy seized", "${faction.displayName} seized former embassy property at ${location(existing)}.")
@@ -238,17 +260,22 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
         val start = ChunkPos(chunk.x, chunk.z)
         fun dx(position: ChunkPos) = position.x.toLong() - start.x
         fun dz(position: ChunkPos) = position.z.toLong() - start.z
-        val frontier = PriorityQueue(compareBy<ChunkPos> { maxOf(abs(dx(it)), abs(dz(it))) }
+        val frontier = PriorityQueue(
+            compareBy<ChunkPos> { maxOf(abs(dx(it)), abs(dz(it))) }
             .thenBy { (if (dx(it) < 0) 1 else 0) + (if (dz(it) < 0) 1 else 0) }
-            .thenBy { abs(dx(it)) + abs(dz(it)) }.thenBy { it.z }.thenBy { it.x })
+            .thenBy { abs(dx(it)) + abs(dz(it)) }.thenBy { it.z }.thenBy { it.x }
+        )
         val seen = mutableSetOf(start)
         val selected = mutableListOf<ChunkPos>()
         frontier.add(start)
         while (frontier.isNotEmpty() && selected.size < count) {
             val position = frontier.remove()
             if (plugin.services.claimService.getClaim(chunk.world.uid, position.x, position.z)?.factionId != hostId ||
-                position != start && !chunk.world.isChunkLoaded(position.x, position.z) ||
-                plugin.services.embassyService.getAt(chunk.world.uid, position.x, position.z) != null) continue
+                (position != start && !chunk.world.isChunkLoaded(position.x, position.z)) ||
+                plugin.services.embassyService.getAt(chunk.world.uid, position.x, position.z) != null
+            ) {
+                    continue
+                }
             selected.add(position)
             if (selected.size == count) break
             val neighbors = listOfNotNull(
@@ -289,8 +316,11 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
         val world = runCatching { UUID.fromString(text.substring(0, colon)) }.getOrNull() ?: return null
         val coordinates = text.substring(colon + 1).split(',')
         if (coordinates.size != 2) return null
-        return Plot(world, coordinates[0].toIntOrNull() ?: return null,
-            coordinates[1].toIntOrNull() ?: return null)
+        return Plot(
+            world,
+            coordinates[0].toIntOrNull() ?: return null,
+            coordinates[1].toIntOrNull() ?: return null
+        )
     }
 
     private fun describe(row: MfEmbassy): String {
@@ -302,7 +332,9 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
         val deadline = if (recovery && row.pausedAt != null && row.deadlineAt != null) {
             val remaining = Duration.ofMillis((row.deadlineAt - row.pausedAt).coerceAtLeast(0L))
             ", paused by war (${remaining.toDays()}d ${remaining.toHoursPart()}h of peaceful retrieval remaining)"
-        } else row.deadlineAt?.let { ", until ${Instant.ofEpochMilli(it)}" } ?: ""
+        } else {
+            row.deadlineAt?.let { ", until ${Instant.ofEpochMilli(it)}" } ?: ""
+        }
         val holder = conqueror?.let { ", current landholder $it" } ?: ""
         return "${row.status} $host → $guest at ${location(row)}$holder$deadline"
     }

@@ -7,11 +7,11 @@ import com.dansplugins.factionsystem.api.event.EmbassyOfferAttemptEvent
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
-import com.dansplugins.factionsystem.faction.flag.MfFlags
 import com.dansplugins.factionsystem.faction.flag.MfFlagValues
+import com.dansplugins.factionsystem.faction.flag.MfFlags
 import com.dansplugins.factionsystem.gate.MfGateService
-import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.locks.MfLockRepository
+import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationship
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
@@ -41,12 +41,12 @@ import java.time.ZoneOffset
 import java.util.UUID
 import java.util.logging.Logger
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.test.assertFailsWith
 
 class MfEmbassyServiceTest {
     private val world = UUID.randomUUID()
@@ -244,18 +244,24 @@ class MfEmbassyServiceTest {
         `when`(claimService.getClaim(world, 2, -3)).thenReturn(MfClaimedChunk(world, 2, -3, conqueror))
         assertEquals(MfEmbassyStatus.CONQUEST_DECISION, embassies.getAt(world, 2, -3)?.status)
         assertEquals(EmbassyAccessDecision.DENY, embassies.access(guestPlayer, claim, ClaimAction.CONTAINER))
-        assertEquals(EmbassyAccessDecision.DENY,
-            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER))
+        assertEquals(
+            EmbassyAccessDecision.DENY,
+            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER)
+        )
         assertIs<Success<Int>>(embassies.sweep())
         assertEquals(MfEmbassyStatus.CONQUEST_DECISION, embassies.getAt(world, 2, -3)?.status)
-        assertEquals(EmbassyAccessDecision.DENY,
-            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER))
+        assertEquals(
+            EmbassyAccessDecision.DENY,
+            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER)
+        )
         clock.time += MfEmbassyService.CONQUEST_DECISION_MILLIS
         assertEquals(MfEmbassyStatus.CONQUEST_PASSAGE, embassies.getAt(world, 2, -3)?.status)
         assertIs<Success<Int>>(embassies.sweep())
         assertEquals(MfEmbassyStatus.CONQUEST_PASSAGE, repository.rows.values.single().status)
-        assertEquals(EmbassyAccessDecision.GRANT,
-            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER))
+        assertEquals(
+            EmbassyAccessDecision.GRANT,
+            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER)
+        )
         clock.time += MfEmbassyService.CLEARING_MILLIS
         assertNull(embassies.getAt(world, 2, -3))
     }
@@ -269,8 +275,10 @@ class MfEmbassyServiceTest {
         val passage = embassies.chooseConquest(conqueror, world, 2, -3, true)
         assertIs<Success<MfEmbassy?>>(passage)
         assertEquals(MfEmbassyStatus.CONQUEST_PASSAGE, passage.value?.status)
-        assertEquals(EmbassyAccessDecision.DENY,
-            embassies.access(hostPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER))
+        assertEquals(
+            EmbassyAccessDecision.DENY,
+            embassies.access(hostPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER)
+        )
     }
 
     @Test
@@ -282,8 +290,10 @@ class MfEmbassyServiceTest {
 
         assertIs<Failure<*>>(embassies.invalidateClaim(world, 2, -3))
         assertEquals(MfEmbassyStatus.CONQUEST_DECISION, embassies.getAt(world, 2, -3)?.status)
-        assertEquals(EmbassyAccessDecision.DENY,
-            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER))
+        assertEquals(
+            EmbassyAccessDecision.DENY,
+            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER)
+        )
         assertTrue(embassies.hasActiveOrClearingEmbassy(world, 2, -3))
 
         repository.failUpsert = false
@@ -309,8 +319,10 @@ class MfEmbassyServiceTest {
         `when`(relationshipService.getRelationships(conqueror, guest)).thenReturn(emptyList())
         assertIs<Success<Int>>(embassies.onWarStateChanged(conqueror, guest, false))
         assertEquals(MfEmbassyStatus.CONQUEST_PASSAGE, repository.rows.values.single().status)
-        assertEquals(EmbassyAccessDecision.GRANT,
-            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER))
+        assertEquals(
+            EmbassyAccessDecision.GRANT,
+            embassies.access(guestPlayer, MfClaimedChunk(world, 2, -3, conqueror), ClaimAction.CONTAINER)
+        )
         clock.time += MfEmbassyService.CLEARING_MILLIS
         assertNull(embassies.getAt(world, 2, -3))
     }
@@ -720,9 +732,12 @@ class MfEmbassyServiceTest {
 
     private fun assertNoClaimWrites() {
         val mutations = setOf("save", "claimIfUnclaimed", "transferOwnership", "delete", "deleteAllClaims")
-        assertTrue(mockingDetails(claimService).invocations.none {
+        assertTrue(
+            mockingDetails(claimService).invocations.none {
             it.method.name.substringBefore('-') in mutations
-        }, "Embassy validation must not persist, transfer or delete claims")
+        },
+            "Embassy validation must not persist, transfer or delete claims"
+        )
     }
 
     private fun setWar(atWar: Boolean) {

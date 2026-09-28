@@ -4,22 +4,22 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.player.MfPlayerId
-import org.bukkit.event.EventHandler
-import org.bukkit.event.Listener
-import org.bukkit.event.block.BlockFromToEvent
-import org.bukkit.event.block.BlockSpreadEvent
-import org.bukkit.event.block.BlockDispenseEvent
-import org.bukkit.event.block.BlockIgniteEvent
-import org.bukkit.event.block.BlockPistonExtendEvent
-import org.bukkit.event.block.BlockPistonRetractEvent
-import org.bukkit.event.block.BlockFertilizeEvent
-import org.bukkit.event.world.StructureGrowEvent
 import org.bukkit.block.data.Directional
 import org.bukkit.entity.FallingBlock
 import org.bukkit.entity.Player
 import org.bukkit.entity.Projectile
+import org.bukkit.event.EventHandler
+import org.bukkit.event.Listener
+import org.bukkit.event.block.BlockDispenseEvent
+import org.bukkit.event.block.BlockFertilizeEvent
+import org.bukkit.event.block.BlockFromToEvent
+import org.bukkit.event.block.BlockIgniteEvent
+import org.bukkit.event.block.BlockPistonExtendEvent
+import org.bukkit.event.block.BlockPistonRetractEvent
+import org.bukkit.event.block.BlockSpreadEvent
 import org.bukkit.event.entity.EntityChangeBlockEvent
 import org.bukkit.event.entity.EntitySpawnEvent
+import org.bukkit.event.world.StructureGrowEvent
 import java.util.Collections
 import java.util.WeakHashMap
 
@@ -33,7 +33,10 @@ class EmbassyBoundaryListener(private val plugin: MedievalFactions) : Listener {
         if (boundary.crosses(
                 EmbassyBoundary.Point.of(event.block),
                 EmbassyBoundary.Point.of(event.toBlock)
-            )) event.isCancelled = true
+            )
+        ) {
+                event.isCancelled = true
+            }
     }
 
     @EventHandler
@@ -41,7 +44,10 @@ class EmbassyBoundaryListener(private val plugin: MedievalFactions) : Listener {
         if (boundary.crosses(
                 EmbassyBoundary.Point.of(event.source),
                 EmbassyBoundary.Point.of(event.block)
-            )) event.isCancelled = true
+            )
+        ) {
+                event.isCancelled = true
+            }
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -78,8 +84,13 @@ class EmbassyBoundaryListener(private val plugin: MedievalFactions) : Listener {
         if (actor?.isBypassEnabled == true && player.hasPermission("mf.bypass")) return
         val claim = plugin.services.claimService.getClaim(event.block.chunk)
         if (claim == null || plugin.services.embassyService.access(
-                actor?.id ?: MfPlayerId.fromBukkitPlayer(player), claim, ClaimAction.INTERACT
-            ) != EmbassyAccessDecision.GRANT) event.isCancelled = true
+                actor?.id ?: MfPlayerId.fromBukkitPlayer(player),
+                claim,
+                ClaimAction.INTERACT
+            ) != EmbassyAccessDecision.GRANT
+        ) {
+                event.isCancelled = true
+            }
     }
 
     @EventHandler
@@ -95,7 +106,10 @@ class EmbassyBoundaryListener(private val plugin: MedievalFactions) : Listener {
         if (boundary.crosses(
                 source,
                 boundary.point(event.block, facing.modX, facing.modZ)
-            )) event.isCancelled = true
+            )
+        ) {
+                event.isCancelled = true
+            }
     }
 
     @EventHandler
@@ -132,7 +146,10 @@ class EmbassyBoundaryListener(private val plugin: MedievalFactions) : Listener {
                 val moved = boundary.point(block)
                 boundary.isEmbassy(moved) ||
                     boundary.crosses(moved, boundary.point(block, direction.modX, direction.modZ))
-            }) event.isCancelled = true
+            }
+        ) {
+                event.isCancelled = true
+            }
     }
 
     @EventHandler
@@ -144,6 +161,9 @@ class EmbassyBoundaryListener(private val plugin: MedievalFactions) : Listener {
                 val moved = boundary.point(block)
                 boundary.isEmbassy(moved) ||
                     boundary.crosses(moved, boundary.point(block, -direction.modX, -direction.modZ))
-            }) event.isCancelled = true
+            }
+        ) {
+                event.isCancelled = true
+            }
     }
 }

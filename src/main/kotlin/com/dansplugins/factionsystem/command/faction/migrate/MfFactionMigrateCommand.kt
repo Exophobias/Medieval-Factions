@@ -17,9 +17,9 @@ import com.dansplugins.factionsystem.player.JooqMfPlayerRepository
 import com.dansplugins.factionsystem.relationship.JooqMfFactionRelationshipRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfChatChannelMessageRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfClaimedChunkRepository
-import com.dansplugins.factionsystem.storage.json.JsonMfEmbassyRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfDuelInviteRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfDuelRepository
+import com.dansplugins.factionsystem.storage.json.JsonMfEmbassyRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfFactionRelationshipRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfFactionRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfGateCreationContextRepository

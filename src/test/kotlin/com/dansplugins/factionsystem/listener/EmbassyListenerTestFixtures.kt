@@ -10,10 +10,16 @@ import org.mockito.stubbing.Answer
 
 /** Existing listener fixtures run without a charter; individual tests can override this answer. */
 internal fun defaultEmbassyService(services: Services): MfEmbassyService {
-    val embassy = mock(MfEmbassyService::class.java, Answer { call ->
-        if (call.method.name.startsWith("access")) EmbassyAccessDecision.NONE
-        else Answers.RETURNS_DEFAULTS.answer(call)
-    })
+    val embassy = mock(
+        MfEmbassyService::class.java,
+        Answer { call ->
+        if (call.method.name.startsWith("access")) {
+            EmbassyAccessDecision.NONE
+        } else {
+            Answers.RETURNS_DEFAULTS.answer(call)
+        }
+    }
+    )
     `when`(services.embassyService).thenReturn(embassy)
     return embassy
 }

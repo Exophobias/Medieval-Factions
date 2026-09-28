@@ -3,12 +3,12 @@ package com.dansplugins.factionsystem.listener
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.claim.ClaimOverrideRegistry
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
-import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.claim.MfEmbassy
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.claim.MfEmbassyStatus
-import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
@@ -25,9 +25,9 @@ import dev.forkhandles.result4k.Failure
 import dev.forkhandles.result4k.Success
 import org.bukkit.Chunk
 import org.bukkit.Location
+import org.bukkit.Material
 import org.bukkit.Server
 import org.bukkit.World
-import org.bukkit.Material
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.entity.Entity
 import org.bukkit.entity.EntityType
@@ -37,8 +37,8 @@ import org.bukkit.event.player.PlayerInteractEntityEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.InventoryHolder
-import org.bukkit.inventory.PlayerInventory
 import org.bukkit.inventory.ItemStack
+import org.bukkit.inventory.PlayerInventory
 import org.bukkit.scheduler.BukkitScheduler
 import org.bukkit.scheduler.BukkitTask
 import org.bukkit.util.Vector

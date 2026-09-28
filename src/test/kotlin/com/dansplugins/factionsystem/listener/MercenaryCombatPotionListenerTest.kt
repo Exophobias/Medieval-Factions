@@ -31,8 +31,11 @@ class MercenaryCombatPotionListenerTest {
     fun areaCloudDeniesOneTargetWithoutSkippingTheNext() {
         var firstTarget = true
         val fixture = Fixture { _, _ ->
-            if (firstTarget.also { firstTarget = false }) MercenaryCombatProvider.Decision.DENY
-            else MercenaryCombatProvider.Decision.ALLOW
+            if (firstTarget.also { firstTarget = false }) {
+                MercenaryCombatProvider.Decision.DENY
+            } else {
+                MercenaryCombatProvider.Decision.ALLOW
+            }
         }
         val cloud = mock(AreaEffectCloud::class.java)
         val event = mock(AreaEffectCloudApplyEvent::class.java)

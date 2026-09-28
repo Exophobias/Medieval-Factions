@@ -71,12 +71,18 @@ class MfFlags(
             { plugin.config.getInt("factions.defaults.flags.maxEmbassyChunks", DEFAULT_MAX_EMBASSY_CHUNKS) },
             { value ->
                 val integer = value.toIntOrNull()
-                if (integer == null) MfFlagValueCoercionFailure("Embassy chunk limit must be an integer")
-                else MfFlagValueCoercionSuccess(integer)
+                if (integer == null) {
+                    MfFlagValueCoercionFailure("Embassy chunk limit must be an integer")
+                } else {
+                    MfFlagValueCoercionSuccess(integer)
+                }
             },
             { value ->
-                if (value in 0..MAX_EMBASSY_CHUNKS) MfFlagValidationSuccess
-                else MfFlagValidationFailure("Embassy chunk limit must be between 0 and $MAX_EMBASSY_CHUNKS")
+                if (value in 0..MAX_EMBASSY_CHUNKS) {
+                    MfFlagValidationSuccess
+                } else {
+                    MfFlagValidationFailure("Embassy chunk limit must be between 0 and $MAX_EMBASSY_CHUNKS")
+                }
             }
         ),
         // A faction's coat of arms, held as whatever opaque identifier the plugin that owns heraldry

@@ -38,7 +38,9 @@ class MfEmbassyService(
     }
 
     private val mutationLock = ReentrantLock(true)
+
     @Volatile private var byChunk: Map<Key, MfEmbassy> = emptyMap()
+
     @Volatile private var newAgreementBlock: String? = null
     // Conservative clock fences survive failed writes in this process and are retried by sweep.
     private data class ClockFence(val base: MfEmbassy, val fenced: MfEmbassy)
@@ -59,9 +61,13 @@ class MfEmbassyService(
             }
         }
         byChunk = rows.associateBy(::Key)
-        rows.filter { (it.status == MfEmbassyStatus.CLEARING || it.status == MfEmbassyStatus.CONQUEST_PASSAGE ||
-            it.status == MfEmbassyStatus.CONQUEST_DECISION) &&
-            it.pausedAt == null }.mapTo(startupRecoveryCandidates, ::Key)
+        rows.filter {
+            (
+                it.status == MfEmbassyStatus.CLEARING || it.status == MfEmbassyStatus.CONQUEST_PASSAGE ||
+            it.status == MfEmbassyStatus.CONQUEST_DECISION
+            ) &&
+            it.pausedAt == null
+        }.mapTo(startupRecoveryCandidates, ::Key)
         plugin.logger.info("${rows.size} faction embassies loaded")
     }
 
@@ -93,8 +99,10 @@ class MfEmbassyService(
     /** Any outstanding embassy involvement blocks adoption into a mobile Nomad realm. */
     fun hasActiveOrClearingForFaction(factionId: MfFactionId): Boolean = byChunk.values.any { stored ->
         val row = getAt(stored.worldId, stored.chunkX, stored.chunkZ)
-        row != null && (row.hostId == factionId || row.guestId == factionId ||
-            currentLandholder(row) == factionId)
+        row != null && (
+            row.hostId == factionId || row.guestId == factionId ||
+            currentLandholder(row) == factionId
+        )
     }
 
     /**
@@ -110,10 +118,12 @@ class MfEmbassyService(
 
     /** Equivalent fence for /f unclaimall. */
     internal fun <T> withAllClaimsRelease(host: MfFactionId, action: () -> T): T = mutationLock.withLock {
-        require(byChunk.values.none { stored ->
+        require(
+            byChunk.values.none { stored ->
             val row = getAt(stored.worldId, stored.chunkX, stored.chunkZ)
             row != null && currentLandholder(row) == host
-        }) {
+        }
+        ) {
             "Cancel all embassy offers and finish clearing periods before unclaiming all land"
         }
         action()
@@ -124,11 +134,13 @@ class MfEmbassyService(
      * deletion before its parent-row cascade can erase the guest's property recovery window.
      */
     internal fun blockFactionDeletion(factionId: MfFactionId) = mutationLock.withLock {
-        require(byChunk.values.none { stored ->
+        require(
+            byChunk.values.none { stored ->
             val row = getAt(stored.worldId, stored.chunkX, stored.chunkZ)
             row != null &&
                 (row.hostId == factionId || currentLandholder(row) == factionId || row.guestId == factionId)
-        }) {
+        }
+        ) {
             "Cancel embassy offers and finish clearing periods before dissolving this faction"
         }
         check(deletingFactions.add(factionId)) { "Faction ${factionId.value} is already being deleted" }
@@ -152,7 +164,8 @@ class MfEmbassyService(
         val faction = plugin.services.factionService.getFaction(playerId)
         if (faction?.id != row.guestId) return EmbassyAccessDecision.DENY
         if ((row.status == MfEmbassyStatus.CLEARING || row.status == MfEmbassyStatus.CONQUEST_PASSAGE) &&
-            action !in RECOVERY_ACTIONS) {
+            action !in RECOVERY_ACTIONS
+        ) {
             return EmbassyAccessDecision.DENY
         }
         return EmbassyAccessDecision.GRANT
@@ -160,7 +173,10 @@ class MfEmbassyService(
 
     /** Physical parcel admission. Wartime movement falls back to ordinary MF/Paper movement rules. */
     fun entryDecision(
-        playerId: MfPlayerId, worldId: UUID, chunkX: Int, chunkZ: Int
+        playerId: MfPlayerId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
     ): EmbassyAccessDecision {
         val row = getAt(worldId, chunkX, chunkZ) ?: return EmbassyAccessDecision.NONE
         if (row.status == MfEmbassyStatus.OFFERED || atWar(row)) return EmbassyAccessDecision.NONE
@@ -204,7 +220,11 @@ class MfEmbassyService(
 
     /** Internal automation may cross only cells with the same peaceful access phase and landholder. */
     fun sameProtectedArea(
-        worldId: UUID, fromChunkX: Int, fromChunkZ: Int, toChunkX: Int, toChunkZ: Int
+        worldId: UUID,
+        fromChunkX: Int,
+        fromChunkZ: Int,
+        toChunkX: Int,
+        toChunkZ: Int
     ): Boolean {
         val snapshot = byChunk
         val now = clock.millis()
@@ -235,13 +255,20 @@ class MfEmbassyService(
 
     /** Compatibility entry point for a single-cell offer. */
     fun offer(
-        host: MfFactionId, guest: MfFactionId, worldId: UUID, chunkX: Int, chunkZ: Int
+        host: MfFactionId,
+        guest: MfFactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
     ): Result4k<MfEmbassy, ServiceFailure> =
         offerArea(host, guest, worldId, listOf(ChunkPos(chunkX, chunkZ))).map { it.single() }
 
     /** Offer a connected initial area or one adjacent expansion, atomically reserving every cell. */
     fun offerArea(
-        host: MfFactionId, guest: MfFactionId, worldId: UUID, chunks: List<ChunkPos>
+        host: MfFactionId,
+        guest: MfFactionId,
+        worldId: UUID,
+        chunks: List<ChunkPos>
     ): Result4k<List<MfEmbassy>, ServiceFailure> = mutationLock.withLock {
         resultFrom {
             requireParcelChecksAvailable()
@@ -261,8 +288,10 @@ class MfEmbassyService(
             validateNewArea(host, guest, worldId, chunks)
             chunks.forEach { requireEmptyParcel(host, worldId, it.x, it.z) }
             val offered = chunks.map { pos ->
-                MfEmbassy(worldId, pos.x, pos.z, host, guest, MfEmbassyStatus.OFFERED,
-                    now, now, Math.addExact(now, OFFER_MILLIS), offerSize = chunks.size)
+                MfEmbassy(
+                    worldId, pos.x, pos.z, host, guest, MfEmbassyStatus.OFFERED,
+                    now, now, Math.addExact(now, OFFER_MILLIS), offerSize = chunks.size
+                )
             }
             applyChanges(offered, emptyList())
             offered
@@ -271,14 +300,20 @@ class MfEmbassyService(
 
     /** Compatibility entry point; acceptance still signs every cell in the pending offer. */
     fun accept(
-        guest: MfFactionId, worldId: UUID, chunkX: Int, chunkZ: Int
+        guest: MfFactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
     ): Result4k<MfEmbassy, ServiceFailure> =
         acceptArea(guest, worldId, chunkX, chunkZ).map { rows ->
             rows.single { it.chunkX == chunkX && it.chunkZ == chunkZ }
         }
 
     fun acceptArea(
-        guest: MfFactionId, worldId: UUID, chunkX: Int, chunkZ: Int
+        guest: MfFactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
     ): Result4k<List<MfEmbassy>, ServiceFailure> = mutationLock.withLock {
         resultFrom {
             requireParcelChecksAvailable()
@@ -333,8 +368,10 @@ class MfEmbassyService(
         require(agreement.all { it.status == MfEmbassyStatus.ACTIVE || it.status == MfEmbassyStatus.OFFERED }) {
             "Embassy agreement entered recovery before this offer was accepted"
         }
-        requireConnected(offers.map { ChunkPos(it.chunkX, it.chunkZ) } +
-            agreement.filter { it.status == MfEmbassyStatus.ACTIVE }.map { ChunkPos(it.chunkX, it.chunkZ) })
+        requireConnected(
+            offers.map { ChunkPos(it.chunkX, it.chunkZ) } +
+            agreement.filter { it.status == MfEmbassyStatus.ACTIVE }.map { ChunkPos(it.chunkX, it.chunkZ) }
+        )
     }
 
     private fun requireConnected(chunks: List<ChunkPos>) {
@@ -373,17 +410,26 @@ class MfEmbassyService(
 
     /** Host cancellation or 14-day revocation notice. A second notice is idempotent. */
     fun revoke(
-        host: MfFactionId, worldId: UUID, chunkX: Int, chunkZ: Int
+        host: MfFactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
     ): Result4k<MfEmbassy?, ServiceFailure> = endBy(host, worldId, chunkX, chunkZ, hostActs = true)
 
     /** Guest rejection or 14-day voluntary departure notice. A second notice is idempotent. */
     fun release(
-        guest: MfFactionId, worldId: UUID, chunkX: Int, chunkZ: Int
+        guest: MfFactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
     ): Result4k<MfEmbassy?, ServiceFailure> = endBy(guest, worldId, chunkX, chunkZ, hostActs = false)
 
     /** Reject only the pending initial offer or expansion, preserving an already active area. */
     fun decline(
-        guest: MfFactionId, worldId: UUID, chunkX: Int, chunkZ: Int
+        guest: MfFactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
     ): Result4k<Unit, ServiceFailure> = mutationLock.withLock {
         resultFrom {
             sweepLocked(clock.millis())
@@ -399,17 +445,25 @@ class MfEmbassyService(
 
     /** Guest confirms the ordinary agreement is cleared; conquest passage is finished per cell. */
     fun finish(
-        guest: MfFactionId, worldId: UUID, chunkX: Int, chunkZ: Int
+        guest: MfFactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int
     ): Result4k<Unit, ServiceFailure> = mutationLock.withLock {
         resultFrom {
             sweepLocked(clock.millis())
             val row = requireNotNull(byChunk[Key(worldId, chunkX, chunkZ)]) { "No embassy at this chunk" }
-            require(row.guestId == guest &&
-                (row.status == MfEmbassyStatus.CLEARING || row.status == MfEmbassyStatus.CONQUEST_PASSAGE)) {
+            require(
+                row.guestId == guest &&
+                (row.status == MfEmbassyStatus.CLEARING || row.status == MfEmbassyStatus.CONQUEST_PASSAGE)
+            ) {
                 "Only the guest may finish a clearing embassy"
             }
-            val cleared = if (row.status == MfEmbassyStatus.CONQUEST_PASSAGE) listOf(row)
-                else byChunk.values.filter { sameAgreement(it, row) && it.status == MfEmbassyStatus.CLEARING }
+            val cleared = if (row.status == MfEmbassyStatus.CONQUEST_PASSAGE) {
+                listOf(row)
+            } else {
+                byChunk.values.filter { sameAgreement(it, row) && it.status == MfEmbassyStatus.CLEARING }
+            }
             applyChanges(emptyList(), cleared)
             Unit
         }.mapFailure(::failure)
@@ -445,7 +499,11 @@ class MfEmbassyService(
 
     /** Conqueror elects immediate seizure or gives the guest fourteen days to retrieve property. */
     fun chooseConquest(
-        conqueror: MfFactionId, worldId: UUID, chunkX: Int, chunkZ: Int, passage: Boolean
+        conqueror: MfFactionId,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int,
+        passage: Boolean
     ): Result4k<MfEmbassy?, ServiceFailure> = mutationLock.withLock {
         resultFrom {
             val now = clock.millis()
@@ -461,9 +519,12 @@ class MfEmbassyService(
                 remove(row)
                 null
             } else {
-                row.copy(status = MfEmbassyStatus.CONQUEST_PASSAGE,
-                    changedAt = now, deadlineAt = Math.addExact(now, CLEARING_MILLIS),
-                    pausedAt = if (atWar(conqueror, row.guestId)) now else null)
+                row.copy(
+                    status = MfEmbassyStatus.CONQUEST_PASSAGE,
+                    changedAt = now,
+                    deadlineAt = Math.addExact(now, CLEARING_MILLIS),
+                    pausedAt = if (atWar(conqueror, row.guestId)) now else null
+                )
                     .also(::publish)
             }
         }.mapFailure(::failure)
@@ -471,7 +532,9 @@ class MfEmbassyService(
 
     /** Persist war start/end for every affected cell together; failure keeps a conservative clock fence. */
     fun onWarStateChanged(
-        first: MfFactionId, second: MfFactionId, atWar: Boolean
+        first: MfFactionId,
+        second: MfFactionId,
+        atWar: Boolean
     ): Result4k<Int, ServiceFailure> = mutationLock.withLock {
         resultFrom {
             val now = clock.millis()
@@ -491,17 +554,23 @@ class MfEmbassyService(
                     MfEmbassyStatus.CONQUEST_DECISION -> when {
                         atWar && now < deadline -> if (row.pausedAt == null) row.copy(pausedAt = now) else row
                         atWar && row.pausedAt != null -> row.copy(
-                            status = MfEmbassyStatus.CONQUEST_PASSAGE, changedAt = deadline,
-                            deadlineAt = Math.addExact(deadline, CLEARING_MILLIS), pausedAt = deadline
+                            status = MfEmbassyStatus.CONQUEST_PASSAGE,
+                            changedAt = deadline,
+                            deadlineAt = Math.addExact(deadline, CLEARING_MILLIS),
+                            pausedAt = deadline
                         )
                         atWar && now < Math.addExact(deadline, CLEARING_MILLIS) -> row.copy(
-                            status = MfEmbassyStatus.CONQUEST_PASSAGE, changedAt = deadline,
-                            deadlineAt = Math.addExact(deadline, CLEARING_MILLIS), pausedAt = now
+                            status = MfEmbassyStatus.CONQUEST_PASSAGE,
+                            changedAt = deadline,
+                            deadlineAt = Math.addExact(deadline, CLEARING_MILLIS),
+                            pausedAt = now
                         )
                         atWar -> null
                         row.pausedAt != null && now >= deadline -> row.copy(
-                            status = MfEmbassyStatus.CONQUEST_PASSAGE, changedAt = now,
-                            deadlineAt = Math.addExact(now, CLEARING_MILLIS), pausedAt = null
+                            status = MfEmbassyStatus.CONQUEST_PASSAGE,
+                            changedAt = now,
+                            deadlineAt = Math.addExact(now, CLEARING_MILLIS),
+                            pausedAt = null
                         )
                         row.pausedAt != null -> row.copy(pausedAt = null)
                         else -> row
@@ -510,7 +579,8 @@ class MfEmbassyService(
                         atWar && row.pausedAt == null && now < deadline -> row.copy(pausedAt = now)
                         !atWar && row.pausedAt != null -> row.copy(
                             deadlineAt = Math.addExact(deadline, now - row.pausedAt),
-                            pausedAt = null, changedAt = now
+                            pausedAt = null,
+                            changedAt = now
                         )
                         else -> row
                     }
@@ -524,7 +594,10 @@ class MfEmbassyService(
                     if (atWar && next.pausedAt != null) warClockFences.putIfAbsent(Key(stored), ClockFence(stored, next))
                     upserts.add(next)
                     if (stored.status == MfEmbassyStatus.CONQUEST_DECISION &&
-                        next.status == MfEmbassyStatus.CONQUEST_PASSAGE) notices.add(next to true)
+                        next.status == MfEmbassyStatus.CONQUEST_PASSAGE
+                    ) {
+                            notices.add(next to true)
+                        }
                 }
             }
             applyChanges(upserts, deletes)
@@ -534,7 +607,11 @@ class MfEmbassyService(
     }
 
     private fun endBy(
-        actor: MfFactionId, worldId: UUID, x: Int, z: Int, hostActs: Boolean
+        actor: MfFactionId,
+        worldId: UUID,
+        x: Int,
+        z: Int,
+        hostActs: Boolean
     ): Result4k<MfEmbassy?, ServiceFailure> = mutationLock.withLock {
         resultFrom {
             val now = clock.millis()
@@ -551,8 +628,12 @@ class MfEmbassyService(
                 return@resultFrom null
             }
             val clearing = agreement.filter { it.status == MfEmbassyStatus.ACTIVE }.map { active ->
-                active.copy(status = MfEmbassyStatus.CLEARING, changedAt = now,
-                    deadlineAt = Math.addExact(now, CLEARING_MILLIS), pausedAt = if (atWar(active)) now else null)
+                active.copy(
+                    status = MfEmbassyStatus.CLEARING,
+                    changedAt = now,
+                    deadlineAt = Math.addExact(now, CLEARING_MILLIS),
+                    pausedAt = if (atWar(active)) now else null
+                )
             }
             applyChanges(clearing, offered)
             val resulting = clearing + agreement.filter { it.status == MfEmbassyStatus.CLEARING }
@@ -568,12 +649,23 @@ class MfEmbassyService(
             // closed even across a failed write or restart, until sweep persists the new decision.
             if (row.status == MfEmbassyStatus.OFFERED || owner == row.guestId ||
                 plugin.services.factionService.getFaction(owner) == null ||
-                plugin.services.factionService.getFaction(row.guestId) == null) return null
-            return row.copy(status = MfEmbassyStatus.CONQUEST_DECISION, conquerorId = owner,
-                changedAt = now, deadlineAt = Long.MAX_VALUE, pausedAt = null)
+                plugin.services.factionService.getFaction(row.guestId) == null
+            ) {
+                    return null
+                }
+            return row.copy(
+                status = MfEmbassyStatus.CONQUEST_DECISION,
+                conquerorId = owner,
+                changedAt = now,
+                deadlineAt = Long.MAX_VALUE,
+                pausedAt = null
+            )
         }
         if (plugin.services.factionService.getFaction(currentLandholder(row)) == null ||
-            plugin.services.factionService.getFaction(row.guestId) == null) return null
+            plugin.services.factionService.getFaction(row.guestId) == null
+        ) {
+                return null
+            }
         val reconciled = reconcileWar(applyClockFence(row, now), now)
         val deadline = reconciled.deadlineAt
         if (reconciled.status == MfEmbassyStatus.CONQUEST_DECISION) {
@@ -585,8 +677,12 @@ class MfEmbassyService(
                 else -> null
             }
             if (pauseStart == null && now >= passageDeadline) return null
-            val passage = reconciled.copy(status = MfEmbassyStatus.CONQUEST_PASSAGE,
-                changedAt = deadline, deadlineAt = passageDeadline, pausedAt = pauseStart)
+            val passage = reconciled.copy(
+                status = MfEmbassyStatus.CONQUEST_PASSAGE,
+                changedAt = deadline,
+                deadlineAt = passageDeadline,
+                pausedAt = pauseStart
+            )
             return reconcileWar(passage, now)
         }
         if (deadline == null || reconciled.pausedAt != null || now < deadline) return reconciled
@@ -626,7 +722,8 @@ class MfEmbassyService(
                     effective != row -> {
                         upserts.add(effective)
                         if (row.status == MfEmbassyStatus.CONQUEST_DECISION &&
-                            effective.status == MfEmbassyStatus.CONQUEST_PASSAGE) {
+                            effective.status == MfEmbassyStatus.CONQUEST_PASSAGE
+                        ) {
                             notices.add { noticeDefaultPassage(effective) }
                         }
                     }
@@ -640,10 +737,17 @@ class MfEmbassyService(
 
     private fun ownerChangedRow(row: MfEmbassy, owner: MfFactionId?, now: Long): MfEmbassy? {
         if (owner == null || owner == row.guestId || row.status == MfEmbassyStatus.OFFERED ||
-            plugin.services.factionService.getFaction(row.guestId) == null) return null
-        return row.copy(status = MfEmbassyStatus.CONQUEST_DECISION,
-            changedAt = now, deadlineAt = Math.addExact(now, CONQUEST_DECISION_MILLIS),
-            conquerorId = owner, pausedAt = if (atWar(owner, row.guestId)) now else null)
+            plugin.services.factionService.getFaction(row.guestId) == null
+        ) {
+                return null
+            }
+        return row.copy(
+            status = MfEmbassyStatus.CONQUEST_DECISION,
+            changedAt = now,
+            deadlineAt = Math.addExact(now, CONQUEST_DECISION_MILLIS),
+            conquerorId = owner,
+            pausedAt = if (atWar(owner, row.guestId)) now else null
+        )
     }
 
     private fun changeOwner(row: MfEmbassy, owner: MfFactionId?, now: Long) {
@@ -653,10 +757,19 @@ class MfEmbassyService(
     }
 
     private fun noticeOwnerChange(old: MfEmbassy, changed: MfEmbassy?) {
-        if (changed == null) notice(old, "Embassy ended",
-            "The parcel at ${parcel(old)} changed ownership or lost a party; its embassy agreement ended.")
-        else notice(changed, "Embassy land conquered",
-            "The former embassy at ${parcel(changed)} changed landholder. The guest's property is closed while the new landholder has 7 days to choose seizure or passage.")
+        if (changed == null) {
+            notice(
+                old,
+                "Embassy ended",
+            "The parcel at ${parcel(old)} changed ownership or lost a party; its embassy agreement ended."
+            )
+        } else {
+            notice(
+                changed,
+                "Embassy land conquered",
+            "The former embassy at ${parcel(changed)} changed landholder. The guest's property is closed while the new landholder has 7 days to choose seizure or passage."
+            )
+        }
     }
 
     private fun applyClockFence(row: MfEmbassy, now: Long): MfEmbassy {
@@ -671,14 +784,29 @@ class MfEmbassyService(
             val deadline = requireNotNull(row.deadlineAt)
             val missedDeadline = now >= deadline
             val preserved = if (row.status == MfEmbassyStatus.CONQUEST_DECISION && missedDeadline) {
-                row.copy(status = MfEmbassyStatus.CONQUEST_PASSAGE, changedAt = now,
-                    deadlineAt = Math.addExact(now, CLEARING_MILLIS), pausedAt = now)
-            } else row.copy(pausedAt = now,
-                deadlineAt = if (missedDeadline) Math.addExact(now, CLEARING_MILLIS) else deadline)
-            plugin.logger.warning("Recovered an unpaused wartime embassy clock at ${parcel(row)}; " +
-                (if (missedDeadline) "the former deadline passed, so a full 14-day peaceful recovery allowance was retained. "
-                else "the remaining recovery allowance was retained. ") +
-                "Sweep will retry persistence; inspect storage errors if this repeats after restart.")
+                row.copy(
+                    status = MfEmbassyStatus.CONQUEST_PASSAGE,
+                    changedAt = now,
+                    deadlineAt = Math.addExact(now, CLEARING_MILLIS),
+                    pausedAt = now
+                )
+            } else {
+                row.copy(
+                    pausedAt = now,
+                deadlineAt = if (missedDeadline) Math.addExact(now, CLEARING_MILLIS) else deadline
+                )
+            }
+            plugin.logger.warning(
+                "Recovered an unpaused wartime embassy clock at ${parcel(row)}; " +
+                (
+                    if (missedDeadline) {
+                    "the former deadline passed, so a full 14-day peaceful recovery allowance was retained. "
+                } else {
+                    "the remaining recovery allowance was retained. "
+                }
+                ) +
+                "Sweep will retry persistence; inspect storage errors if this repeats after restart."
+            )
             ClockFence(row, preserved)
         }.let { if (it.base == row) it.fenced else row }
     }
@@ -691,8 +819,7 @@ class MfEmbassyService(
         val war = atWar(row)
         return when {
             war && row.pausedAt == null && now < deadline -> row.copy(pausedAt = now)
-            !war && row.pausedAt != null -> row.copy(
-                deadlineAt = Math.addExact(deadline, now - row.pausedAt), pausedAt = null, changedAt = now)
+            !war && row.pausedAt != null -> row.copy(deadlineAt = Math.addExact(deadline, now - row.pausedAt), pausedAt = null, changedAt = now)
             else -> row
         }
     }
@@ -716,8 +843,11 @@ class MfEmbassyService(
         }
     }
 
-    private fun noticeDefaultPassage(row: MfEmbassy) = notice(row, "Embassy passage",
-        "The decision period at ${parcel(row)} ended and a 14-day guest recovery period began. War pauses that recovery clock.")
+    private fun noticeDefaultPassage(row: MfEmbassy) = notice(
+        row,
+        "Embassy passage",
+        "The decision period at ${parcel(row)} ended and a 14-day guest recovery period began. War pauses that recovery clock."
+    )
 
     private fun noticeExpiry(row: MfEmbassy) {
         val message = when (row.status) {
@@ -733,10 +863,13 @@ class MfEmbassyService(
     /** Faction messaging handles online players and offline mail; always enter it on the server thread. */
     private fun notice(row: MfEmbassy, title: String, message: String) {
         val recipients = listOfNotNull(row.hostId, row.guestId, row.conquerorId).distinct()
-        plugin.server.scheduler.runTask(plugin, Runnable {
+        plugin.server.scheduler.runTask(
+            plugin,
+            Runnable {
             recipients.mapNotNull { factionId -> plugin.services.factionService.getFaction(factionId) }
                 .forEach { it.sendMessage(title, message) }
-        })
+        }
+        )
     }
 
     private fun parcel(row: MfEmbassy): String = "${row.worldId}:${row.chunkX},${row.chunkZ}"
@@ -748,8 +881,15 @@ class MfEmbassyService(
     }
 
     private fun preflight(worldId: UUID, x: Int, z: Int, host: MfFactionId, guest: MfFactionId, accepting: Boolean) {
-        val event = EmbassyOfferAttemptEvent(worldId, x, z, FactionId(host.value), FactionId(guest.value),
-            accepting, !plugin.server.isPrimaryThread)
+        val event = EmbassyOfferAttemptEvent(
+            worldId,
+            x,
+            z,
+            FactionId(host.value),
+            FactionId(guest.value),
+            accepting,
+            !plugin.server.isPrimaryThread
+        )
         ChildMutationCallbackGuard.callEvent(plugin, event)
         if (event.isCancelled) throw EventCancelledException("Embassy parcel was refused by another landholder")
     }
@@ -782,7 +922,8 @@ class MfEmbassyService(
             is IllegalArgumentException, is IllegalStateException, is EventCancelledException -> ServiceFailureType.RULES_VIOLATION
             else -> ServiceFailureType.GENERAL
         },
-        "Embassy operation failed: ${exception.message}", exception
+        "Embassy operation failed: ${exception.message}",
+        exception
     )
 
     companion object {
@@ -791,11 +932,17 @@ class MfEmbassyService(
         const val CONQUEST_DECISION_MILLIS: Long = 7L * 24 * 60 * 60 * 1000
 
         private val PARCEL_ACTIONS = setOf(
-            ClaimAction.BUILD, ClaimAction.BREAK, ClaimAction.INTERACT, ClaimAction.DOOR,
-            ClaimAction.CONTAINER, ClaimAction.BUCKET
+            ClaimAction.BUILD,
+            ClaimAction.BREAK,
+            ClaimAction.INTERACT,
+            ClaimAction.DOOR,
+            ClaimAction.CONTAINER,
+            ClaimAction.BUCKET
         )
         private val RECOVERY_ACTIONS = setOf(
-            ClaimAction.BREAK, ClaimAction.DOOR, ClaimAction.CONTAINER
+            ClaimAction.BREAK,
+            ClaimAction.DOOR,
+            ClaimAction.CONTAINER
         )
     }
 }

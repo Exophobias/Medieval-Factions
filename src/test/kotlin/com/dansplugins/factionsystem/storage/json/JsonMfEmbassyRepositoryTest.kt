@@ -73,7 +73,8 @@ class JsonMfEmbassyRepositoryTest {
         val file = temporary.resolve("embassies.json")
         val valid = Files.readString(file)
         val invalid = listOf(
-            "{}", "{\"embassies\":null}",
+            "{}",
+            "{\"embassies\":null}",
             valid.replace("\"chunkX\": 4,", ""),
             "{\"embassies\":[],\"embassies\":[]}",
             valid.replace("\"chunkX\": 4", "\"chunkX\":4,\"chunkX\":9"),
@@ -89,5 +90,4 @@ class JsonMfEmbassyRepositoryTest {
             assertEquals(original, Files.readString(file))
         }
     }
-
 }

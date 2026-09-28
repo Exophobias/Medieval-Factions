@@ -12,12 +12,16 @@ import org.bukkit.event.Listener
 class EmbassyWarListener(private val plugin: MedievalFactions) : Listener {
     @EventHandler
     fun onWarStart(event: FactionWarStartedEvent) = update(
-        MfFactionId(event.faction.value), MfFactionId(event.otherFaction.value), true
+        MfFactionId(event.faction.value),
+        MfFactionId(event.otherFaction.value),
+        true
     )
 
     @EventHandler
     fun onWarEnd(event: FactionWarEndedEvent) = update(
-        MfFactionId(event.faction.value), MfFactionId(event.otherFaction.value), false
+        MfFactionId(event.faction.value),
+        MfFactionId(event.otherFaction.value),
+        false
     )
 
     private fun update(first: MfFactionId, second: MfFactionId, atWar: Boolean) {

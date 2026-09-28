@@ -4,8 +4,8 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.WarEndNotice
 import com.dansplugins.factionsystem.api.event.FactionCreatedEvent
-import com.dansplugins.factionsystem.api.event.FactionDisplayNameChangedEvent
 import com.dansplugins.factionsystem.api.event.FactionDisbandAttemptEvent
+import com.dansplugins.factionsystem.api.event.FactionDisplayNameChangedEvent
 import com.dansplugins.factionsystem.api.event.FactionMemberJoinedEvent
 import com.dansplugins.factionsystem.api.event.FactionMemberLeftEvent
 import com.dansplugins.factionsystem.api.event.FactionPrimaryOwnerChangedEvent
@@ -425,7 +425,10 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             previous.members.map(MfFactionMember::playerId)
         for (member in added) {
             val event = FactionJoinEvent(
-                requested.id, member, requested.members.size, !plugin.server.isPrimaryThread
+                requested.id,
+                member,
+                requested.members.size,
+                !plugin.server.isPrimaryThread
             )
             plugin.server.pluginManager.callEvent(event)
             if (event.isCancelled) throw EventCancelledException("Event cancelled")

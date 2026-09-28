@@ -23,13 +23,16 @@ import java.util.UUID
 class JsonMfEmbassyRepository(private val storageManager: JsonStorageManager) : MfEmbassyRepository {
     private val fileName = "embassies.json"
     private val writerGson = Gson()
-    private val gson = GsonBuilder().registerTypeAdapter(Data::class.java, object : TypeAdapter<Data>() {
+    private val gson = GsonBuilder().registerTypeAdapter(
+        Data::class.java,
+        object : TypeAdapter<Data>() {
         override fun read(reader: JsonReader): Data {
             reader.isLenient = false
             return parse(readStrictValue(reader))
         }
         override fun write(writer: JsonWriter, value: Data?) = writerGson.toJson(value, Data::class.java, writer)
-    }).create()
+    }
+    ).create()
 
     private data class Row(
         val worldId: String,
@@ -161,7 +164,9 @@ class JsonMfEmbassyRepository(private val storageManager: JsonStorageManager) : 
     )
 
     companion object {
-        private val ROW_FIELDS = setOf("worldId", "chunkX", "chunkZ", "hostId", "guestId", "status",
-            "createdAt", "changedAt", "deadlineAt", "conquerorId", "pausedAt", "offerSize")
+        private val ROW_FIELDS = setOf(
+            "worldId", "chunkX", "chunkZ", "hostId", "guestId", "status",
+            "createdAt", "changedAt", "deadlineAt", "conquerorId", "pausedAt", "offerSize"
+        )
     }
 }

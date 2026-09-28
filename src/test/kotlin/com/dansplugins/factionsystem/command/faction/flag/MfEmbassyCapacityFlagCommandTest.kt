@@ -67,9 +67,12 @@ class MfEmbassyCapacityFlagCommandTest {
         sender = mock(Player::class.java)
         `when`(sender.hasPermission("mf.flag.set")).thenReturn(true)
         `when`(players.getPlayer(sender)).thenReturn(MfPlayer(id))
-        realm = MfFaction(plugin, name = "PeerRealm",
+        realm = MfFaction(
+            plugin,
+            name = "PeerRealm",
             roles = MfFactionRoles(MfFactionRoleId.generate(), emptyList()),
-            defaultPermissionsByName = emptyMap())
+            defaultPermissionsByName = emptyMap()
+        )
         `when`(factions.getFaction(id)).thenReturn(realm)
         `when`(factions.getFaction("PeerRealm")).thenReturn(realm)
         doAnswer { invocation ->

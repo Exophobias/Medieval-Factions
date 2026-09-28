@@ -8,6 +8,7 @@ import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor.RED
+import org.bukkit.Material
 import org.bukkit.entity.Entity
 import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
@@ -15,9 +16,8 @@ import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerInteractEntityEvent
 import org.bukkit.event.player.PlayerQuitEvent
-import org.bukkit.inventory.InventoryHolder
 import org.bukkit.inventory.EquipmentSlot
-import org.bukkit.Material
+import org.bukkit.inventory.InventoryHolder
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Level.SEVERE
@@ -74,11 +74,15 @@ class EntityInteractionProtection(
                 val embassies = plugin.services.embassyService
                 if (action == ClaimAction.CONTAINER &&
                     !(actor.isBypassEnabled && player.hasPermission("mf.bypass")) &&
-                    embassies.isParcelProtectionActive(claim.worldId, claim.x, claim.z)) {
+                    embassies.isParcelProtectionActive(claim.worldId, claim.x, claim.z)
+                ) {
                     val status = embassies.getAt(claim.worldId, claim.x, claim.z)?.status
                     if (status == MfEmbassyStatus.CLEARING || status == MfEmbassyStatus.CONQUEST_PASSAGE) {
-                        val held = if (event.hand == EquipmentSlot.OFF_HAND) player.inventory.itemInOffHand
-                            else player.inventory.itemInMainHand
+                        val held = if (event.hand == EquipmentSlot.OFF_HAND) {
+                            player.inventory.itemInOffHand
+                        } else {
+                            player.inventory.itemInMainHand
+                        }
                         if (held != null && held.type != Material.AIR && held.amount > 0) {
                             event.isCancelled = true
                             notify(player, target, "${RED}Use an empty hand to withdraw from embassy storage during clearing.")

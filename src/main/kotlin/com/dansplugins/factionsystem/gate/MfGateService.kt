@@ -106,9 +106,11 @@ class MfGateService(
             require(previousOwner == null || previousOwner !in deletingFactions) {
                 "Faction ${previousOwner?.value} is being deleted"
             }
-            require(areaChunkKeys(gate.area).none { key ->
+            require(
+                areaChunkKeys(gate.area).none { key ->
                 plugin.services.embassyService.hasActiveOrClearingEmbassy(key.worldId, key.chunkX, key.chunkZ)
-            }) { "A gate cannot change blocks inside an active embassy" }
+            }
+            ) { "A gate cannot change blocks inside an active embassy" }
             var lastException: Exception? = null
             var currentGate = gate
             val targetStatus = gate.status // Preserve the intended status change

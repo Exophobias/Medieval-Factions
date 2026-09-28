@@ -190,7 +190,11 @@ interface MedievalFactionsApi {
      * bypass toggle plus `mf.bypass` permission changes a parcel DENY to GRANT.
      */
     fun embassyAccessAt(
-        playerId: UUID, worldId: UUID, chunkX: Int, chunkZ: Int, action: ClaimAction
+        playerId: UUID,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int,
+        action: ClaimAction
     ): EmbassyAccessDecision
 
     /**

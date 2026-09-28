@@ -29,6 +29,7 @@ class EmbassyOfferAttemptEvent(
 
     companion object {
         @JvmStatic private val handlerList = HandlerList()
+
         @JvmStatic fun getHandlerList(): HandlerList = handlerList
     }
 }

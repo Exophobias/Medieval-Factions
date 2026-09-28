@@ -14,8 +14,12 @@ import java.util.WeakHashMap
 internal class EmbassyEntryGuard(private val plugin: MedievalFactions) {
     companion object {
         private val relocating = HashSet<UUID>()
-        private val unsafeGround = setOf(Material.MAGMA_BLOCK, Material.CACTUS, Material.CAMPFIRE,
-            Material.SOUL_CAMPFIRE)
+        private val unsafeGround = setOf(
+            Material.MAGMA_BLOCK,
+            Material.CACTUS,
+            Material.CAMPFIRE,
+            Material.SOUL_CAMPFIRE
+        )
         private val unsafeSpace = setOf(Material.FIRE, Material.SOUL_FIRE, Material.LAVA)
     }
     private val lastFailedExit = WeakHashMap<Player, Long>()
@@ -24,8 +28,7 @@ internal class EmbassyEntryGuard(private val plugin: MedievalFactions) {
 
     fun isEmbassy(location: Location): Boolean {
         val world = location.world ?: return false
-        return plugin.services.embassyService.hasActiveOrClearingEmbassy(
-            world.uid, location.blockX shr 4, location.blockZ shr 4)
+        return plugin.services.embassyService.hasActiveOrClearingEmbassy(world.uid, location.blockX shr 4, location.blockZ shr 4)
     }
 
     fun isDenied(player: Player, location: Location): Boolean {
@@ -34,7 +37,9 @@ internal class EmbassyEntryGuard(private val plugin: MedievalFactions) {
         if (mfPlayer?.isBypassEnabled == true && player.hasPermission("mf.bypass")) return false
         return plugin.services.embassyService.entryDecision(
             mfPlayer?.id ?: MfPlayerId.fromBukkitPlayer(player),
-            world.uid, location.blockX shr 4, location.blockZ shr 4
+            world.uid,
+            location.blockX shr 4,
+            location.blockZ shr 4
         ) == EmbassyAccessDecision.DENY
     }
 
@@ -47,9 +52,13 @@ internal class EmbassyEntryGuard(private val plugin: MedievalFactions) {
         if (sameChunk(first, second)) return true
         val worldId = first.world?.uid ?: return false
         if (worldId != second.world?.uid) return false
-        return plugin.services.embassyService.sameProtectedArea(worldId,
-            first.blockX shr 4, first.blockZ shr 4,
-            second.blockX shr 4, second.blockZ shr 4)
+        return plugin.services.embassyService.sameProtectedArea(
+            worldId,
+            first.blockX shr 4,
+            first.blockZ shr 4,
+            second.blockX shr 4,
+            second.blockZ shr 4
+        )
     }
 
     /** Choose the closest safe point just outside the parcel, then a world/server spawn. */
@@ -83,8 +92,14 @@ internal class EmbassyEntryGuard(private val plugin: MedievalFactions) {
                 if (delta == 0) listOf(from.blockY) else listOf(from.blockY + delta, from.blockY - delta)
             } + world.getHighestBlockYAt(edgeX, edgeZ) + 1
             for (y in heights) {
-                val candidate = Location(world, edgeX + 0.5, y.toDouble(), edgeZ + 0.5,
-                    from.yaw, from.pitch)
+                val candidate = Location(
+                    world,
+                    edgeX + 0.5,
+                    y.toDouble(),
+                    edgeZ + 0.5,
+                    from.yaw,
+                    from.pitch
+                )
                 if (!isDenied(player, candidate) && isSafe(world, edgeX, y, edgeZ)) return candidate
             }
         }
@@ -93,16 +108,32 @@ internal class EmbassyEntryGuard(private val plugin: MedievalFactions) {
         for (spawn in spawns) {
             val spawnWorld = spawn.world ?: continue
             for (radius in listOf(0, 1, 2, 4, 8, 16, 24, 32)) {
-                val offsets = if (radius == 0) listOf(0 to 0) else listOf(
-                    radius to 0, -radius to 0, 0 to radius, 0 to -radius,
-                    radius to radius, radius to -radius, -radius to radius, -radius to -radius
+                val offsets = if (radius == 0) {
+                    listOf(0 to 0)
+                } else {
+                    listOf(
+                    radius to 0,
+                        -radius to 0,
+                        0 to radius,
+                        0 to -radius,
+                    radius to radius,
+                        radius to -radius,
+                        -radius to radius,
+                        -radius to -radius
                 )
+                }
                 for ((dx, dz) in offsets) {
                     val sx = spawn.blockX + dx
                     val sz = spawn.blockZ + dz
                     for (sy in listOf(spawn.blockY, spawnWorld.getHighestBlockYAt(sx, sz) + 1)) {
-                        val candidate = Location(spawnWorld, sx + 0.5, sy.toDouble(), sz + 0.5,
-                            from.yaw, from.pitch)
+                        val candidate = Location(
+                            spawnWorld,
+                            sx + 0.5,
+                            sy.toDouble(),
+                            sz + 0.5,
+                            from.yaw,
+                            from.pitch
+                        )
                         if (!isDenied(player, candidate) && isSafe(spawnWorld, sx, sy, sz)) return candidate
                     }
                 }

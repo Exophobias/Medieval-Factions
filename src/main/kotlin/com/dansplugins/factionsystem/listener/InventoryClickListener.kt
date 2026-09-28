@@ -7,26 +7,26 @@ import com.dansplugins.factionsystem.claim.MfEmbassyStatus
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor.RED
+import org.bukkit.Chunk
+import org.bukkit.Material
+import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.block.BlockState
 import org.bukkit.block.DoubleChest
-import org.bukkit.Chunk
-import org.bukkit.World
 import org.bukkit.entity.Entity
+import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
+import org.bukkit.event.inventory.ClickType
+import org.bukkit.event.inventory.InventoryAction
 import org.bukkit.event.inventory.InventoryClickEvent
 import org.bukkit.event.inventory.InventoryCreativeEvent
 import org.bukkit.event.inventory.InventoryDragEvent
 import org.bukkit.event.inventory.InventoryInteractEvent
-import org.bukkit.event.inventory.InventoryAction
-import org.bukkit.event.inventory.ClickType
 import org.bukkit.inventory.BlockInventoryHolder
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
-import org.bukkit.entity.Player
-import org.bukkit.Material
 import java.util.logging.Level.SEVERE
 
 class InventoryClickListener(private val plugin: MedievalFactions) : Listener {
@@ -59,7 +59,9 @@ class InventoryClickListener(private val plugin: MedievalFactions) : Listener {
         InventoryAction.SWAP_WITH_CURSOR,
         InventoryAction.HOTBAR_MOVE_AND_READD ->
             event.clickedInventory == event.view.topInventory
-        InventoryAction.HOTBAR_SWAP -> if (event.clickedInventory != event.view.topInventory) false else {
+        InventoryAction.HOTBAR_SWAP -> if (event.clickedInventory != event.view.topInventory) {
+            false
+        } else {
             when {
                 event.click == ClickType.SWAP_OFFHAND -> hasStock(player.inventory.itemInOffHand)
                 event.hotbarButton in 0..8 -> hasStock(player.inventory.getItem(event.hotbarButton))
@@ -102,11 +104,16 @@ class InventoryClickListener(private val plugin: MedievalFactions) : Listener {
                 val location = inventory.location ?: return
                 val world = location.world ?: return
                 listOf(Target(location.chunk, world, location.blockX, location.blockY, location.blockZ))
-            } else emptyList()
+            } else {
+                emptyList()
+            }
 
         if (targets.isEmpty()) return
-        val embassyAction = if (blocks.isEmpty() && holder !is Entity) ClaimAction.INTERACT
-            else ClaimAction.CONTAINER
+        val embassyAction = if (blocks.isEmpty() && holder !is Entity) {
+            ClaimAction.INTERACT
+        } else {
+            ClaimAction.CONTAINER
+        }
 
         val playerService = plugin.services.playerService
         val mfPlayer = playerService.getPlayer(player)
@@ -129,10 +136,14 @@ class InventoryClickListener(private val plugin: MedievalFactions) : Listener {
         val factionService = plugin.services.factionService
 
         if (blocks.size > 1 && blocks.any { first ->
-                blocks.any { second -> embassyBoundary.crosses(
-                    embassyBoundary.point(first), embassyBoundary.point(second)
-                ) }
-            } && !(mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass"))) {
+                blocks.any { second ->
+                    embassyBoundary.crosses(
+                    embassyBoundary.point(first),
+                        embassyBoundary.point(second)
+                )
+                }
+            } && !(mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass"))
+        ) {
             event.isCancelled = true
             player.sendMessage("${RED}A chest cannot be used across an embassy boundary.")
             return
@@ -159,7 +170,8 @@ class InventoryClickListener(private val plugin: MedievalFactions) : Listener {
             // window to restock a parcel that the host is recovering.
             if (deposits &&
                 plugin.services.embassyService.isParcelProtectionActive(claim.worldId, claim.x, claim.z) &&
-                !(mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass"))) {
+                !(mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass"))
+            ) {
                 val status = plugin.services.embassyService.getAt(claim.worldId, claim.x, claim.z)?.status
                 if (status == MfEmbassyStatus.CLEARING || status == MfEmbassyStatus.CONQUEST_PASSAGE) {
                     event.isCancelled = true

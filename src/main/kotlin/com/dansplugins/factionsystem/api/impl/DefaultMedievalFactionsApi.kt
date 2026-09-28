@@ -3,8 +3,8 @@ package com.dansplugins.factionsystem.api.impl
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ApiOutcome
 import com.dansplugins.factionsystem.api.ApiResult
-import com.dansplugins.factionsystem.api.ClaimOverrideProvider
 import com.dansplugins.factionsystem.api.ClaimAction
+import com.dansplugins.factionsystem.api.ClaimOverrideProvider
 import com.dansplugins.factionsystem.api.ClaimView
 import com.dansplugins.factionsystem.api.EmbassyAccessDecision
 import com.dansplugins.factionsystem.api.FactionId
@@ -17,7 +17,6 @@ import com.dansplugins.factionsystem.api.WarEndNotice
 import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.area.MfPosition
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
-import com.dansplugins.factionsystem.claim.EmbassyAccessDecision as NativeEmbassyAccessDecision
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionMember
@@ -40,6 +39,7 @@ import org.bukkit.Chunk
 import org.bukkit.Location
 import org.bukkit.World
 import java.util.UUID
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision as NativeEmbassyAccessDecision
 
 /**
  * The adapter that implements [MedievalFactionsApi] over MedievalFactions' internal services. This is
@@ -55,7 +55,11 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         plugin.services.embassyService.hasActiveOrClearingForFaction(MfFactionId(faction.value))
 
     override fun embassyAccessAt(
-        playerId: UUID, worldId: UUID, chunkX: Int, chunkZ: Int, action: ClaimAction
+        playerId: UUID,
+        worldId: UUID,
+        chunkX: Int,
+        chunkZ: Int,
+        action: ClaimAction
     ): EmbassyAccessDecision {
         val claim = plugin.services.claimService.getClaim(worldId, chunkX, chunkZ)
             ?: return EmbassyAccessDecision.NONE

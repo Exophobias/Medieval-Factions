@@ -2,8 +2,8 @@ package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
-import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.claim.MfEmbassy
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.claim.MfEmbassyStatus
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.player.MfPlayer
@@ -11,43 +11,43 @@ import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
 import com.dansplugins.factionsystem.service.Services
 import org.bukkit.Location
+import org.bukkit.Material
 import org.bukkit.Server
 import org.bukkit.World
 import org.bukkit.block.Block
+import org.bukkit.entity.LivingEntity
 import org.bukkit.entity.Player
 import org.bukkit.entity.Vehicle
-import org.bukkit.entity.LivingEntity
-import org.bukkit.Material
 import org.bukkit.event.Cancellable
 import org.bukkit.event.Event
-import org.bukkit.event.HandlerList
 import org.bukkit.event.EventPriority
-import org.bukkit.event.entity.EntityTeleportEvent
+import org.bukkit.event.HandlerList
 import org.bukkit.event.entity.EntityPortalEvent
+import org.bukkit.event.entity.EntityTeleportEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerRespawnEvent
 import org.bukkit.event.player.PlayerTeleportEvent
 import org.bukkit.event.vehicle.VehicleMoveEvent
-import org.bukkit.inventory.InventoryHolder
 import org.bukkit.inventory.Inventory
+import org.bukkit.inventory.InventoryHolder
 import org.bukkit.inventory.ItemStack
-import org.bukkit.plugin.PluginManager
 import org.bukkit.plugin.EventExecutor
+import org.bukkit.plugin.PluginManager
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
-import org.mockito.Mockito.mock
 import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
-import org.mockito.Mockito.verify
 import org.mockito.Mockito.times
-import org.mockito.Mockito.withSettings
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.mockito.Mockito.withSettings
 import java.util.UUID
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
-import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class EmbassyEntryListenerTest {
     private lateinit var plugin: MedievalFactions
@@ -373,11 +373,15 @@ class EmbassyEntryListenerTest {
 
     @Test
     fun interiorAreaOccupantExitSearchUsesOuterPerimeter() {
-        val cells = (0..2).flatMap { x -> (-1..1).map { z ->
+        val cells = (0..2).flatMap { x ->
+            (-1..1).map { z ->
             `when`(embassies.entryDecision(playerId, world.uid, x, z)).thenReturn(EmbassyAccessDecision.DENY)
-            MfEmbassy(world.uid, x, z, MfFactionId("host"), MfFactionId("guest"),
-                MfEmbassyStatus.ACTIVE, 1L, 2L, null)
-        } }
+            MfEmbassy(
+                world.uid, x, z, MfFactionId("host"), MfFactionId("guest"),
+                MfEmbassyStatus.ACTIVE, 1L, 2L, null
+            )
+        }
+        }
         `when`(embassies.protectedAreaAt(world.uid, 1, 0)).thenReturn(cells)
         val feet = mock(Block::class.java)
         val head = mock(Block::class.java)
@@ -402,10 +406,14 @@ class EmbassyEntryListenerTest {
 
         moveListener.registerStorageMountMovement(TestLivingMoveEvent::class.java)
 
-        verify(manager).registerEvent(org.mockito.ArgumentMatchers.eq(TestLivingMoveEvent::class.java),
+        verify(manager).registerEvent(
+            org.mockito.ArgumentMatchers.eq(TestLivingMoveEvent::class.java),
             org.mockito.ArgumentMatchers.eq(moveListener),
-            org.mockito.ArgumentMatchers.eq(EventPriority.LOWEST), executor.capture(),
-            org.mockito.ArgumentMatchers.eq(plugin), org.mockito.ArgumentMatchers.eq(true))
+            org.mockito.ArgumentMatchers.eq(EventPriority.LOWEST),
+            executor.capture(),
+            org.mockito.ArgumentMatchers.eq(plugin),
+            org.mockito.ArgumentMatchers.eq(true)
+        )
         val event = TestLivingMoveEvent(stockedMount(), location(20.5), location(32.5))
         executor.value.execute(moveListener, event)
         assertTrue(event.isCancelled())
@@ -419,8 +427,11 @@ class EmbassyEntryListenerTest {
         assertTrue(failure.message!!.contains("embassy offers must stay disabled"))
     }
 
-    class TestLivingMoveEvent(private val entity: LivingEntity, private val from: Location,
-                              private val to: Location) : Event(), Cancellable {
+    class TestLivingMoveEvent(
+        private val entity: LivingEntity,
+        private val from: Location,
+                              private val to: Location
+    ) : Event(), Cancellable {
         private var cancelled = false
         fun getEntity(): LivingEntity = entity
         fun getFrom(): Location = from

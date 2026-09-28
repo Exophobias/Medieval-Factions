@@ -18,9 +18,9 @@ import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.block.Chest
 import org.bukkit.block.DoubleChest
-import org.bukkit.inventory.Inventory
 import org.bukkit.entity.Player
 import org.bukkit.event.block.BlockBreakEvent
+import org.bukkit.inventory.Inventory
 import org.bukkit.scheduler.BukkitScheduler
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test

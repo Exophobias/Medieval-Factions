@@ -4,8 +4,8 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.area.MfCuboidArea
-import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
+import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.claim.MfEmbassyStatus
 import com.dansplugins.factionsystem.gate.MfGate
 import com.dansplugins.factionsystem.gate.MfGateCreationContext
@@ -206,7 +206,9 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
             embassies.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)
         ) {
             embassies.access(mfPlayer.id, claim, overrideActionFor(clickedBlock))
-        } else EmbassyAccessDecision.NONE
+        } else {
+            EmbassyAccessDecision.NONE
+        }
         if (embassyAccess == EmbassyAccessDecision.DENY &&
             !(mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass"))
         ) {

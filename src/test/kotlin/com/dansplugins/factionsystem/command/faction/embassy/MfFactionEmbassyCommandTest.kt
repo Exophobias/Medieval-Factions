@@ -1,12 +1,12 @@
 package com.dansplugins.factionsystem.command.faction.embassy
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.claim.MfClaimService
+import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.claim.MfEmbassy
 import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.claim.MfEmbassyService.ChunkPos
 import com.dansplugins.factionsystem.claim.MfEmbassyStatus
-import com.dansplugins.factionsystem.claim.MfClaimService
-import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
@@ -22,17 +22,17 @@ import org.bukkit.World
 import org.bukkit.block.Chest
 import org.bukkit.command.Command
 import org.bukkit.entity.Player
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockingDetails
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-import org.mockito.ArgumentMatchers.anyInt
 import java.util.UUID
 
 class MfFactionEmbassyCommandTest {
@@ -105,8 +105,10 @@ class MfFactionEmbassyCommandTest {
         `when`(it.getRole(playerId)).thenReturn(role)
     }
 
-    private fun row(status: MfEmbassyStatus) = MfEmbassy(worldId, 3, -2, hostId, guestId,
-        status, 1_000L, 1_000L, if (status == MfEmbassyStatus.ACTIVE) null else 10_000L)
+    private fun row(status: MfEmbassyStatus) = MfEmbassy(
+        worldId, 3, -2, hostId, guestId,
+        status, 1_000L, 1_000L, if (status == MfEmbassyStatus.ACTIVE) null else 10_000L
+    )
 
     @Test
     fun peerOfficerCanOfferUsingRoleCapability() {
@@ -201,8 +203,12 @@ class MfFactionEmbassyCommandTest {
 
         uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "4"))
 
-        verify(embassies, never()).offerArea(hostId, guestId, worldId,
-            listOf(ChunkPos(3, -2), ChunkPos(4, -2), ChunkPos(3, -1), ChunkPos(4, -1)))
+        verify(embassies, never()).offerArea(
+            hostId,
+            guestId,
+            worldId,
+            listOf(ChunkPos(3, -2), ChunkPos(4, -2), ChunkPos(3, -1), ChunkPos(4, -1))
+        )
     }
 
     @Test

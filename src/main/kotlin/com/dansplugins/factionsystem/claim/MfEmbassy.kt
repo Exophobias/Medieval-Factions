@@ -37,13 +37,23 @@ internal fun MfEmbassy.validateStoredEmbassy() {
         "Invalid embassy conqueror identity"
     }
     require(createdAt >= 0 && changedAt >= createdAt) { "Invalid embassy timestamps" }
-    require((status == MfEmbassyStatus.CONQUEST_DECISION || status == MfEmbassyStatus.CONQUEST_PASSAGE) ==
-        (conquerorId != null)) { "Conquest identity does not match embassy status" }
-    require(pausedAt == null ||
-        ((status == MfEmbassyStatus.CLEARING || status == MfEmbassyStatus.CONQUEST_PASSAGE ||
-            status == MfEmbassyStatus.CONQUEST_DECISION) && pausedAt >= changedAt)) { "Invalid embassy war pause" }
-    require((status == MfEmbassyStatus.ACTIVE && deadlineAt == null) ||
-        (status != MfEmbassyStatus.ACTIVE && deadlineAt != null && deadlineAt > changedAt)) {
+    require(
+        (status == MfEmbassyStatus.CONQUEST_DECISION || status == MfEmbassyStatus.CONQUEST_PASSAGE) ==
+        (conquerorId != null)
+    ) { "Conquest identity does not match embassy status" }
+    require(
+        pausedAt == null ||
+        (
+            (
+                status == MfEmbassyStatus.CLEARING || status == MfEmbassyStatus.CONQUEST_PASSAGE ||
+            status == MfEmbassyStatus.CONQUEST_DECISION
+            ) && pausedAt >= changedAt
+        )
+    ) { "Invalid embassy war pause" }
+    require(
+        (status == MfEmbassyStatus.ACTIVE && deadlineAt == null) ||
+        (status != MfEmbassyStatus.ACTIVE && deadlineAt != null && deadlineAt > changedAt)
+    ) {
         "Invalid embassy deadline"
     }
 }

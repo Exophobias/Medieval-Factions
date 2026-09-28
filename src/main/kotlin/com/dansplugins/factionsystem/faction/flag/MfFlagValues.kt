@@ -18,7 +18,9 @@ class MfFlagValues(
         if (flag.type == Int::class) {
             val integer = if (stored is Number) {
                 runCatching { BigDecimal(stored.toString()).intValueExact() }.getOrNull()
-            } else null
+            } else {
+                null
+            }
             require(integer != null) { "Invalid integer faction flag ${flag.name}" }
             @Suppress("UNCHECKED_CAST")
             return integer as T

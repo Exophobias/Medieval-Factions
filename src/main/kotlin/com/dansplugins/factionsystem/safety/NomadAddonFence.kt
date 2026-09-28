@@ -40,9 +40,10 @@ class NomadAddonFence(mfDataFolder: Path) {
     @Throws(IOException::class)
     fun armed(): Boolean {
         if (!markerPresent()) return false
-        if (!Files.isRegularFile(marker, NOFOLLOW_LINKS)
-            || Files.size(marker) != MARKER_BYTES.size.toLong()
-            || !Files.readAllBytes(marker).contentEquals(MARKER_BYTES)) {
+        if (!Files.isRegularFile(marker, NOFOLLOW_LINKS) ||
+            Files.size(marker) != MARKER_BYTES.size.toLong() ||
+            !Files.readAllBytes(marker).contentEquals(MARKER_BYTES)
+        ) {
             throw IOException("Nomad addon marker is invalid")
         }
         return true

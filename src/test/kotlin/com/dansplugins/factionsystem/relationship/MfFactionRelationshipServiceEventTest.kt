@@ -61,8 +61,10 @@ class MfFactionRelationshipServiceEventTest {
                 event.isCancelled = true
             }
             if (event is FactionRelationshipCreateAttemptEvent && cancelHierarchy &&
-                (event.relationshipType == FactionRelationshipCreateAttemptEvent.Type.LIEGE ||
-                    event.relationshipType == FactionRelationshipCreateAttemptEvent.Type.VASSAL)
+                (
+                    event.relationshipType == FactionRelationshipCreateAttemptEvent.Type.LIEGE ||
+                    event.relationshipType == FactionRelationshipCreateAttemptEvent.Type.VASSAL
+                )
             ) {
                 event.isCancelled = true
             }
@@ -178,8 +180,10 @@ class MfFactionRelationshipServiceEventTest {
 
         assertTrue(repository.getFactionRelationships().isEmpty())
         assertEquals(
-            listOf(FactionRelationshipCreateAttemptEvent.Type.LIEGE,
-                FactionRelationshipCreateAttemptEvent.Type.VASSAL),
+            listOf(
+                FactionRelationshipCreateAttemptEvent.Type.LIEGE,
+                FactionRelationshipCreateAttemptEvent.Type.VASSAL
+            ),
             events.filterIsInstance<FactionRelationshipCreateAttemptEvent>().map { it.relationshipType }
         )
         assertTrue(events.none { it is RelationshipCreatedEvent })

@@ -11,26 +11,26 @@ import net.md_5.bungee.api.ChatColor
 import net.md_5.bungee.api.ChatMessageType.ACTION_BAR
 import net.md_5.bungee.api.chat.TextComponent
 import org.bukkit.ChatColor.RED
+import org.bukkit.Location
+import org.bukkit.Material
+import org.bukkit.entity.Entity
+import org.bukkit.entity.LivingEntity
+import org.bukkit.entity.Player
+import org.bukkit.entity.Vehicle
+import org.bukkit.event.Cancellable
+import org.bukkit.event.Event
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
-import org.bukkit.event.entity.EntityPortalEvent
 import org.bukkit.event.entity.EntityDismountEvent
-import org.bukkit.event.entity.EntityTeleportEvent
 import org.bukkit.event.entity.EntityMountEvent
-import org.bukkit.event.Cancellable
-import org.bukkit.event.Event
+import org.bukkit.event.entity.EntityPortalEvent
+import org.bukkit.event.entity.EntityTeleportEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.vehicle.VehicleEnterEvent
 import org.bukkit.event.vehicle.VehicleExitEvent
 import org.bukkit.event.vehicle.VehicleMoveEvent
-import org.bukkit.entity.Player
-import org.bukkit.entity.Entity
-import org.bukkit.entity.LivingEntity
-import org.bukkit.entity.Vehicle
 import org.bukkit.inventory.InventoryHolder
-import org.bukkit.Material
-import org.bukkit.Location
 import org.bukkit.plugin.EventExecutor
 import java.util.UUID
 import java.util.WeakHashMap
@@ -45,12 +45,17 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
     /** Paper's cancellable living-entity movement event is required for mobile embassy storage. */
     fun registerStorageMountMovement() {
         val type = try {
-            Class.forName("io.papermc.paper.event.entity.EntityMoveEvent", false,
-                plugin.javaClass.classLoader).asSubclass(Event::class.java)
+            Class.forName(
+                "io.papermc.paper.event.entity.EntityMoveEvent",
+                false,
+                plugin.javaClass.classLoader
+            ).asSubclass(Event::class.java)
         } catch (failure: ReflectiveOperationException) {
             throw IllegalStateException(
                 "Embassy storage mount protection requires Paper's EntityMoveEvent; " +
-                    "run the supported Paper server before enabling embassy offers.", failure)
+                    "run the supported Paper server before enabling embassy offers.",
+                        failure
+            )
         }
         registerStorageMountMovement(type)
     }
@@ -64,24 +69,38 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
             require(LivingEntity::class.java.isAssignableFrom(entityMethod.returnType))
             require(Location::class.java.isAssignableFrom(fromMethod.returnType))
             require(Location::class.java.isAssignableFrom(toMethod.returnType))
-            plugin.server.pluginManager.registerEvent(type, this, EventPriority.LOWEST,
+            plugin.server.pluginManager.registerEvent(
+                type,
+                this,
+                EventPriority.LOWEST,
                 EventExecutor { _, event ->
                     if (!type.isInstance(event)) return@EventExecutor
-                    onEmbassyLivingMove(entityMethod.invoke(event) as LivingEntity,
-                        fromMethod.invoke(event) as Location, toMethod.invoke(event) as Location) {
+                    onEmbassyLivingMove(
+                        entityMethod.invoke(event) as LivingEntity,
+                        fromMethod.invoke(event) as Location,
+                        toMethod.invoke(event) as Location
+                    ) {
                         (event as Cancellable).isCancelled = true
                     }
-                }, plugin, true)
+                },
+                    plugin,
+                true
+            )
         } catch (failure: Exception) {
             throw IllegalStateException(
                 "Paper's EntityMoveEvent could not be registered for embassy storage mount " +
                     "protection; embassy offers must stay disabled until the runtime is compatible.",
-                failure)
+                failure
+            )
         }
     }
 
-    internal fun onEmbassyLivingMove(entity: LivingEntity, from: Location, to: Location,
-                                      cancel: () -> Unit) {
+    internal fun onEmbassyLivingMove(
+        entity: LivingEntity,
+        from: Location,
+        to: Location,
+                                      cancel: () -> Unit
+    ) {
         if (entity.uniqueId in relocatingEntities) return
         if (entity !is InventoryHolder && playerPassengers(entity).isEmpty()) return
         guardEntityDestination(entity, from, to, cancel)
@@ -119,7 +138,8 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
     fun onVehicleEnter(event: VehicleEnterEvent) {
         val player = event.entered as? Player ?: return
         if (embassyEntry.isEmbassy(event.vehicle.location) &&
-            embassyEntry.isDenied(player, event.vehicle.location)) {
+            embassyEntry.isDenied(player, event.vehicle.location)
+        ) {
             event.isCancelled = true
             warnEntry(player)
         }
@@ -130,7 +150,8 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
         val player = event.entity as? Player ?: return
         if (embassyEntry.isRelocating(player) || event.mount.uniqueId in relocatingEntities) return
         if (embassyEntry.isEmbassy(event.mount.location) &&
-            embassyEntry.isDenied(player, event.mount.location)) {
+            embassyEntry.isDenied(player, event.mount.location)
+        ) {
             event.isCancelled = true
             warnEntry(player)
         }
@@ -141,7 +162,8 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
         val player = event.exited as? Player ?: return
         if (embassyEntry.isRelocating(player) || event.vehicle.uniqueId in relocatingEntities) return
         if (embassyEntry.isEmbassy(event.vehicle.location) &&
-            embassyEntry.isDenied(player, event.vehicle.location)) {
+            embassyEntry.isDenied(player, event.vehicle.location)
+        ) {
             event.isCancelled = true
             warnEntry(player)
         }
@@ -152,7 +174,8 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
         val player = event.entity as? Player ?: return
         if (embassyEntry.isRelocating(player) || event.dismounted.uniqueId in relocatingEntities) return
         if (embassyEntry.isEmbassy(event.dismounted.location) &&
-            embassyEntry.isDenied(player, event.dismounted.location)) {
+            embassyEntry.isDenied(player, event.dismounted.location)
+        ) {
             event.isCancelled = true
             warnEntry(player)
         }
@@ -199,10 +222,12 @@ class PlayerMoveListener(private val plugin: MedievalFactions) : Listener {
         val destination = EmbassyBoundary.Point.of(to) ?: return false
         if (!embassyBoundary.crosses(source, destination)) return false
         return (listOf(entity) + passengerTree(entity)).any { carried ->
-            carried !is Player && carried is InventoryHolder && (carried !is LivingEntity ||
+            carried !is Player && carried is InventoryHolder && (
+                carried !is LivingEntity ||
                 carried.inventory.contents.orEmpty().any {
                     it != null && it.amount > 0 && it.type != Material.AIR
-                })
+                }
+            )
         }
     }
 

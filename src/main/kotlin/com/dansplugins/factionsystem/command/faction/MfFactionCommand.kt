@@ -20,8 +20,8 @@ import com.dansplugins.factionsystem.command.faction.deny.MfFactionDenyCommand
 import com.dansplugins.factionsystem.command.faction.denyapp.MfFactionDenyAppCommand
 import com.dansplugins.factionsystem.command.faction.dev.MfFactionDevCommand
 import com.dansplugins.factionsystem.command.faction.disband.MfFactionDisbandCommand
-import com.dansplugins.factionsystem.command.faction.embassy.MfFactionEmbassyCommand
 import com.dansplugins.factionsystem.command.faction.dpc.MfFactionDpcCommand
+import com.dansplugins.factionsystem.command.faction.embassy.MfFactionEmbassyCommand
 import com.dansplugins.factionsystem.command.faction.flag.MfFactionFlagCommand
 import com.dansplugins.factionsystem.command.faction.grantindependence.MfFactionGrantIndependenceCommand
 import com.dansplugins.factionsystem.command.faction.heir.MfFactionHeirCommand

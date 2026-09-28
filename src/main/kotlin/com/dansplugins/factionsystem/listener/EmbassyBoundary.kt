@@ -20,7 +20,9 @@ internal class EmbassyBoundary(private val plugin: MedievalFactions) {
         Point(block.world.uid, (block.x + offsetX) shr 4, (block.z + offsetZ) shr 4)
 
     fun isEmbassy(point: Point): Boolean = plugin.services.embassyService.isParcelProtectionActive(
-        point.worldId, point.chunkX, point.chunkZ
+        point.worldId,
+        point.chunkX,
+        point.chunkZ
     )
 
     fun crosses(from: Point, to: Point): Boolean {
@@ -29,9 +31,16 @@ internal class EmbassyBoundary(private val plugin: MedievalFactions) {
     }
 
     private fun sameProtectedArea(from: Point, to: Point): Boolean =
-        from == to || from.worldId == to.worldId &&
-            plugin.services.embassyService.sameProtectedArea(from.worldId,
-                from.chunkX, from.chunkZ, to.chunkX, to.chunkZ)
+        from == to || (
+            from.worldId == to.worldId &&
+            plugin.services.embassyService.sameProtectedArea(
+                from.worldId,
+                from.chunkX,
+                from.chunkZ,
+                to.chunkX,
+                to.chunkZ
+            )
+        )
 
     /** Unknown inventory locations may not exchange items with a known embassy location. */
     fun crosses(source: List<Point>?, destination: List<Point>?): Boolean {

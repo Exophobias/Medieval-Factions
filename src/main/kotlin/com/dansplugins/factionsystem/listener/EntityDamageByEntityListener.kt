@@ -8,11 +8,11 @@ import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
 import com.dansplugins.factionsystem.utils.MfHostileMobChecker
 import org.bukkit.ChatColor
-import org.bukkit.entity.Player
-import org.bukkit.entity.Projectile
 import org.bukkit.entity.ArmorStand
 import org.bukkit.entity.Entity
 import org.bukkit.entity.Hanging
+import org.bukkit.entity.Player
+import org.bukkit.entity.Projectile
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.EntityDamageByEntityEvent
@@ -40,7 +40,8 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
         // Dispensers can fire across the parcel border without a player damager. Deny their
         // projectiles against parcel property while the peaceful charter is in force.
         if (damagerPlayer == null && damager is Projectile && isParcelProperty(damaged) &&
-            isPeacefulEmbassy(damaged)) {
+            isPeacefulEmbassy(damaged)
+        ) {
             event.isCancelled = true
             return
         }
@@ -140,7 +141,10 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
     fun onHangingBreak(event: HangingBreakEvent) {
         // Leave explicit explosion damage with MF's existing explosion protection.
         if (event.cause == HangingBreakEvent.RemoveCause.EXPLOSION ||
-            !isPeacefulEmbassy(event.entity)) return
+            !isPeacefulEmbassy(event.entity)
+        ) {
+                return
+            }
         val remover = (event as? HangingBreakByEntityEvent)?.remover
         val player = when (remover) {
             is Player -> remover
@@ -155,7 +159,10 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
         if (mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass")) return
         val claim = plugin.services.claimService.getClaim(event.entity.location.chunk)
         if (claim == null || plugin.services.embassyService.access(mfPlayer.id, claim, ClaimAction.BREAK) !=
-            EmbassyAccessDecision.GRANT) event.isCancelled = true
+            EmbassyAccessDecision.GRANT
+        ) {
+                event.isCancelled = true
+            }
     }
 
     @EventHandler
@@ -184,7 +191,6 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
     private fun isPeacefulEmbassy(entity: Entity): Boolean {
         val location = entity.location
         val world = location.world ?: return false
-        return plugin.services.embassyService.isParcelProtectionActive(
-            world.uid, location.blockX shr 4, location.blockZ shr 4)
+        return plugin.services.embassyService.isParcelProtectionActive(world.uid, location.blockX shr 4, location.blockZ shr 4)
     }
 }

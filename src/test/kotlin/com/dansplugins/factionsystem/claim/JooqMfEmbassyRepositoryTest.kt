@@ -24,25 +24,34 @@ class JooqMfEmbassyRepositoryTest {
             val guest = MfFactionId("guest")
             val conqueror = MfFactionId("conqueror")
             listOf(host, guest, conqueror).forEach { faction ->
-                dsl.execute("""insert into mf_faction
+                dsl.execute(
+                    """insert into mf_faction
                     (id, version, name, description, flags, bonus_power, autoclaim, roles,
                      default_role_id, default_permissions)
                     values (?, 1, ?, '', '{}', 0, false, '[]', 'default', '{}')""",
-                    faction.value, faction.value)
+                    faction.value,
+                    faction.value
+                )
             }
             val world = UUID.randomUUID()
             val claims = JooqMfClaimedChunkRepository(dsl)
             val embassies = JooqMfEmbassyRepository(dsl)
             claims.upsert(MfClaimedChunk(world, 2, -3, host))
-            val active = MfEmbassy(world, 2, -3, host, guest, MfEmbassyStatus.ACTIVE,
-                createdAt = 1_000, changedAt = 1_000, deadlineAt = null)
+            val active = MfEmbassy(
+                world, 2, -3, host, guest, MfEmbassyStatus.ACTIVE,
+                createdAt = 1_000, changedAt = 1_000, deadlineAt = null
+            )
             embassies.upsert(active)
 
             claims.upsert(MfClaimedChunk(world, 2, -3, conqueror))
             assertEquals(listOf(active), embassies.getAll())
-            val pending = active.copy(status = MfEmbassyStatus.CONQUEST_DECISION,
-                changedAt = 2_000, deadlineAt = 2_000 + MfEmbassyService.CONQUEST_DECISION_MILLIS,
-                conquerorId = conqueror, pausedAt = 3_000)
+            val pending = active.copy(
+                status = MfEmbassyStatus.CONQUEST_DECISION,
+                changedAt = 2_000,
+                deadlineAt = 2_000 + MfEmbassyService.CONQUEST_DECISION_MILLIS,
+                conquerorId = conqueror,
+                pausedAt = 3_000
+            )
             embassies.upsert(pending)
             assertEquals(listOf(pending), embassies.getAll())
 
@@ -64,17 +73,22 @@ class JooqMfEmbassyRepositoryTest {
             val host = MfFactionId("host")
             val guest = MfFactionId("guest")
             listOf(host, guest).forEach { faction ->
-                dsl.execute("""insert into mf_faction
+                dsl.execute(
+                    """insert into mf_faction
                     (id, version, name, description, flags, bonus_power, autoclaim, roles,
                      default_role_id, default_permissions)
                     values (?, 1, ?, '', '{}', 0, false, '[]', 'default', '{}')""",
-                    faction.value, faction.value)
+                    faction.value,
+                    faction.value
+                )
             }
             val world = UUID.randomUUID()
             val claims = JooqMfClaimedChunkRepository(dsl)
             val embassies = JooqMfEmbassyRepository(dsl)
-            val first = MfEmbassy(world, 0, 0, host, guest, MfEmbassyStatus.ACTIVE,
-                createdAt = 1000, changedAt = 1000, deadlineAt = null, offerSize = 2)
+            val first = MfEmbassy(
+                world, 0, 0, host, guest, MfEmbassyStatus.ACTIVE,
+                createdAt = 1000, changedAt = 1000, deadlineAt = null, offerSize = 2
+            )
             val second = first.copy(chunkX = 1)
             claims.upsert(MfClaimedChunk(world, 0, 0, host))
             claims.upsert(MfClaimedChunk(world, 1, 0, host))
@@ -88,5 +102,4 @@ class JooqMfEmbassyRepositoryTest {
             assertEquals(setOf(first, second), embassies.getAll().toSet())
         }
     }
-
 }

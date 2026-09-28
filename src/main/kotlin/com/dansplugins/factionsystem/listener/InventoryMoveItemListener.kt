@@ -2,8 +2,8 @@ package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfBlockPosition
-import org.bukkit.block.Chest
 import org.bukkit.block.BlockState
+import org.bukkit.block.Chest
 import org.bukkit.block.DoubleChest
 import org.bukkit.entity.Entity
 import org.bukkit.event.EventHandler
@@ -74,7 +74,8 @@ class InventoryMoveItemListener(private val plugin: MedievalFactions) : Listener
         // a live parcel so the host cannot remotely empty or restock it during clearing.
         if (sourcePoints?.any(embassyBoundary::isEmbassy) == true ||
             destinationPoints?.any(embassyBoundary::isEmbassy) == true ||
-            embassyBoundary.crosses(sourcePoints, destinationPoints)) {
+            embassyBoundary.crosses(sourcePoints, destinationPoints)
+        ) {
             event.isCancelled = true
         }
     }
@@ -85,7 +86,10 @@ class InventoryMoveItemListener(private val plugin: MedievalFactions) : Listener
         val destination = points(event.inventory.holder)
             ?: event.inventory.location?.let { EmbassyBoundary.Point.of(it)?.let(::listOf) }
         if (destination?.any(embassyBoundary::isEmbassy) == true ||
-            embassyBoundary.crosses(source, destination)) event.isCancelled = true
+            embassyBoundary.crosses(source, destination)
+        ) {
+                event.isCancelled = true
+            }
     }
 
     private fun points(holder: InventoryHolder?): List<EmbassyBoundary.Point>? = when (holder) {

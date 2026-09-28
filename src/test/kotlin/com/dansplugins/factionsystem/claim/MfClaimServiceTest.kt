@@ -130,12 +130,15 @@ class MfClaimServiceTest {
         `when`(services.mapService).thenReturn(null)
         lockService = spy(MfLockService(plugin, mock(MfLockRepository::class.java)))
         `when`(services.lockService).thenReturn(lockService)
-        val embassyService = MfEmbassyService(plugin, object : MfEmbassyRepository {
+        val embassyService = MfEmbassyService(
+            plugin,
+            object : MfEmbassyRepository {
             override fun getAll(): List<MfEmbassy> = emptyList()
             override fun applyChanges(upserts: List<MfEmbassy>, deletes: List<MfEmbassy>) = Unit
             override fun upsert(embassy: MfEmbassy) = Unit
             override fun delete(worldId: UUID, chunkX: Int, chunkZ: Int) = Unit
-        })
+        }
+        )
         `when`(services.embassyService).thenReturn(embassyService)
 
         // save()/delete() require the claim's faction to resolve to a non-null faction.

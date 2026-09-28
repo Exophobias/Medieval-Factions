@@ -10,7 +10,6 @@ import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.claim.MfEmbassyService
-import com.dansplugins.factionsystem.claim.EmbassyAccessDecision as NativeEmbassyAccessDecision
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
@@ -37,8 +36,8 @@ import dev.forkhandles.result4k.Success
 import org.bukkit.Chunk
 import org.bukkit.Server
 import org.bukkit.World
-import org.bukkit.entity.Player
 import org.bukkit.configuration.file.FileConfiguration
+import org.bukkit.entity.Player
 import org.bukkit.plugin.PluginManager
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -55,6 +54,7 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import java.util.UUID
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision as NativeEmbassyAccessDecision
 
 /** Verifies the API adapter maps internal types to stable views and reports failures cleanly. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -181,10 +181,14 @@ class DefaultMedievalFactionsApiTest {
         `when`(embassyService.access(MfPlayerId(actor.toString()), claim, ClaimAction.BUILD))
             .thenReturn(NativeEmbassyAccessDecision.DENY)
 
-        assertEquals(EmbassyAccessDecision.DENY,
-            api.embassyAccessAt(actor, world, 3, 7, ClaimAction.BUILD))
-        assertEquals(EmbassyAccessDecision.NONE,
-            api.embassyAccessAt(actor, world, 4, 7, ClaimAction.BUILD))
+        assertEquals(
+            EmbassyAccessDecision.DENY,
+            api.embassyAccessAt(actor, world, 3, 7, ClaimAction.BUILD)
+        )
+        assertEquals(
+            EmbassyAccessDecision.NONE,
+            api.embassyAccessAt(actor, world, 4, 7, ClaimAction.BUILD)
+        )
         verify(claimService, never()).getClaim(anyArg<Chunk>())
     }
 
@@ -204,8 +208,10 @@ class DefaultMedievalFactionsApiTest {
         `when`(plugin.server.isPrimaryThread).thenReturn(true)
         `when`(plugin.server.getPlayer(actor)).thenReturn(bukkitPlayer)
 
-        assertEquals(EmbassyAccessDecision.GRANT,
-            api.embassyAccessAt(actor, world, 3, 7, ClaimAction.CONTAINER))
+        assertEquals(
+            EmbassyAccessDecision.GRANT,
+            api.embassyAccessAt(actor, world, 3, 7, ClaimAction.CONTAINER)
+        )
     }
 
     @Test

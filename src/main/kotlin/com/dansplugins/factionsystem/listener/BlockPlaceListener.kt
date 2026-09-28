@@ -26,10 +26,14 @@ class BlockPlaceListener(private val plugin: MedievalFactions) : Listener {
             if (listOf(BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST).any { face ->
                     val neighbor = block.getRelative(face)
                     neighbor.type == block.type && embassyBoundary.crosses(
-                        embassyBoundary.point(block), embassyBoundary.point(neighbor)
+                        embassyBoundary.point(block),
+                        embassyBoundary.point(neighbor)
                     )
-                } && !(plugin.services.playerService.getPlayer(event.player)?.isBypassEnabled == true &&
-                    event.player.hasPermission("mf.bypass"))) {
+                } && !(
+                    plugin.services.playerService.getPlayer(event.player)?.isBypassEnabled == true &&
+                    event.player.hasPermission("mf.bypass")
+                )
+            ) {
                 event.isCancelled = true
                 event.player.sendMessage("${RED}A chest cannot merge across an embassy boundary.")
                 return
