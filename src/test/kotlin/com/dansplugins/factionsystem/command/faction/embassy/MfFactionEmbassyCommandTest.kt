@@ -5,6 +5,8 @@ import com.dansplugins.factionsystem.claim.MfEmbassy
 import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.claim.MfEmbassyService.ChunkPos
 import com.dansplugins.factionsystem.claim.MfEmbassyStatus
+import com.dansplugins.factionsystem.claim.MfClaimService
+import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
@@ -22,7 +24,11 @@ import org.bukkit.command.Command
 import org.bukkit.entity.Player
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockingDetails
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
@@ -44,6 +50,7 @@ class MfFactionEmbassyCommandTest {
     private lateinit var chunk: Chunk
     private lateinit var factions: MfFactionService
     private lateinit var embassies: MfEmbassyService
+    private lateinit var claims: MfClaimService
     private lateinit var host: MfFaction
     private lateinit var guest: MfFaction
     private lateinit var role: MfFactionRole
@@ -55,9 +62,12 @@ class MfFactionEmbassyCommandTest {
         val services = mock(Services::class.java)
         factions = mock(MfFactionService::class.java)
         embassies = mock(MfEmbassyService::class.java)
+        claims = mock(MfClaimService::class.java)
         `when`(plugin.services).thenReturn(services)
         `when`(services.factionService).thenReturn(factions)
         `when`(services.embassyService).thenReturn(embassies)
+        `when`(services.claimService).thenReturn(claims)
+        `when`(claims.getClaim(worldId, 3, -2)).thenReturn(MfClaimedChunk(worldId, 3, -2, hostId))
         `when`(embassies.chunkLimit(hostId)).thenReturn(4)
         `when`(embassies.chunkLimit(guestId)).thenReturn(4)
         val permissions = mock(MfFactionPermissions::class.java)
@@ -162,24 +172,25 @@ class MfFactionEmbassyCommandTest {
         `when`(it.entities).thenReturn(emptyArray())
         `when`(world.isChunkLoaded(x, z)).thenReturn(true)
         `when`(world.getChunkAt(x, z)).thenReturn(it)
+        `when`(claims.getClaim(worldId, x, z)).thenReturn(MfClaimedChunk(worldId, x, z, hostId))
     }
 
     @Test
-    fun fourChunkRectangleIsOfferedTogether() {
+    fun fourChunksAreOfferedAsOneConnectedArea() {
         `when`(factions.getFaction(playerId)).thenReturn(host)
         `when`(role.hasPermission(host, unclaim)).thenReturn(true)
-        val positions = listOf(ChunkPos(3, -2), ChunkPos(3, -1), ChunkPos(4, -2), ChunkPos(4, -1))
+        val positions = listOf(ChunkPos(3, -2), ChunkPos(4, -2), ChunkPos(3, -1), ChunkPos(4, -1))
         positions.drop(1).forEach { loadNeighbor(it.x, it.z) }
         val rows = positions.map { row(MfEmbassyStatus.OFFERED).copy(chunkX = it.x, chunkZ = it.z) }
         `when`(embassies.offerArea(hostId, guestId, worldId, positions)).thenReturn(Success(rows))
 
-        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "2x2"))
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "4"))
 
         verify(embassies).offerArea(hostId, guestId, worldId, positions)
     }
 
     @Test
-    fun inventoryInAnotherOfferedChunkRefusesTheWholeRectangle() {
+    fun inventoryInAnotherOfferedChunkRefusesTheWholeArea() {
         `when`(factions.getFaction(playerId)).thenReturn(host)
         `when`(role.hasPermission(host, unclaim)).thenReturn(true)
         val neighbor = loadNeighbor(3, -1)
@@ -188,30 +199,117 @@ class MfFactionEmbassyCommandTest {
         val chest = mock(Chest::class.java)
         `when`(neighbor.tileEntities).thenReturn(arrayOf(chest))
 
-        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "2x2"))
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "4"))
 
         verify(embassies, never()).offerArea(hostId, guestId, worldId,
-            listOf(ChunkPos(3, -2), ChunkPos(3, -1), ChunkPos(4, -2), ChunkPos(4, -1)))
+            listOf(ChunkPos(3, -2), ChunkPos(4, -2), ChunkPos(3, -1), ChunkPos(4, -1)))
     }
 
     @Test
-    fun overCapacityRectangleDoesNotLoadChunks() {
+    fun overCapacityCountDoesNotLoadChunks() {
         `when`(factions.getFaction(playerId)).thenReturn(host)
         `when`(role.hasPermission(host, unclaim)).thenReturn(true)
 
-        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "1000x1000"))
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "1000000"))
 
+        verify(world, never()).getChunkAt(anyInt(), anyInt())
+        assertNoOffer()
+    }
+
+    @Test
+    fun insufficientLoadedClaimsRefuseWithoutForcingTerrainLoad() {
+        `when`(factions.getFaction(playerId)).thenReturn(host)
+        `when`(role.hasPermission(host, unclaim)).thenReturn(true)
+
+        `when`(claims.getClaim(worldId, 4, -2)).thenReturn(MfClaimedChunk(worldId, 4, -2, hostId))
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "4"))
+
+        verify(world, never()).getChunkAt(anyInt(), anyInt())
+        assertNoOffer()
+    }
+
+    @Test
+    fun exactCountCanFollowAnIrregularClaimIntoNegativeCoordinates() {
+        `when`(factions.getFaction(playerId)).thenReturn(host)
+        `when`(role.hasPermission(host, unclaim)).thenReturn(true)
+        val positions = listOf(ChunkPos(3, -2), ChunkPos(2, -2), ChunkPos(2, -3))
+        positions.drop(1).forEach { loadNeighbor(it.x, it.z) }
+        loadNeighbor(2, -4)
+        val rows = positions.map { row(MfEmbassyStatus.OFFERED).copy(chunkX = it.x, chunkZ = it.z) }
+        `when`(embassies.offerArea(hostId, guestId, worldId, positions)).thenReturn(Success(rows))
+
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "3"))
+
+        verify(embassies).offerArea(hostId, guestId, worldId, positions)
+        verify(world, never()).getChunkAt(2, -4)
+    }
+
+    @Test
+    fun foreignClaimCannotConnectToAnIsolatedHostClaim() {
+        `when`(factions.getFaction(playerId)).thenReturn(host)
+        `when`(role.hasPermission(host, unclaim)).thenReturn(true)
+        loadNeighbor(4, -2)
+        loadNeighbor(5, -2)
+        `when`(claims.getClaim(worldId, 4, -2)).thenReturn(MfClaimedChunk(worldId, 4, -2, guestId))
+
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "2"))
+
+        assertNoOffer()
         verify(world, never()).getChunkAt(anyInt(), anyInt())
     }
 
     @Test
-    fun unloadedRectangleRefusesWithoutForcingTerrainLoad() {
+    fun diagonalContactDoesNotConnectClaims() {
+        `when`(factions.getFaction(playerId)).thenReturn(host)
+        `when`(role.hasPermission(host, unclaim)).thenReturn(true)
+        loadNeighbor(4, -1)
+
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "2"))
+
+        assertNoOffer()
+    }
+
+    @Test
+    fun reservedEmbassyCannotServeAsABridgeToAnotherClaim() {
+        `when`(factions.getFaction(playerId)).thenReturn(host)
+        `when`(role.hasPermission(host, unclaim)).thenReturn(true)
+        loadNeighbor(4, -2)
+        loadNeighbor(5, -2)
+        `when`(embassies.getAt(worldId, 4, -2)).thenReturn(row(MfEmbassyStatus.OFFERED).copy(chunkX = 4))
+
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "2"))
+
+        assertNoOffer()
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["2x2", "0", "-1", "1.5", "2147483648"])
+    fun invalidCountsNeverLoadOrOfferChunks(count: String) {
         `when`(factions.getFaction(playerId)).thenReturn(host)
         `when`(role.hasPermission(host, unclaim)).thenReturn(true)
 
-        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "2x2"))
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", count))
 
+        assertNoOffer()
         verify(world, never()).getChunkAt(anyInt(), anyInt())
+    }
+
+    @Test
+    fun numericEndingRealmNameStillDefaultsToOneChunk() {
+        `when`(factions.getFaction(playerId)).thenReturn(host)
+        `when`(role.hasPermission(host, unclaim)).thenReturn(true)
+        `when`(factions.getFaction("Peer Guest 4")).thenReturn(guest)
+        val positions = listOf(ChunkPos(3, -2))
+        `when`(embassies.offerArea(hostId, guestId, worldId, positions))
+            .thenReturn(Success(listOf(row(MfEmbassyStatus.OFFERED))))
+
+        uut.onCommand(player, command, "f", arrayOf("offer", "Peer", "Guest", "4"))
+
+        verify(embassies).offerArea(hostId, guestId, worldId, positions)
+    }
+
+    private fun assertNoOffer() {
+        assertTrue(mockingDetails(embassies).invocations.none { it.method.name.startsWith("offerArea") })
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.dansplugins.factionsystem.claim.MfEmbassy
 import com.dansplugins.factionsystem.claim.MfEmbassyService.ChunkPos
 import com.dansplugins.factionsystem.claim.MfEmbassyStatus
 import com.dansplugins.factionsystem.faction.MfFaction
+import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.player.MfPlayerId
 import dev.forkhandles.result4k.Failure
 import dev.forkhandles.result4k.Result4k
@@ -23,6 +24,8 @@ import org.bukkit.inventory.InventoryHolder
 import java.time.Instant
 import java.time.Duration
 import java.util.UUID
+import java.util.PriorityQueue
+import kotlin.math.abs
 
 /**
  * An embassy is a mutually accepted tenancy of connected host-owned chunks. Offering and accepting
@@ -42,9 +45,9 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
             return true
         }
         if (args.isEmpty() || args[0].equals("help", ignoreCase = true)) {
-            sender.sendMessage("${AQUA}/f embassy offer <realm> [widthxdepth], accept, decline, revoke, release, finish, seize, passage, info, list")
+            sender.sendMessage("${AQUA}/f embassy offer <realm> [chunks], accept, decline, revoke, release, finish, seize, passage, info, list")
             sender.sendMessage("${GRAY}Stand in the plot to offer or accept. Revoke/release/seize/passage/info can name <world UUID>:<chunkX>,<chunkZ>.")
-            sender.sendMessage("${GRAY}Use 2x2 for four chunks, extending toward +X/+Z. Offers last 7 days; clearing lasts 14 peaceful days.")
+            sender.sendMessage("${GRAY}Use 4 for four connected chunks in your land, starting here; the default is 1. Offers last 7 days; clearing lasts 14 peaceful days.")
             return true
         }
         val factionService = plugin.services.factionService
@@ -99,19 +102,33 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
         }
         if (verb == "offer") {
             val offerArgs = args.drop(1)
-            val hasSize = offerArgs.size > 1 && offerArgs.last().matches(Regex("[0-9]+x[0-9]+", RegexOption.IGNORE_CASE))
-            val size = if (hasSize) parseSize(offerArgs.last()) else 1 to 1
-            if (size == null) {
-                sender.sendMessage("${RED}Use positive dimensions, for example /f embassy offer <realm> 2x2.")
+            if (offerArgs.isEmpty()) {
+                sender.sendMessage("${RED}Use /f embassy offer <realm> [chunks] while standing in your claim.")
                 return true
             }
-            val guestName = (if (hasSize) offerArgs.dropLast(1) else offerArgs).joinToString(" ").trim()
-            if (guestName.isEmpty()) {
-                sender.sendMessage("${RED}Use /f embassy offer <realm> [widthxdepth] while standing in your claim.")
-                return true
+            // Resolve the whole name first so realms whose names end in a number remain usable.
+            val namedGuest = factionService.getFaction(offerArgs.joinToString(" "))
+            val guest: MfFaction
+            val count: Int
+            if (namedGuest != null) {
+                guest = namedGuest
+                count = 1
+            } else {
+                guest = if (offerArgs.size > 1) factionService.getFaction(offerArgs.dropLast(1).joinToString(" "))
+                    ?: run {
+                        sender.sendMessage("${RED}Name another existing realm as the guest.")
+                        return true
+                    } else {
+                    sender.sendMessage("${RED}Name another existing realm as the guest.")
+                    return true
+                }
+                count = offerArgs.last().takeIf { it.matches(Regex("[0-9]+")) }
+                    ?.toIntOrNull()?.takeIf { it > 0 } ?: run {
+                    sender.sendMessage("${RED}Use a positive chunk count, for example /f embassy offer <realm> 4.")
+                    return true
+                }
             }
-            val guest = factionService.getFaction(guestName)
-            if (guest == null || guest.id == faction.id) {
+            if (guest.id == faction.id) {
                 sender.sendMessage("${RED}Name another existing realm as the guest.")
                 return true
             }
@@ -120,12 +137,12 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
                     sender.sendMessage("${RED}A saved embassy allowance is invalid; staff must correct maxEmbassyChunks.")
                     return true
                 }
-            if (size.first.toLong() * size.second > allowance) {
+            if (count > allowance) {
                 sender.sendMessage("${RED}This offer exceeds a realm's embassy allowance of $allowance chunks.")
                 return true
             }
-            val positions = rectangle(parcel, size.first, size.second) ?: run {
-                sender.sendMessage("${RED}The requested chunk coordinates exceed the world coordinate range.")
+            val positions = connectedHostChunks(parcel, faction.id, count) ?: run {
+                sender.sendMessage("${RED}There are not $count connected, loaded, available chunks in your realm's land starting here. Load adjoining claims or choose another starting chunk.")
                 return true
             }
             val chunks = inspectableChunks(sender, parcel, positions) ?: return true
@@ -137,6 +154,7 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
             val result = embassies.offerArea(faction.id, guest.id, parcel.world.uid, positions)
             report(sender, result) { granted ->
                 sender.sendMessage("${GREEN}Offered ${granted.size} chunk(s) to ${guest.displayName} for 7 days.")
+                sender.sendMessage("${GRAY}Selected chunks: ${positions.joinToString("; ") { "${it.x},${it.z}" }}. Review them with /f embassy list.")
                 guest.sendMessage("Embassy offer", "${faction.displayName} offered ${granted.size} chunk(s) at ${location(granted.first())}. Visit an offered chunk and use /f embassy accept within 7 days.")
             }
             return true
@@ -215,18 +233,34 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
     private fun emptyOfInventories(chunk: Chunk): Boolean =
         chunk.tileEntities.none { it is InventoryHolder } && chunk.entities.none { it is InventoryHolder }
 
-    private fun parseSize(text: String): Pair<Int, Int>? {
-        val parts = text.lowercase().split('x')
-        val width = parts[0].toIntOrNull() ?: return null
-        val depth = parts[1].toIntOrNull() ?: return null
-        return if (width > 0 && depth > 0) width to depth else null
+    /** Grow through side-adjacent eligible claims only, preferring a compact area near the player. */
+    private fun connectedHostChunks(chunk: Chunk, hostId: MfFactionId, count: Int): List<ChunkPos>? {
+        val start = ChunkPos(chunk.x, chunk.z)
+        fun dx(position: ChunkPos) = position.x.toLong() - start.x
+        fun dz(position: ChunkPos) = position.z.toLong() - start.z
+        val frontier = PriorityQueue(compareBy<ChunkPos> { maxOf(abs(dx(it)), abs(dz(it))) }
+            .thenBy { (if (dx(it) < 0) 1 else 0) + (if (dz(it) < 0) 1 else 0) }
+            .thenBy { abs(dx(it)) + abs(dz(it)) }.thenBy { it.z }.thenBy { it.x })
+        val seen = mutableSetOf(start)
+        val selected = mutableListOf<ChunkPos>()
+        frontier.add(start)
+        while (frontier.isNotEmpty() && selected.size < count) {
+            val position = frontier.remove()
+            if (plugin.services.claimService.getClaim(chunk.world.uid, position.x, position.z)?.factionId != hostId ||
+                position != start && !chunk.world.isChunkLoaded(position.x, position.z) ||
+                plugin.services.embassyService.getAt(chunk.world.uid, position.x, position.z) != null) continue
+            selected.add(position)
+            if (selected.size == count) break
+            val neighbors = listOfNotNull(
+                if (position.x < Int.MAX_VALUE) ChunkPos(position.x + 1, position.z) else null,
+                if (position.z < Int.MAX_VALUE) ChunkPos(position.x, position.z + 1) else null,
+                if (position.x > Int.MIN_VALUE) ChunkPos(position.x - 1, position.z) else null,
+                if (position.z > Int.MIN_VALUE) ChunkPos(position.x, position.z - 1) else null
+            )
+            neighbors.filter { seen.add(it) }.forEach(frontier::add)
+        }
+        return selected.takeIf { it.size == count }
     }
-
-    private fun rectangle(chunk: Chunk, width: Int, depth: Int): List<ChunkPos>? = runCatching {
-        Math.addExact(chunk.x, width - 1)
-        Math.addExact(chunk.z, depth - 1)
-        (0 until width).flatMap { dx -> (0 until depth).map { dz -> ChunkPos(chunk.x + dx, chunk.z + dz) } }
-    }.getOrNull()
 
     /** Inspect only loaded chunks; a large offer must not synchronously generate distant terrain. */
     private fun inspectableChunks(sender: Player, parcel: Chunk, positions: List<ChunkPos>): List<Chunk>? {

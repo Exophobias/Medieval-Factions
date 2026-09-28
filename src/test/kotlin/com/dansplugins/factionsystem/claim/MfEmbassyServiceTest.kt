@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockingDetails
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.time.Clock
@@ -436,6 +437,72 @@ class MfEmbassyServiceTest {
     }
 
     @Test
+    fun `connected initial offer containing a foreign claim leaves all storage unchanged`() {
+        val chunks = rectangle(2, -3, 2, 1)
+        stubClaims(chunks)
+        val foreign = chunks.last()
+        `when`(claimService.getClaim(world, foreign.x, foreign.z))
+            .thenReturn(MfClaimedChunk(world, foreign.x, foreign.z, conqueror))
+        val claimsBefore = chunks.map { claimService.getClaim(world, it.x, it.z) }
+        val rowsBefore = repository.rows.toMap()
+        val batchesBefore = repository.batches
+
+        assertIs<Failure<*>>(embassies.offerArea(host, guest, world, chunks))
+
+        assertEquals(rowsBefore, repository.rows)
+        assertEquals(batchesBefore, repository.batches)
+        assertEquals(claimsBefore, chunks.map { claimService.getClaim(world, it.x, it.z) })
+        assertTrue(chunks.all { embassies.getAt(world, it.x, it.z) == null })
+        assertEquals(0, embassies.hostedChunkCount(host))
+        assertEquals(0, embassies.heldChunkCount(guest))
+        assertNoClaimWrites()
+    }
+
+    @Test
+    fun `connected initial offer containing an unclaimed cell leaves all storage unchanged`() {
+        val chunks = rectangle(2, -3, 2, 1)
+        stubClaims(chunks.take(1))
+        val claimsBefore = chunks.map { claimService.getClaim(world, it.x, it.z) }
+        assertNull(claimsBefore.last())
+        val rowsBefore = repository.rows.toMap()
+        val batchesBefore = repository.batches
+
+        assertIs<Failure<*>>(embassies.offerArea(host, guest, world, chunks))
+
+        assertEquals(rowsBefore, repository.rows)
+        assertEquals(batchesBefore, repository.batches)
+        assertEquals(claimsBefore, chunks.map { claimService.getClaim(world, it.x, it.z) })
+        assertTrue(chunks.all { embassies.getAt(world, it.x, it.z) == null })
+        assertEquals(0, embassies.hostedChunkCount(host))
+        assertEquals(0, embassies.heldChunkCount(guest))
+        assertNoClaimWrites()
+    }
+
+    @Test
+    fun `disconnected expansion preserves the active embassy and every claim`() {
+        val active = rectangle(2, -3, 2, 1)
+        val expansion = rectangle(5, -3, 2, 1)
+        val chunks = active + expansion
+        stubClaims(chunks)
+        assertIs<Success<List<MfEmbassy>>>(embassies.offerArea(host, guest, world, active))
+        assertIs<Success<List<MfEmbassy>>>(embassies.acceptArea(guest, world, 2, -3))
+        val claimsBefore = chunks.map { claimService.getClaim(world, it.x, it.z) }
+        val rowsBefore = repository.rows.toMap()
+        val batchesBefore = repository.batches
+
+        assertIs<Failure<*>>(embassies.offerArea(host, guest, world, expansion))
+
+        assertEquals(rowsBefore, repository.rows)
+        assertEquals(batchesBefore, repository.batches)
+        assertEquals(claimsBefore, chunks.map { claimService.getClaim(world, it.x, it.z) })
+        assertTrue(active.all { embassies.getAt(world, it.x, it.z)?.status == MfEmbassyStatus.ACTIVE })
+        assertTrue(expansion.all { embassies.getAt(world, it.x, it.z) == null })
+        assertEquals(2, embassies.hostedChunkCount(host))
+        assertEquals(2, embassies.heldChunkCount(guest))
+        assertNoClaimWrites()
+    }
+
+    @Test
     fun `losing one offered cell cancels the entire pending area before acceptance`() {
         val chunks = rectangle(2, -3, 3, 1)
         stubClaims(chunks)
@@ -649,6 +716,13 @@ class MfEmbassyServiceTest {
         chunks.forEach { pos ->
             `when`(claimService.getClaim(world, pos.x, pos.z)).thenReturn(MfClaimedChunk(world, pos.x, pos.z, owner))
         }
+    }
+
+    private fun assertNoClaimWrites() {
+        val mutations = setOf("save", "claimIfUnclaimed", "transferOwnership", "delete", "deleteAllClaims")
+        assertTrue(mockingDetails(claimService).invocations.none {
+            it.method.name.substringBefore('-') in mutations
+        }, "Embassy validation must not persist, transfer or delete claims")
     }
 
     private fun setWar(atWar: Boolean) {
