@@ -369,6 +369,71 @@ class ConfigLifecycleTest {
     }
 
     @Test
+    void schemaFourMigrationKeepsAnchoredSequenceCommentsAndOperatorValues()
+            throws Exception {
+        Path config = temporaryDirectory.resolve("config.yml");
+        String template = anchoredSequenceTemplate();
+        Files.writeString(config, """
+                config-version: 4
+                database:
+                  password: operator-database-secret
+                extension:
+                  retained: operator-extension
+                """, StandardCharsets.UTF_8);
+
+        ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, template);
+
+        assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
+        assertEquals(4, result.sourceVersion());
+        assertEquals(5, result.installedVersion());
+        assertEquals("operator-database-secret",
+                result.snapshot().configuration().getString("database.password"));
+        assertEquals("operator-extension",
+                result.snapshot().configuration().getString("extension.retained"));
+        assertEquals(load(template).getList("gates.restrictedBlocks"),
+                result.snapshot().configuration().getList("gates.restrictedBlocks"));
+        assertAnchoredSequenceComments(Files.readString(config, StandardCharsets.UTF_8));
+        assertNull(result.backup());
+        assertOwnerOnly(config);
+        byte[] migrated = Files.readAllBytes(config);
+        assertEquals(ConfigLifecycle.State.CURRENT,
+                ConfigLifecycle.prepare(config, template).state());
+        assertArrayEquals(migrated, Files.readAllBytes(config));
+        try (var files = Files.list(temporaryDirectory)) {
+            assertEquals(1L, files.count(), "migration must not create a backup");
+        }
+    }
+
+    @Test
+    void pluginOwnedUpdateKeepsAnchoredSequenceCommentsAndOperatorValues()
+            throws Exception {
+        Path config = temporaryDirectory.resolve("config.yml");
+        String template = anchoredSequenceTemplate();
+        Files.writeString(config, template.replace("default-password", "operator-database-secret")
+                + "extension:\n  retained: operator-extension\n", StandardCharsets.UTF_8);
+        ConfigLifecycle.Result active = ConfigLifecycle.prepare(config, template);
+        assertEquals(ConfigLifecycle.State.CURRENT, active.state(), active.detail());
+
+        ConfigLifecycle.Result updated = ConfigLifecycle.update(config, template,
+                active.snapshot(), Map.of("dpc-api.enabled", true));
+
+        assertEquals(ConfigLifecycle.State.CURRENT, updated.state(), updated.detail());
+        assertTrue(updated.snapshot().configuration().getBoolean("dpc-api.enabled"));
+        assertEquals("operator-database-secret",
+                updated.snapshot().configuration().getString("database.password"));
+        assertEquals("operator-extension",
+                updated.snapshot().configuration().getString("extension.retained"));
+        assertEquals(load(template).getList("gates.restrictedBlocks"),
+                updated.snapshot().configuration().getList("gates.restrictedBlocks"));
+        assertAnchoredSequenceComments(Files.readString(config, StandardCharsets.UTF_8));
+        assertArrayEquals(Files.readAllBytes(config), updated.snapshot().fileBytes());
+        assertOwnerOnly(config);
+        try (var files = Files.list(temporaryDirectory)) {
+            assertEquals(1L, files.count(), "update must not create a backup");
+        }
+    }
+
+    @Test
     void invalidEmbassyAllowanceIsRejectedAcrossEverySchemaWithoutWrites()
             throws Exception {
         for (int schema : List.of(0, 1, 2, 3, 4, 5)) {
@@ -908,6 +973,33 @@ class ConfigLifecycleTest {
         var owner = Files.getOwner(file);
         assertTrue(acl.getAcl().stream()
                 .allMatch(entry -> entry.principal().equals(owner)));
+    }
+
+    private static String anchoredSequenceTemplate() {
+        return """
+                config-version: 5
+                database:
+                  password: default-password
+                gates:
+                  restrictedBlocks:
+                    # Nested block group
+                    - &block_group
+                      - STONE # First group entry
+                      - DIRT
+                    - *block_group
+                dpc-api:
+                  enabled: false # Reporting switch
+                # Template end
+                """;
+    }
+
+    private static void assertAnchoredSequenceComments(String text) {
+        assertTrue(text.contains("# Nested block group"));
+        assertTrue(text.contains("# First group entry"));
+        assertTrue(text.contains("# Reporting switch"));
+        assertTrue(text.contains("# Template end"));
+        assertTrue(text.contains("&block_group"));
+        assertTrue(text.contains("*block_group"));
     }
 
     private static String bundledTemplate() throws IOException {

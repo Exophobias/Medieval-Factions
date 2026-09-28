@@ -7,6 +7,7 @@ import org.jooq.SQLDialect;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.comments.CommentLine;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.error.YAMLException;
 import org.yaml.snakeyaml.events.Event;
@@ -463,9 +464,7 @@ public final class ConfigLifecycle {
                 replaceTemplateValue(dpcMapping, "url", OLD_DPC_URL, yaml);
             }
         }
-        StringWriter output = new StringWriter();
-        yaml.serialize(mapping, output);
-        return output.toString();
+        return serializeMapping(yaml, mapping);
     }
 
     private static void removeTemplateKey(MappingNode mapping, String key) {
@@ -565,9 +564,7 @@ public final class ConfigLifecycle {
                 throw new IllegalStateException("validated configs must have mapping roots");
             }
             overlayNodeMapping(installedMapping, templateValues, templateMapping, yaml, true);
-            StringWriter output = new StringWriter();
-            yaml.serialize(templateMapping, output);
-            serialized = output.toString();
+            serialized = serializeMapping(yaml, templateMapping);
             YamlConfiguration candidate = parse(serialized);
             return new Migration(candidate, serialized);
         } catch (InvalidConfigurationException | YAMLException impossible) {
@@ -641,6 +638,47 @@ public final class ConfigLifecycle {
         }
     }
 
+    private static String serializeMapping(Yaml yaml, MappingNode mapping) {
+        clearCommentSourceMarks(mapping,
+                Collections.newSetFromMap(new IdentityHashMap<>()));
+        StringWriter output = new StringWriter();
+        yaml.serialize(mapping, output);
+        return output.toString();
+    }
+
+    /**
+     * Source coordinates describe the input layout, not the canonical output layout.
+     * SnakeYAML 2.7 uses those coordinates to place standalone sequence comments;
+     * stale columns can split an anchor from its nested block sequence. Retain the
+     * comments themselves while letting the emitter choose their new positions.
+     */
+    private static void clearCommentSourceMarks(Node node, Set<Node> visited) {
+        Node unwrapped = unwrap(node);
+        if (!visited.add(unwrapped)) {
+            return;
+        }
+        unwrapped.setBlockComments(withoutSourceMarks(unwrapped.getBlockComments()));
+        unwrapped.setInLineComments(withoutSourceMarks(unwrapped.getInLineComments()));
+        unwrapped.setEndComments(withoutSourceMarks(unwrapped.getEndComments()));
+        if (unwrapped instanceof MappingNode mapping) {
+            for (NodeTuple tuple : mapping.getValue()) {
+                clearCommentSourceMarks(tuple.getKeyNode(), visited);
+                clearCommentSourceMarks(tuple.getValueNode(), visited);
+            }
+        } else if (unwrapped instanceof SequenceNode sequence) {
+            for (Node child : sequence.getValue()) {
+                clearCommentSourceMarks(child, visited);
+            }
+        }
+    }
+
+    private static List<CommentLine> withoutSourceMarks(List<CommentLine> comments) {
+        return comments == null ? null : comments.stream()
+                .map(comment -> new CommentLine(null, null,
+                        comment.getValue(), comment.getCommentType()))
+                .toList();
+    }
+
     /** Replaces only named paths on the exact active node tree, retaining its comments/aliases. */
     private static String serializePluginUpdates(String activeYaml, String bundledYaml,
                                                  Map<String, ?> updates) {
@@ -663,9 +701,7 @@ public final class ConfigLifecycle {
             applyNodeUpdate(activeMapping, templateMapping, update.getKey().split("\\."),
                     0, update.getValue(), yaml);
         }
-        StringWriter output = new StringWriter();
-        yaml.serialize(activeMapping, output);
-        return output.toString();
+        return serializeMapping(yaml, activeMapping);
     }
 
     private static void applyNodeUpdate(MappingNode active, MappingNode template,
