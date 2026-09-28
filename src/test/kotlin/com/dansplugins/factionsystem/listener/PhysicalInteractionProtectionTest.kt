@@ -1,9 +1,12 @@
 package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
@@ -60,6 +63,7 @@ class PhysicalInteractionProtectionTest {
     private lateinit var plugin: MedievalFactions
     private lateinit var players: MfPlayerService
     private lateinit var claims: MfClaimService
+    private lateinit var embassies: MfEmbassyService
     private lateinit var factions: MfFactionService
     private lateinit var locks: MfLockService
     private lateinit var config: YamlConfiguration
@@ -79,7 +83,7 @@ class PhysicalInteractionProtectionTest {
         asyncTasks.clear(); mainTasks.clear(); notices.clear()
         plugin = mock(MedievalFactions::class.java)
         val services = mock(Services::class.java)
-        defaultEmbassyService(services)
+        embassies = defaultEmbassyService(services)
         players = mock(MfPlayerService::class.java)
         claims = mock(MfClaimService::class.java)
         factions = mock(MfFactionService::class.java)
@@ -208,13 +212,34 @@ class PhysicalInteractionProtectionTest {
     }
 
     @Test
-    fun physicalLockAccessorStillBypassesClaimDenialWithoutLookup() {
+    fun physicalLockAccessorStillBypassesOrdinaryClaimDenialWithoutOwnerLookup() {
         val locked = MfLockedBlock(block = MfBlockPosition.fromBukkitBlock(block), chunkX = -1, chunkZ = 2, playerId = MfPlayerId(UUID.randomUUID().toString()), accessors = listOf(actor.id))
         `when`(locks.getLockedBlock(locked.block)).thenReturn(locked)
         assertFalse(dispatch().isCancelled)
         assertTrue(asyncTasks.isEmpty())
         assertTrue(notices.isEmpty())
-        verify(claims, never()).getClaim(chunk)
+        // Embassy policy needs the cached claim snapshot before any existing lock grant.
+        verify(claims).getClaim(chunk)
+        verify(claims, never()).isInteractionAllowed(actor.id, claim)
+        verify(players, never()).getPlayer(locked.playerId)
+        verify(factions, never()).getFaction(claim.factionId)
+    }
+
+    @Test
+    fun physicalLockAccessorCannotBypassAuthoritativeEmbassyDenial() {
+        val locked = MfLockedBlock(block = MfBlockPosition.fromBukkitBlock(block), chunkX = -1, chunkZ = 2, playerId = MfPlayerId(UUID.randomUUID().toString()), accessors = listOf(actor.id))
+        `when`(locks.getLockedBlock(locked.block)).thenReturn(locked)
+        `when`(embassies.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)).thenReturn(true)
+        `when`(embassies.access(actor.id, claim, ClaimAction.INTERACT)).thenReturn(EmbassyAccessDecision.DENY)
+
+        assertTrue(dispatch().isCancelled)
+
+        verify(embassies).access(actor.id, claim, ClaimAction.INTERACT)
+        verify(locks, never()).getLockedBlock(locked.block)
+        verify(claims, never()).isInteractionAllowed(actor.id, claim)
+        verify(players, never()).getPlayer(locked.playerId)
+        assertTrue(asyncTasks.isEmpty())
+        assertTrue(notices.isEmpty())
     }
 
     @Test
