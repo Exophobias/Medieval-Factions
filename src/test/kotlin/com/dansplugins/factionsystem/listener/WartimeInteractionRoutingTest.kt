@@ -91,6 +91,7 @@ class WartimeInteractionRoutingTest {
         grants.clear(); checks.clear(); overrideCalls.clear()
         plugin = mock(MedievalFactions::class.java)
         val services = mock(Services::class.java)
+        defaultEmbassyService(services)
         val players = mock(MfPlayerService::class.java)
         val factions = mock(MfFactionService::class.java)
         claims = mock(MfClaimService::class.java)

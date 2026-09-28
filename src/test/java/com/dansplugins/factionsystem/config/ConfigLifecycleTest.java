@@ -46,13 +46,15 @@ class ConfigLifecycleTest {
         assertTrue(created.compatible());
         assertArrayEquals(template.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(config));
         assertArrayEquals(Files.readAllBytes(config), created.snapshot().fileBytes());
-        assertEquals(4, created.snapshot().configuration().getInt("config-version"));
+        assertEquals(5, created.snapshot().configuration().getInt("config-version"));
         assertFalse(created.snapshot().configuration().getBoolean(
                 "factions.allowLeaderlessFactions"));
         assertTrue(created.snapshot().configuration().getBoolean(
                 "factions.adminOnlyLeaderlessFactions"));
         assertEquals(30, created.snapshot().configuration().getInt(
                 "factions.factionHomeCooldownMinutes"));
+        assertEquals(4, created.snapshot().configuration().getInt(
+                "factions.defaults.flags.maxEmbassyChunks"));
         assertOwnerOnly(config);
 
         byte[] currentBytes = Files.readAllBytes(config);
@@ -77,7 +79,7 @@ class ConfigLifecycleTest {
         assertEquals(0, result.sourceVersion());
         assertNull(result.backup());
         assertOwnerOnly(config);
-        assertEquals(4, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(5, result.snapshot().configuration().getInt("config-version"));
         assertEquals(7, result.snapshot().configuration().getInt("players.initialPower"));
         assertEquals(42, result.snapshot().configuration().getInt("factions.maxMembers"));
         assertEquals("historical-database-secret",
@@ -94,6 +96,8 @@ class ConfigLifecycleTest {
                 .getBoolean("factions.adminOnlyLeaderlessFactions"));
         assertEquals(30, result.snapshot().configuration().getInt(
                 "factions.factionHomeCooldownMinutes"));
+        assertEquals(4, result.snapshot().configuration().getInt(
+                "factions.defaults.flags.maxEmbassyChunks"));
         assertFalse(result.detail().contains("historical-database-secret"));
         assertFalse(result.detail().contains("historical-dpc-secret"));
         try (var files = Files.list(temporaryDirectory)) {
@@ -153,7 +157,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(1, result.sourceVersion());
-        assertEquals(4, result.installedVersion());
+        assertEquals(5, result.installedVersion());
         assertNull(result.backup());
         var values = result.snapshot().configuration();
         assertEquals("operator-database-secret", values.getString("database.password"));
@@ -170,6 +174,7 @@ class ConfigLifecycleTest {
         assertTrue(values.getBoolean("factions.allowLeaderlessFactions"));
         assertFalse(values.getBoolean("factions.adminOnlyLeaderlessFactions"));
         assertEquals(30, values.getInt("factions.factionHomeCooldownMinutes"));
+        assertEquals(4, values.getInt("factions.defaults.flags.maxEmbassyChunks"));
         assertEquals("preserved", values.getString("extension.retained"));
         assertFalse(values.contains("factions.nonMembersCanInteractWithEntities"));
         assertOwnerOnly(config);
@@ -221,7 +226,7 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(2, result.sourceVersion());
-            assertEquals(4, result.installedVersion());
+            assertEquals(5, result.installedVersion());
             assertEquals(previouslyAllowed,
                     result.snapshot().configuration().getBoolean(
                             "factions.allowLeaderlessFactions"));
@@ -230,6 +235,8 @@ class ConfigLifecycleTest {
                             "factions.adminOnlyLeaderlessFactions"));
             assertEquals(30, result.snapshot().configuration().getInt(
                     "factions.factionHomeCooldownMinutes"));
+            assertEquals(4, result.snapshot().configuration().getInt(
+                    "factions.defaults.flags.maxEmbassyChunks"));
             assertEquals("operator-database-secret",
                     result.snapshot().configuration().getString("database.password"));
             assertTrue(result.snapshot().configuration().getBoolean(
@@ -273,12 +280,14 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(3, result.sourceVersion());
-            assertEquals(4, result.installedVersion());
+            assertEquals(5, result.installedVersion());
             assertEquals(configuredCooldown.isEmpty() ? 30 : Integer.parseInt(configuredCooldown),
                     result.snapshot().configuration().getInt(
                             "factions.factionHomeCooldownMinutes"));
             assertEquals(9, result.snapshot().configuration().getInt(
                     "factions.factionHomeTeleportDelay"));
+            assertEquals(4, result.snapshot().configuration().getInt(
+                    "factions.defaults.flags.maxEmbassyChunks"));
             assertEquals("operator-database-secret", result.snapshot().configuration()
                     .getString("database.password"));
             assertTrue(result.snapshot().configuration()
@@ -304,9 +313,107 @@ class ConfigLifecycleTest {
     }
 
     @Test
+    void schemaFourMigrationAddsEmbassyAllowanceAndPreservesExplicitExtensions()
+            throws Exception {
+        for (String configuredMaximum : List.of("", "0", "9", "4096")) {
+            Path directory = temporaryDirectory.resolve("schema-four-"
+                    + (configuredMaximum.isEmpty() ? "default" : configuredMaximum));
+            Files.createDirectories(directory);
+            Path config = directory.resolve("config.yml");
+            String maximumLine = configuredMaximum.isEmpty() ? ""
+                    : "      maxEmbassyChunks: " + configuredMaximum + "\n";
+            Files.writeString(config, """
+                    config-version: 4
+                    database:
+                      password: operator-database-secret
+                    factions:
+                      factionHomeCooldownMinutes: 17
+                      defaults:
+                        flags:
+                          protectVillagerTrade: false
+                    %s      extension-flag: preserved
+                    third-party-extension:
+                      retained: true
+                    """.formatted(maximumLine), StandardCharsets.UTF_8);
+
+            ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+            assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
+            assertEquals(4, result.sourceVersion());
+            assertEquals(5, result.installedVersion());
+            var values = result.snapshot().configuration();
+            assertEquals(configuredMaximum.isEmpty() ? 4 : Integer.parseInt(configuredMaximum),
+                    values.getInt("factions.defaults.flags.maxEmbassyChunks"));
+            assertEquals(17, values.getInt("factions.factionHomeCooldownMinutes"));
+            assertFalse(values.getBoolean("factions.defaults.flags.protectVillagerTrade"));
+            assertEquals("operator-database-secret", values.getString("database.password"));
+            assertEquals("preserved", values.getString("factions.defaults.flags.extension-flag"));
+            assertTrue(values.getBoolean("third-party-extension.retained"));
+            assertKnownKeysPrecedeExtensions(load(bundledTemplate()), values);
+            List<String> flagKeys = new ArrayList<>(values.getConfigurationSection(
+                    "factions.defaults.flags").getKeys(false));
+            assertEquals(flagKeys.indexOf("protectVillagerTrade") + 1,
+                    flagKeys.indexOf("maxEmbassyChunks"));
+            assertEquals(flagKeys.indexOf("maxEmbassyChunks") + 1,
+                    flagKeys.indexOf("coatofarms"));
+            assertNull(result.backup());
+            assertOwnerOnly(config);
+            byte[] migrated = Files.readAllBytes(config);
+            assertEquals(ConfigLifecycle.State.CURRENT,
+                    ConfigLifecycle.prepare(config, bundledTemplate()).state());
+            assertArrayEquals(migrated, Files.readAllBytes(config));
+            try (var files = Files.list(directory)) {
+                assertEquals(1L, files.count(), "schema migration must not create a backup");
+            }
+        }
+    }
+
+    @Test
+    void invalidEmbassyAllowanceIsRejectedAcrossEverySchemaWithoutWrites()
+            throws Exception {
+        for (int schema : List.of(0, 1, 2, 3, 4, 5)) {
+            List<String> invalid = List.of("-1", "4097", "2147483648", "'4'", "4.0", "true");
+            for (int index = 0; index < invalid.size(); index++) {
+                Path directory = temporaryDirectory.resolve("invalid-embassy-" + schema + "-" + index);
+                Files.createDirectories(directory);
+                Path config = directory.resolve("config.yml");
+                byte[] original = ("config-version: " + schema + "\n"
+                        + "factions:\n  defaults:\n    flags:\n      maxEmbassyChunks: "
+                        + invalid.get(index) + "\n").getBytes(StandardCharsets.UTF_8);
+                Files.write(config, original);
+
+                ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+                assertEquals(ConfigLifecycle.State.INVALID, result.state(), result.detail());
+                assertEquals("invalid configuration at factions.defaults.flags.maxEmbassyChunks",
+                        result.detail());
+                assertArrayEquals(original, Files.readAllBytes(config));
+                assertNull(result.backup());
+                try (var files = Files.list(directory)) {
+                    assertEquals(1L, files.count(), "invalid config must not create artifacts");
+                }
+            }
+        }
+    }
+
+    @Test
+    void sparseCurrentConfigReadsEmbassyDefaultWithoutWritingMissingKeys() throws Exception {
+        Path config = temporaryDirectory.resolve("config.yml");
+        byte[] original = "config-version: 5\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(config, original);
+
+        ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
+
+        assertEquals(ConfigLifecycle.State.CURRENT, result.state(), result.detail());
+        assertEquals(4, result.snapshot().configuration().getInt(
+                "factions.defaults.flags.maxEmbassyChunks"));
+        assertArrayEquals(original, Files.readAllBytes(config));
+    }
+
+    @Test
     void invalidFactionHomeCooldownIsRejectedWithoutChangingInstalledBytes()
             throws Exception {
-        for (int schema : List.of(3, 4)) {
+        for (int schema : List.of(3, 4, 5)) {
             for (String value : List.of("-1", "'30'", "2147483648")) {
                 Path directory = temporaryDirectory.resolve("invalid-home-cooldown-"
                         + schema + "-" + value.replaceAll("[^0-9]", "x"));
@@ -345,7 +452,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(4, result.installedVersion());
+        assertEquals(5, result.installedVersion());
         assertTrue(result.snapshot().configuration().getBoolean(
                 "factions.allowLeaderlessFactions"));
         assertFalse(result.snapshot().configuration().getBoolean(
@@ -405,7 +512,7 @@ class ConfigLifecycleTest {
         String template = bundledTemplate();
         String unversioned = template.replaceFirst(
                 "(?s)\\A# Independent operator-configuration schema\\.[^\\r\\n]*\\R"
-                        + "config-version: 4\\R",
+                        + "config-version: 5\\R",
                 ""
         );
         Files.writeString(config, unversioned, StandardCharsets.UTF_8);
@@ -444,7 +551,7 @@ class ConfigLifecycleTest {
                 "config-version: 01\n",
                 "config-version: 1.0\n",
                 "config-version: nope\n",
-                "config-version: 5\n",
+                "config-version: 6\n",
                 "config-version: 1\ndpc-api:\n  key:\n",
                 "config-version: 1\nitems: [one, null]\n",
                 "config-version: 1\n1: credential-shaped-value\n",
@@ -473,7 +580,7 @@ class ConfigLifecycleTest {
     @Test
     void flowRootPlainMarkerIsAcceptedWithoutRewriting() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] flow = "{config-version: 4, database: {password: flow-secret}, extension: {x: 3}}\n"
+        byte[] flow = "{config-version: 5, database: {password: flow-secret}, extension: {x: 3}}\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, flow);
 
@@ -512,7 +619,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(4, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(5, result.snapshot().configuration().getInt("config-version"));
         assertNull(result.backup());
     }
 
@@ -535,7 +642,7 @@ class ConfigLifecycleTest {
     void currentKnownLeafWithWrongPhysicalTypeIsValueSafeAndUnchanged() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 4\n" +
+                "config-version: 5\n" +
                     "database:\n" +
                     "  password:\n" +
                     "    leaked-child: credential-shaped-value\n"
@@ -570,7 +677,7 @@ class ConfigLifecycleTest {
     void knownStringListCannotSilentlyDropMappingEntries() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 4\n" +
+                "config-version: 5\n" +
                     "factions:\n" +
                     "  blockedClaimWorlds:\n" +
                     "  - valid-world\n" +
@@ -616,7 +723,7 @@ class ConfigLifecycleTest {
     @Test
     void freshInstallRaceNeverOverwritesAnArrivingOperatorFile() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] arriving = "config-version: 4\nsecret: arriving-secret\n"
+        byte[] arriving = "config-version: 5\nsecret: arriving-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
 
         ConfigLifecycle.Result result = ConfigLifecycle.prepare(
@@ -638,7 +745,7 @@ class ConfigLifecycleTest {
     void postWriteRaceIsRereadExactlyAndNeverActivated() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] legacy = "players:\n  initialPower: 9\n".getBytes(StandardCharsets.UTF_8);
-        byte[] raced = "config-version: 4\ndatabase:\n  password: raced-secret\n"
+        byte[] raced = "config-version: 5\ndatabase:\n  password: raced-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, legacy);
 
@@ -689,7 +796,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         Files.writeString(
                 config,
-                "config-version: 4\nthird-party-extension:\n  retained: true\n",
+                "config-version: 5\nthird-party-extension:\n  retained: true\n",
                 StandardCharsets.UTF_8
         );
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
@@ -713,7 +820,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
         byte[] operatorEdit = (
-                "config-version: 4\n" +
+                "config-version: 5\n" +
                     "dpc-api:\n" +
                     "  enabled: false\n" +
                     "  key: operator-new-secret\n"

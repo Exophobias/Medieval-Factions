@@ -3,15 +3,24 @@ package com.dansplugins.factionsystem.listener
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.api.MercenaryCombatProvider.Decision
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
 import com.dansplugins.factionsystem.utils.MfHostileMobChecker
 import org.bukkit.ChatColor
 import org.bukkit.entity.Player
 import org.bukkit.entity.Projectile
+import org.bukkit.entity.ArmorStand
+import org.bukkit.entity.Entity
+import org.bukkit.entity.Hanging
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.EntityDamageByEntityEvent
+import org.bukkit.event.entity.EntityPlaceEvent
+import org.bukkit.event.hanging.HangingBreakByEntityEvent
+import org.bukkit.event.hanging.HangingBreakEvent
+import org.bukkit.event.hanging.HangingPlaceEvent
+import org.bukkit.inventory.InventoryHolder
 
 class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Listener {
 
@@ -28,6 +37,13 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
             is Projectile -> damager.shooter as? Player
             else -> null
         }
+        // Dispensers can fire across the parcel border without a player damager. Deny their
+        // projectiles against parcel property while the peaceful charter is in force.
+        if (damagerPlayer == null && damager is Projectile && isParcelProperty(damaged) &&
+            isPeacefulEmbassy(damaged)) {
+            event.isCancelled = true
+            return
+        }
         if (damagerPlayer != null) {
             val playerService = plugin.services.playerService
             val factionService = plugin.services.factionService
@@ -37,6 +53,24 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
             if (damaged !is Player) {
                 val claimService = plugin.services.claimService
                 val claim = claimService.getClaim(damaged.location.chunk) ?: return
+                // Armor stands, hanging decorations, storage vehicles and inventory mounts
+                // are parcel property.
+                // A player can strike them from outside the chunk, so entry denial alone is not
+                // enough. Keep PvP, other mob combat and explosions on their ordinary MF paths.
+                if (isParcelProperty(damaged) && isPeacefulEmbassy(damaged)) {
+                    when (plugin.services.embassyService.access(damagerMfPlayer.id, claim, ClaimAction.BREAK)) {
+                        EmbassyAccessDecision.GRANT -> return
+                        EmbassyAccessDecision.DENY -> {
+                            if (damagerMfPlayer.isBypassEnabled && damagerPlayer.hasPermission("mf.bypass")) {
+                                damagerPlayer.sendMessage("${ChatColor.RED}${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                            } else {
+                                event.isCancelled = true
+                            }
+                            return
+                        }
+                        EmbassyAccessDecision.NONE -> Unit
+                    }
+                }
                 val damagedFaction = factionService.getFaction(claim.factionId) ?: return
                 if (!damagedFaction.flags[plugin.flags.enableMobProtection]) return
                 if (MfHostileMobChecker.isHostileMob(damaged)) return
@@ -100,5 +134,57 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
                 return
             }
         }
+    }
+
+    @EventHandler
+    fun onHangingBreak(event: HangingBreakEvent) {
+        // Leave explicit explosion damage with MF's existing explosion protection.
+        if (event.cause == HangingBreakEvent.RemoveCause.EXPLOSION ||
+            !isPeacefulEmbassy(event.entity)) return
+        val remover = (event as? HangingBreakByEntityEvent)?.remover
+        val player = when (remover) {
+            is Player -> remover
+            is Projectile -> remover.shooter as? Player
+            else -> null
+        }
+        if (player == null) {
+            event.isCancelled = true
+            return
+        }
+        val mfPlayer = plugin.services.playerService.getPlayer(player) ?: MfPlayer(plugin, player)
+        if (mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass")) return
+        val claim = plugin.services.claimService.getClaim(event.entity.location.chunk)
+        if (claim == null || plugin.services.embassyService.access(mfPlayer.id, claim, ClaimAction.BREAK) !=
+            EmbassyAccessDecision.GRANT) event.isCancelled = true
+    }
+
+    @EventHandler
+    fun onHangingPlace(event: HangingPlaceEvent) {
+        if (deniesParcelPlacement(event.player, event.entity)) event.isCancelled = true
+    }
+
+    @EventHandler
+    fun onEntityPlace(event: EntityPlaceEvent) {
+        if (deniesParcelPlacement(event.player, event.entity)) event.isCancelled = true
+    }
+
+    private fun deniesParcelPlacement(player: Player?, entity: Entity): Boolean {
+        if (!isPeacefulEmbassy(entity)) return false
+        if (player == null) return true
+        val mfPlayer = plugin.services.playerService.getPlayer(player) ?: MfPlayer(plugin, player)
+        if (mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass")) return false
+        val claim = plugin.services.claimService.getClaim(entity.location.chunk) ?: return true
+        return plugin.services.embassyService.access(mfPlayer.id, claim, ClaimAction.BUILD) !=
+            EmbassyAccessDecision.GRANT
+    }
+
+    private fun isParcelProperty(entity: Entity): Boolean =
+        entity is ArmorStand || entity is Hanging || (entity !is Player && entity is InventoryHolder)
+
+    private fun isPeacefulEmbassy(entity: Entity): Boolean {
+        val location = entity.location
+        val world = location.world ?: return false
+        return plugin.services.embassyService.isParcelProtectionActive(
+            world.uid, location.blockX shr 4, location.blockZ shr 4)
     }
 }

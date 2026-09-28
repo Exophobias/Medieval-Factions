@@ -63,7 +63,7 @@ import java.util.regex.Pattern;
 public final class ConfigLifecycle {
 
     public static final String VERSION_KEY = "config-version";
-    public static final int CURRENT_VERSION = 4;
+    public static final int CURRENT_VERSION = 5;
     private static final String OLD_DPC_URL = "https://dansplugins.com/api/v1/factions";
     private static final String CURRENT_DPC_URL = "https://api.dansplugins.com/api/v1/factions";
     private static final Pattern DECIMAL_INTEGER = Pattern.compile("0|[1-9][0-9]*");
@@ -237,7 +237,8 @@ public final class ConfigLifecycle {
                     case 0 -> migrateZeroToOne(sourceYaml, schemaOneTemplate(bundledYaml));
                     case 1 -> migrateOneToTwo(sourceYaml, schemaTwoTemplate(bundledYaml));
                     case 2 -> migrateTwoToThree(sourceYaml, schemaThreeTemplate(bundledYaml));
-                    case 3 -> migrateThreeToFour(sourceYaml, bundledYaml);
+                    case 3 -> migrateThreeToFour(sourceYaml, schemaFourTemplate(bundledYaml));
+                    case 4 -> migrateFourToFive(sourceYaml, bundledYaml);
                     default -> null;
                 };
             } catch (RuntimeException failure) {
@@ -413,6 +414,11 @@ public final class ConfigLifecycle {
         return priorSchemaTemplate(bundledYaml, 3);
     }
 
+    /** Reconstructs schema 4 before the embassy-area allowance existed. */
+    private static String schemaFourTemplate(String bundledYaml) {
+        return priorSchemaTemplate(bundledYaml, 4);
+    }
+
     private static String priorSchemaTemplate(String bundledYaml, int version) {
         LoaderOptions loaderOptions = new LoaderOptions();
         loaderOptions.setAllowDuplicateKeys(false);
@@ -430,9 +436,20 @@ public final class ConfigLifecycle {
         replaceTemplateValue(mapping, VERSION_KEY, version, yaml);
         Node factions = unwrap(mapping.getValue().get(tupleIndex(mapping, "factions")).getValueNode());
         if (factions instanceof MappingNode factionMapping) {
-            removeTemplateKey(factionMapping, "factionHomeCooldownMinutes");
+            if (version < 4) {
+                removeTemplateKey(factionMapping, "factionHomeCooldownMinutes");
+            }
             if (version < 3) {
                 removeTemplateKey(factionMapping, "adminOnlyLeaderlessFactions");
+            }
+            Node defaults = unwrap(factionMapping.getValue().get(
+                    tupleIndex(factionMapping, "defaults")).getValueNode());
+            if (defaults instanceof MappingNode defaultsMapping) {
+                Node flags = unwrap(defaultsMapping.getValue().get(
+                        tupleIndex(defaultsMapping, "flags")).getValueNode());
+                if (flags instanceof MappingNode flagMapping) {
+                    removeTemplateKey(flagMapping, "maxEmbassyChunks");
+                }
             }
         }
         if (version == 1) {
@@ -507,6 +524,11 @@ public final class ConfigLifecycle {
 
     /** Adds the per-player faction-home cooldown at its bundled default. */
     private static Migration migrateThreeToFour(String installedYaml, String bundledYaml) {
+        return canonicalize(installedYaml, bundledYaml);
+    }
+
+    /** Adds the embassy-area allowance without replacing an explicit extension value. */
+    private static Migration migrateFourToFive(String installedYaml, String bundledYaml) {
         return canonicalize(installedYaml, bundledYaml);
     }
 
@@ -854,6 +876,13 @@ public final class ConfigLifecycle {
                     "factions.factionHomeCooldownMinutes")).longValue();
             if (cooldownMinutes < 0 || cooldownMinutes > Integer.MAX_VALUE) {
                 throw new ValidationException("factions.factionHomeCooldownMinutes");
+            }
+        }
+        if (configured.contains("factions.defaults.flags.maxEmbassyChunks")) {
+            long maxChunks = ((Number) configured.get(
+                    "factions.defaults.flags.maxEmbassyChunks")).longValue();
+            if (maxChunks < 0 || maxChunks > 4096) {
+                throw new ValidationException("factions.defaults.flags.maxEmbassyChunks");
             }
         }
         if (configured.contains("dynmap.fillOpacity")) {

@@ -5,6 +5,10 @@ import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.claim.ClaimOverrideRegistry
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.MfEmbassyService
+import com.dansplugins.factionsystem.claim.MfEmbassy
+import com.dansplugins.factionsystem.claim.MfEmbassyStatus
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
@@ -23,6 +27,7 @@ import org.bukkit.Chunk
 import org.bukkit.Location
 import org.bukkit.Server
 import org.bukkit.World
+import org.bukkit.Material
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.entity.Entity
 import org.bukkit.entity.EntityType
@@ -32,6 +37,8 @@ import org.bukkit.event.player.PlayerInteractEntityEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.InventoryHolder
+import org.bukkit.inventory.PlayerInventory
+import org.bukkit.inventory.ItemStack
 import org.bukkit.scheduler.BukkitScheduler
 import org.bukkit.scheduler.BukkitTask
 import org.bukkit.util.Vector
@@ -64,6 +71,7 @@ class EntityInteractionProtectionTest {
     private lateinit var plugin: MedievalFactions
     private lateinit var players: MfPlayerService
     private lateinit var claims: MfClaimService
+    private lateinit var embassies: MfEmbassyService
     private lateinit var factions: MfFactionService
     private lateinit var config: YamlConfiguration
     private lateinit var player: Player
@@ -91,6 +99,7 @@ class EntityInteractionProtectionTest {
         asyncTasks.clear(); mainTasks.clear(); now = 0L
         plugin = mock(MedievalFactions::class.java)
         val services = mock(Services::class.java)
+        embassies = defaultEmbassyService(services)
         players = mock(MfPlayerService::class.java)
         claims = mock(MfClaimService::class.java)
         factions = mock(MfFactionService::class.java)
@@ -230,6 +239,42 @@ class EntityInteractionProtectionTest {
         providerActions.clear()
         assertTrue(dispatch(at, entity(EntityType.CHEST_MINECART, true)).isCancelled)
         assertTrue(providerActions.isEmpty(), "Inventory holders must never reach an override provider")
+    }
+
+    @ParameterizedTest
+    @CsvSource("false,CHEST", "true,CHEST", "false,SADDLE", "true,SADDLE")
+    fun recoveryCannotAttachChestOrSaddleViaEntityRightClick(at: Boolean, material: Material) {
+        val row = mock(MfEmbassy::class.java)
+        `when`(row.status).thenReturn(MfEmbassyStatus.CLEARING)
+        `when`(embassies.getAt(claim.worldId, claim.x, claim.z)).thenReturn(row)
+        `when`(embassies.isParcelProtectionActive(claim.worldId, claim.x, claim.z)).thenReturn(true)
+        `when`(embassies.access(actor.id, claim, ClaimAction.CONTAINER)).thenReturn(EmbassyAccessDecision.GRANT)
+        val inventory = mock(PlayerInventory::class.java)
+        val held = mock(ItemStack::class.java)
+        `when`(held.type).thenReturn(material)
+        `when`(held.amount).thenReturn(1)
+        `when`(inventory.itemInMainHand).thenReturn(held)
+        `when`(player.inventory).thenReturn(inventory)
+
+        assertTrue(dispatch(at, entity(EntityType.DONKEY, true)).isCancelled)
+        assertTrue(providerActions.isEmpty())
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun recoveryAllowsEmptyHandOpeningOfEntityStorage(at: Boolean) {
+        val row = mock(MfEmbassy::class.java)
+        `when`(row.status).thenReturn(MfEmbassyStatus.CONQUEST_PASSAGE)
+        `when`(embassies.getAt(claim.worldId, claim.x, claim.z)).thenReturn(row)
+        `when`(embassies.isParcelProtectionActive(claim.worldId, claim.x, claim.z)).thenReturn(true)
+        `when`(embassies.access(actor.id, claim, ClaimAction.CONTAINER)).thenReturn(EmbassyAccessDecision.GRANT)
+        val inventory = mock(PlayerInventory::class.java)
+        val empty = mock(ItemStack::class.java)
+        `when`(empty.type).thenReturn(Material.AIR)
+        `when`(inventory.itemInMainHand).thenReturn(empty)
+        `when`(player.inventory).thenReturn(inventory)
+
+        assertFalse(dispatch(at, entity(EntityType.DONKEY, true)).isCancelled)
     }
 
     @ParameterizedTest

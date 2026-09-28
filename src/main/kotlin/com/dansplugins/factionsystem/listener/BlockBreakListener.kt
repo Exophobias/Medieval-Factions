@@ -3,21 +3,34 @@ package com.dansplugins.factionsystem.listener
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.locks.MfUnlockResult.FAILURE
 import com.dansplugins.factionsystem.locks.MfUnlockResult.SUCCESS
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor.GREEN
 import org.bukkit.ChatColor.RED
+import org.bukkit.block.Block
+import org.bukkit.block.Chest
+import org.bukkit.block.DoubleChest
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.block.BlockBreakEvent
 import java.util.logging.Level.SEVERE
 
 class BlockBreakListener(private val plugin: MedievalFactions) : Listener {
+    private val embassyBoundary = EmbassyBoundary(plugin)
 
     @EventHandler
     fun onBlockBreak(event: BlockBreakEvent) {
+        if (outsideHalfOfEmbassyChest(event.block)) {
+            val actor = plugin.services.playerService.getPlayer(event.player)
+            if (!(actor?.isBypassEnabled == true && event.player.hasPermission("mf.bypass"))) {
+                event.isCancelled = true
+                event.player.sendMessage("${RED}Separate the embassy's chest from inside its parcel first.")
+                return
+            }
+        }
         val gateService = plugin.services.gateService
         val blockPosition = MfBlockPosition.fromBukkitBlock(event.block)
         val gates = gateService.getGatesAt(blockPosition) + gateService.getGatesByTrigger(blockPosition)
@@ -56,7 +69,18 @@ class BlockBreakListener(private val plugin: MedievalFactions) : Listener {
             )
             return
         }
-        if (!claimService.isInteractionAllowed(mfPlayer.id, claim) &&
+        val embassyAccess = plugin.services.embassyService.access(mfPlayer.id, claim, ClaimAction.BREAK)
+        if (embassyAccess == EmbassyAccessDecision.DENY) {
+            if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
+                event.player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+            } else {
+                event.isCancelled = true
+                event.player.sendMessage("$RED${plugin.language["CannotBreakBlockInFactionTerritory", claimFaction.name]}")
+                return
+            }
+        }
+        if (embassyAccess == EmbassyAccessDecision.NONE &&
+            !claimService.isInteractionAllowed(mfPlayer.id, claim) &&
             !claimService.isOverridden(
                     mfPlayer.id,
                     event.block.world,
@@ -98,5 +122,13 @@ class BlockBreakListener(private val plugin: MedievalFactions) : Listener {
                 else -> {}
             }
         }
+    }
+
+    private fun outsideHalfOfEmbassyChest(block: Block): Boolean {
+        val holder = (block.state as? Chest)?.inventory?.holder as? DoubleChest ?: return false
+        val left = (holder.leftSide as? Chest)?.block ?: return false
+        val right = (holder.rightSide as? Chest)?.block ?: return false
+        return !embassyBoundary.isEmbassy(embassyBoundary.point(block)) &&
+            embassyBoundary.crosses(embassyBoundary.point(left), embassyBoundary.point(right))
     }
 }

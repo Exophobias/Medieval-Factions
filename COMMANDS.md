@@ -152,6 +152,22 @@ See [FACTION_FLAGS.md](FACTION_FLAGS.md) for a complete list of available flags.
 
 ## Territory & Claims
 
+### `/faction embassy` or `/f embassy`
+**Permission:** `mf.embassy` (default: true), plus the faction role's **unclaim** capability for host/conqueror actions or **claim** capability for guest actions.
+**Description:** Manage a mutually agreed embassy on connected host-owned chunks. The host keeps the claims; the guest receives exclusive peaceful entry and parcel use. Stand in the plot to offer or accept; remote withdrawal and conquest commands accept the addresses shown by `list`.
+
+- `/f embassy offer <realm> [widthxdepth]` — offer the current chunk, or a rectangle extending toward increasing chunk X/Z. For example, `offer Russia 2x2` offers four chunks. All chunks must be host claims, loaded, and clear of physical inventories/gates. Further offers to the same guest must adjoin its active area.
+- `/f embassy accept` or `/f embassy decline` — answer the whole pending offer as the guest, while standing in one offered chunk. Declining an expansion preserves the existing active embassy.
+- `/f embassy revoke [worldUUID:x,z]` — cancel the pending offer when targeting an offered chunk, or withdraw the active agreement as host when targeting an active/clearing chunk. Remote addresses work from outside the plot.
+- `/f embassy release [worldUUID:x,z]` — withdraw the whole ordinary agreement as guest, cancelling any pending expansion too.
+- `/f embassy finish` — confirm that the guest has cleared a withdrawn plot early.
+- `/f embassy seize [worldUUID:x,z]` or `/f embassy passage [worldUUID:x,z]` — after conquest, the new landholder seizes residual property or grants 14 days of retrieval; unanswered decisions default to passage after seven days.
+- `/f embassy info [worldUUID:x,z]` and `/f embassy list` — inspect a plot or all agreements for your realm.
+
+The default faction allowance is **four hosted chunks and four held chunks**, counting offers, active plots and recovery. Configure `factions.defaults.flags.maxEmbassyChunks`; staff with `mf.force.flag` can upgrade an individual realm using `/f flag set <realm> maxEmbassyChunks 8`. Zero blocks new offers. Lowering the allowance preserves existing agreements and retrieval periods.
+
+An ended active embassy enters a 14-day clearing period. Guests may break blocks, use doors and withdraw storage, but cannot construct, deposit, restock or use general block interactions. Host and outsiders remain barred. Actual war suspends peaceful entry and use rules and pauses clearing/passage time; offer and conquest-decision deadlines continue. Peaceful conquest decisions close the affected chunk to everyone until seizure or passage. Redstone-powered pistons, dispensers, droppers and hoppers cannot operate inside a peaceful embassy. Neither realm gains combat protection or a second claim. Fiefs and hosted-faith sites cannot overlap an embassy. Normal stall tax belongs to the MF landholder. Cancel outstanding offers and finish retrieval periods before unclaiming embassy chunks or disbanding either participating realm.
+
 ### `/faction claim [radius]` or `/f claim [radius]`
 **Permission:** `mf.claim` or `mf.claim.circle` (default: true)  
 **Description:** Claims the chunk you are standing in, or claims in a circular radius if specified.  

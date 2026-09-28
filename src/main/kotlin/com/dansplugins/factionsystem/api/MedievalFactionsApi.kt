@@ -176,6 +176,23 @@ interface MedievalFactionsApi {
      */
     fun getClaimAt(worldId: UUID, chunkX: Int, chunkZ: Int): ClaimView?
 
+    /** Whether a live embassy offer or active or clearing embassy reserves this chunk. */
+    fun isEmbassyReservedAt(worldId: UUID, chunkX: Int, chunkZ: Int): Boolean
+
+    /** Whether a realm still has an embassy parcel or guest property to resolve. */
+    fun hasEmbassyForFaction(faction: FactionId): Boolean
+
+    /**
+     * Embassy policy for a player action at durable chunk coordinates, with no chunk load.
+     * NONE means callers should apply their ordinary land and war rules. Active guests receive
+     * GRANT; during clearing or passage only retrieval actions do. Host and outsider actions are
+     * DENY while the parcel policy applies. For an online caller on the server thread, MF's saved
+     * bypass toggle plus `mf.bypass` permission changes a parcel DENY to GRANT.
+     */
+    fun embassyAccessAt(
+        playerId: UUID, worldId: UUID, chunkX: Int, chunkZ: Int, action: ClaimAction
+    ): EmbassyAccessDecision
+
     /**
      * Every chunk [faction] holds, grouped by the world it is in.
      *

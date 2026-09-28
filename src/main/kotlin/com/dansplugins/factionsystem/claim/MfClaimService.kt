@@ -21,6 +21,7 @@ import com.dansplugins.factionsystem.failure.ServiceFailureType
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
 import dev.forkhandles.result4k.mapFailure
+import dev.forkhandles.result4k.Failure
 import dev.forkhandles.result4k.resultFrom
 import net.md_5.bungee.api.ChatColor
 import net.md_5.bungee.api.ChatMessageType.ACTION_BAR
@@ -378,6 +379,15 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             } else {
                 commit()
             }
+            if (changesOwner) {
+                // The old charter is not inherited by the conqueror. Turn it into a durable
+                // decision/retrieval record before the post-commit owner-change notice fires.
+                val embassyOutcome = plugin.services.embassyService.invalidateClaim(result.worldId, result.x, result.z)
+                if (embassyOutcome is Failure) {
+                    // The live owner check in EmbassyService already stops stale guest rights.
+                    plugin.logger.severe("Could not record conquered embassy: ${embassyOutcome.reason.message}")
+                }
+            }
             // The one place in MF where the outgoing and incoming owners of a chunk are both known, and
             // the write has already succeeded. The stable API's ClaimOwnerChangedEvent needs both, and
             // MF's own FactionClaimEvent above carries neither the old owner nor a guarantee that the
@@ -454,10 +464,11 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             val event = FactionUnclaimEvent(live.factionId, live, !plugin.server.isPrimaryThread)
             ChildMutationCallbackGuard.callEvent(plugin, event)
             if (event.isCancelled) throw EventCancelledException("Event cancelled")
-            val result = repository.delete(event.claim.worldId, event.claim.x, event.claim.z)
-            val removedClaim = claimsByKey.remove(ClaimKey(event.claim))
-            if (removedClaim != null) {
-                unindexClaim(removedClaim)
+            val (result, removedClaim) = plugin.services.embassyService.withClaimRelease(live) {
+                val deleted = repository.delete(event.claim.worldId, event.claim.x, event.claim.z)
+                val removed = claimsByKey.remove(ClaimKey(event.claim))
+                if (removed != null) unindexClaim(removed)
+                deleted to removed
             }
             // Land returning to wilderness is an ownership change like any other, so the API reports it
             // here too. FactionUnclaimedChunkEvent already covers "faction X gave up a chunk"; this
@@ -527,8 +538,11 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             )
             ChildMutationCallbackGuard.callEvent(plugin, apiEvent)
             if (apiEvent.isCancelled) throw EventCancelledException("Bulk unclaim refused by a plugin")
-            val result = repository.deleteAll(factionId)
-            evictAllClaimsLocked(factionId)
+            val result = plugin.services.embassyService.withAllClaimsRelease(factionId) {
+                val deleted = repository.deleteAll(factionId)
+                evictAllClaimsLocked(factionId)
+                deleted
+            }
             return@resultFrom result
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)

@@ -15,11 +15,11 @@
 > Operator configuration uses an independent top-level `config-version`. Existing MF5-era files
 > without it are schema 0 and are upgraded automatically from the current bundled template, so new
 > defaults keep their documented positions while explicit values, credentials, and extension keys
-> are retained. A byte-identical owner-only backup is made first. Ambiguous/future schemas and YAML
-> nulls block startup before the database is opened. MF4 files remain on their separate historical
-> import path.
+> are retained. Schema 5 adds the default four-chunk embassy allowance. No migration backup is
+> created. Ambiguous/future schemas and YAML nulls block startup before the database is opened.
+> Automatic MF4 conversion is blocked because its historical importer creates a backup.
 >
-> This fork targets Minecraft 26.2 and requires Java 25 or newer.
+> This fork supports Minecraft 26.3 and requires Java 25 or newer.
 >
 > Before the separate PatriamNomads addon records its first adopted faction, it durably arms
 > `plugins/MedievalFactions/nomad-addon-required.marker`. Future MF startups stop the server if

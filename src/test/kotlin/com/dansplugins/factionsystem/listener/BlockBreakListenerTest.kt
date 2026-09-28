@@ -4,6 +4,7 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.TestUtils
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.claim.MfClaimService
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.faction.MfFactionService
 import com.dansplugins.factionsystem.gate.MfGate
 import com.dansplugins.factionsystem.gate.MfGateService
@@ -15,6 +16,9 @@ import org.bukkit.ChatColor
 import org.bukkit.Server
 import org.bukkit.World
 import org.bukkit.block.Block
+import org.bukkit.block.Chest
+import org.bukkit.block.DoubleChest
+import org.bukkit.inventory.Inventory
 import org.bukkit.entity.Player
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.scheduler.BukkitScheduler
@@ -37,6 +41,7 @@ class BlockBreakListenerTest {
     private lateinit var lockService: MfLockService
     private lateinit var factionService: MfFactionService
     private lateinit var playerService: MfPlayerService
+    private lateinit var embassyService: MfEmbassyService
     private lateinit var uut: BlockBreakListener
 
     @BeforeEach
@@ -207,9 +212,33 @@ class BlockBreakListenerTest {
         val event: BlockBreakEvent
     )
 
+    @Test
+    fun outsideHalfOfStraddledEmbassyChestCannotBeBrokenToLootStock() {
+        val left = testUtils.createMockBlock(fixture.world, 15, 0, 0)
+        val right = testUtils.createMockBlock(fixture.world, 16, 0, 0)
+        val leftChest = mock(Chest::class.java)
+        val rightChest = mock(Chest::class.java)
+        val doubleChest = mock(DoubleChest::class.java)
+        val inventory = mock(Inventory::class.java)
+        `when`(leftChest.block).thenReturn(left)
+        `when`(rightChest.block).thenReturn(right)
+        `when`(doubleChest.leftSide).thenReturn(leftChest)
+        `when`(doubleChest.rightSide).thenReturn(rightChest)
+        `when`(inventory.holder).thenReturn(doubleChest)
+        `when`(leftChest.inventory).thenReturn(inventory)
+        `when`(left.state).thenReturn(leftChest)
+        `when`(fixture.event.block).thenReturn(left)
+        `when`(embassyService.isParcelProtectionActive(fixture.world.uid, 1, 0)).thenReturn(true)
+
+        uut.onBlockBreak(fixture.event)
+
+        verify(fixture.event).isCancelled = true
+    }
+
     private fun mockServices() {
         val services = mock(Services::class.java)
         `when`(plugin.services).thenReturn(services)
+        embassyService = defaultEmbassyService(services)
 
         gateService = mock(MfGateService::class.java)
         `when`(services.gateService).thenReturn(gateService)

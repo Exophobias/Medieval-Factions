@@ -20,6 +20,7 @@ import com.dansplugins.factionsystem.command.faction.deny.MfFactionDenyCommand
 import com.dansplugins.factionsystem.command.faction.denyapp.MfFactionDenyAppCommand
 import com.dansplugins.factionsystem.command.faction.dev.MfFactionDevCommand
 import com.dansplugins.factionsystem.command.faction.disband.MfFactionDisbandCommand
+import com.dansplugins.factionsystem.command.faction.embassy.MfFactionEmbassyCommand
 import com.dansplugins.factionsystem.command.faction.dpc.MfFactionDpcCommand
 import com.dansplugins.factionsystem.command.faction.flag.MfFactionFlagCommand
 import com.dansplugins.factionsystem.command.faction.grantindependence.MfFactionGrantIndependenceCommand
@@ -84,6 +85,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
     private val factionWhoCommand = MfFactionWhoCommand(plugin)
     private val factionVersionCommand = MfFactionVersionCommand(plugin)
     private val factionDisbandCommand = MfFactionDisbandCommand(plugin)
+    private val factionEmbassyCommand = MfFactionEmbassyCommand(plugin)
     private val factionInvokeCommand = MfFactionInvokeCommand(plugin)
     private val factionLeaveCommand = MfFactionLeaveCommand(plugin)
     private val factionSetCommand = MfFactionSetCommand(plugin)
@@ -137,6 +139,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
     private val whoAliases = listOf("who", plugin.language["CmdFactionWho"])
     private val versionAliases = listOf("version", "ver", "about", plugin.language["CmdFactionVersion"])
     private val disbandAliases = listOf("disband", plugin.language["CmdFactionDisband"])
+    private val embassyAliases = listOf("embassy", "embassies")
     private val invokeAliases = listOf("invoke", plugin.language["CmdFactionInvoke"])
     private val leaveAliases = listOf("leave", plugin.language["CmdFactionLeave"])
     private val setAliases = listOf("set", plugin.language["CmdFactionSet"])
@@ -189,6 +192,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
         powerAliases +
         whoAliases +
         disbandAliases +
+        embassyAliases +
         invokeAliases +
         leaveAliases +
         setAliases +
@@ -250,6 +254,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in whoAliases -> factionWhoCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in versionAliases -> factionVersionCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in disbandAliases -> factionDisbandCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
+            in embassyAliases -> factionEmbassyCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in invokeAliases -> factionInvokeCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in leaveAliases -> factionLeaveCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in setAliases -> factionSetCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
@@ -343,6 +348,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in powerAliases -> factionPowerCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in whoAliases -> factionWhoCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in disbandAliases -> factionDisbandCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
+            in embassyAliases -> factionEmbassyCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in invokeAliases -> factionInvokeCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in leaveAliases -> factionLeaveCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in setAliases -> factionSetCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())

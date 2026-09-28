@@ -65,6 +65,20 @@ class MfFlags(
             "protectVillagerTrade",
             plugin.config.getBoolean("factions.defaults.flags.protectVillagerTrade")
         ),
+        MfFlag(
+            "maxEmbassyChunks",
+            Int::class,
+            { plugin.config.getInt("factions.defaults.flags.maxEmbassyChunks", DEFAULT_MAX_EMBASSY_CHUNKS) },
+            { value ->
+                val integer = value.toIntOrNull()
+                if (integer == null) MfFlagValueCoercionFailure("Embassy chunk limit must be an integer")
+                else MfFlagValueCoercionSuccess(integer)
+            },
+            { value ->
+                if (value in 0..MAX_EMBASSY_CHUNKS) MfFlagValidationSuccess
+                else MfFlagValidationFailure("Embassy chunk limit must be between 0 and $MAX_EMBASSY_CHUNKS")
+            }
+        ),
         // A faction's coat of arms, held as whatever opaque identifier the plugin that owns heraldry
         // issues. MedievalFactions does nothing with it: no MF command reads it, no MF listener
         // consults it, and it exists so that a House's arms live on the House rather than in a
@@ -131,6 +145,7 @@ class MfFlags(
     val enableMobProtection = get<Boolean>("enableMobProtection")!!
     val liegeChainCanInteractWithLand = get<Boolean>("liegeChainCanInteractWithLand")!!
     val protectVillagerTrade = get<Boolean>("protectVillagerTrade")!!
+    val maxEmbassyChunks = get<Int>("maxEmbassyChunks")!!
 
     /** See the registration comment above: MF never reads this, the heraldry plugin does. */
     val coatOfArms = get<String>("coatofarms")!!
@@ -147,5 +162,7 @@ class MfFlags(
          * stopping a pasted essay from going into a faction row and out through /f flag list.
          */
         const val COAT_OF_ARMS_MAX_LENGTH = 64
+        const val DEFAULT_MAX_EMBASSY_CHUNKS = 4
+        const val MAX_EMBASSY_CHUNKS = 4096
     }
 }

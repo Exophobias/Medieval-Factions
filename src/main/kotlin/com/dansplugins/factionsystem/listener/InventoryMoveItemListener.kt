@@ -3,13 +3,18 @@ package com.dansplugins.factionsystem.listener
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import org.bukkit.block.Chest
+import org.bukkit.block.BlockState
 import org.bukkit.block.DoubleChest
+import org.bukkit.entity.Entity
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.inventory.InventoryMoveItemEvent
+import org.bukkit.event.inventory.InventoryPickupItemEvent
 import org.bukkit.inventory.BlockInventoryHolder
+import org.bukkit.inventory.InventoryHolder
 
 class InventoryMoveItemListener(private val plugin: MedievalFactions) : Listener {
+    private val embassyBoundary = EmbassyBoundary(plugin)
 
     @EventHandler
     fun onInventoryMoveItem(event: InventoryMoveItemEvent) {
@@ -57,5 +62,41 @@ class InventoryMoveItemListener(private val plugin: MedievalFactions) : Listener
                 return
             }
         }
+
+        // A hopper or chest vehicle may move stock without any player protection event. Compare
+        // every physical half of both inventories; a double chest straddling the parcel edge is a
+        // boundary crossing even when the hopper itself sits on only one side.
+        val sourcePoints = points(sourceInventoryHolder)
+            ?: event.source.location?.let { EmbassyBoundary.Point.of(it)?.let(::listOf) }
+        val destinationPoints = points(destinationInventoryHolder)
+            ?: event.destination.location?.let { EmbassyBoundary.Point.of(it)?.let(::listOf) }
+        // Bukkit provides no player identity for a hopper pulse. Disable item automation touching
+        // a live parcel so the host cannot remotely empty or restock it during clearing.
+        if (sourcePoints?.any(embassyBoundary::isEmbassy) == true ||
+            destinationPoints?.any(embassyBoundary::isEmbassy) == true ||
+            embassyBoundary.crosses(sourcePoints, destinationPoints)) {
+            event.isCancelled = true
+        }
+    }
+
+    @EventHandler
+    fun onInventoryPickupItem(event: InventoryPickupItemEvent) {
+        val source = EmbassyBoundary.Point.of(event.item.location)?.let(::listOf)
+        val destination = points(event.inventory.holder)
+            ?: event.inventory.location?.let { EmbassyBoundary.Point.of(it)?.let(::listOf) }
+        if (destination?.any(embassyBoundary::isEmbassy) == true ||
+            embassyBoundary.crosses(source, destination)) event.isCancelled = true
+    }
+
+    private fun points(holder: InventoryHolder?): List<EmbassyBoundary.Point>? = when (holder) {
+        is DoubleChest -> {
+            val left = points(holder.leftSide)
+            val right = points(holder.rightSide)
+            if (left == null || right == null) null else left + right
+        }
+        is BlockInventoryHolder -> listOf(EmbassyBoundary.Point.of(holder.block))
+        is BlockState -> listOf(EmbassyBoundary.Point.of(holder.block))
+        is Entity -> EmbassyBoundary.Point.of(holder.location)?.let(::listOf)
+        else -> null
     }
 }

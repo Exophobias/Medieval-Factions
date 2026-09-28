@@ -3,7 +3,9 @@ package com.dansplugins.factionsystem.gate
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.area.MfCuboidArea
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.faction.MfFactionId
+import com.dansplugins.factionsystem.service.Services
 import dev.forkhandles.result4k.Failure
 import org.bukkit.Material
 import org.bukkit.Server
@@ -93,6 +95,7 @@ class MfGateServiceTest {
 
         // Block in chunk (2,2), inside the cuboid.
         assertEquals(listOf(gate), service.getGatesAt(pos(33, 65, 33)))
+        assertTrue(service.hasGateAreaInChunk(world, 2, 2))
         // Block in chunk (1,1) which the area's bounding box touches, but outside the cuboid itself.
         assertTrue(service.getGatesAt(pos(17, 65, 17)).isEmpty())
     }
@@ -121,5 +124,21 @@ class MfGateServiceTest {
         } finally {
             service.unblockFactionDeletion(factionId)
         }
+    }
+
+    @Test
+    fun gateSaveRejectsAreaOverlappingActiveEmbassy() {
+        val services = mock(Services::class.java)
+        val embassies = mock(MfEmbassyService::class.java)
+        `when`(plugin.services).thenReturn(services)
+        `when`(services.embassyService).thenReturn(embassies)
+        `when`(embassies.hasActiveOrClearingEmbassy(world, 0, 0)).thenReturn(true)
+        val gateRepo = mock(MfGateRepository::class.java)
+        `when`(gateRepo.getGates()).thenReturn(emptyList())
+        val service = MfGateService(plugin, gateRepo, mock(MfGateCreationContextRepository::class.java))
+        val gate = gate(MfCuboidArea(pos(0, 60, 0), pos(3, 70, 3)), trigger = pos(5, 64, 5))
+
+        assertTrue(service.save(gate) is Failure)
+        verify(gateRepo, never()).upsert(gate)
     }
 }

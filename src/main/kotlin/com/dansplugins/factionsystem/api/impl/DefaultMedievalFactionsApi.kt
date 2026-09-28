@@ -4,7 +4,9 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ApiOutcome
 import com.dansplugins.factionsystem.api.ApiResult
 import com.dansplugins.factionsystem.api.ClaimOverrideProvider
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.api.ClaimView
+import com.dansplugins.factionsystem.api.EmbassyAccessDecision
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.FactionView
 import com.dansplugins.factionsystem.api.MedievalFactionsApi
@@ -15,6 +17,7 @@ import com.dansplugins.factionsystem.api.WarEndNotice
 import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.area.MfPosition
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision as NativeEmbassyAccessDecision
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionMember
@@ -44,6 +47,30 @@ import java.util.UUID
  * service layer, so an internal refactor is contained here and never reaches API consumers.
  */
 class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : MedievalFactionsApi {
+
+    override fun isEmbassyReservedAt(worldId: UUID, chunkX: Int, chunkZ: Int): Boolean =
+        plugin.services.embassyService.hasReservedEmbassy(worldId, chunkX, chunkZ)
+
+    override fun hasEmbassyForFaction(faction: FactionId): Boolean =
+        plugin.services.embassyService.hasActiveOrClearingForFaction(MfFactionId(faction.value))
+
+    override fun embassyAccessAt(
+        playerId: UUID, worldId: UUID, chunkX: Int, chunkZ: Int, action: ClaimAction
+    ): EmbassyAccessDecision {
+        val claim = plugin.services.claimService.getClaim(worldId, chunkX, chunkZ)
+            ?: return EmbassyAccessDecision.NONE
+        val actor = MfPlayerId(playerId.toString())
+        val native = plugin.services.embassyService.access(actor, claim, action)
+        if (native == NativeEmbassyAccessDecision.NONE) return EmbassyAccessDecision.NONE
+        val bypass = plugin.services.playerService.getPlayer(actor)?.isBypassEnabled == true &&
+            plugin.server.isPrimaryThread && plugin.server.getPlayer(playerId)?.hasPermission("mf.bypass") == true
+        if (bypass) return EmbassyAccessDecision.GRANT
+        return when (native) {
+            NativeEmbassyAccessDecision.NONE -> EmbassyAccessDecision.NONE
+            NativeEmbassyAccessDecision.GRANT -> EmbassyAccessDecision.GRANT
+            NativeEmbassyAccessDecision.DENY -> EmbassyAccessDecision.DENY
+        }
+    }
 
     override fun getFaction(id: FactionId): FactionView? =
         plugin.services.factionService.getFaction(MfFactionId(id.value))?.let(::toView)

@@ -3,14 +3,19 @@ package com.dansplugins.factionsystem.listener
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.TestUtils
 import com.dansplugins.factionsystem.area.MfBlockPosition
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.locks.MfLockedBlock
 import com.dansplugins.factionsystem.service.Services
 import org.bukkit.World
+import org.bukkit.Location
 import org.bukkit.block.Block
 import org.bukkit.block.Chest
 import org.bukkit.block.DoubleChest
 import org.bukkit.event.inventory.InventoryMoveItemEvent
+import org.bukkit.event.inventory.InventoryPickupItemEvent
+import org.bukkit.entity.Entity
+import org.bukkit.entity.Item
 import org.bukkit.inventory.BlockInventoryHolder
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.InventoryHolder
@@ -22,6 +27,8 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.mockito.Mockito.withSettings
+import java.util.UUID
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class InventoryMoveItemListenerTest {
@@ -30,6 +37,7 @@ class InventoryMoveItemListenerTest {
     private lateinit var fixture: InventoryMoveItemListenerTestFixture
     private lateinit var plugin: MedievalFactions
     private lateinit var lockService: MfLockService
+    private lateinit var embassyService: MfEmbassyService
     private lateinit var uut: InventoryMoveItemListener
 
     @BeforeEach
@@ -223,6 +231,70 @@ class InventoryMoveItemListenerTest {
         verify(event).isCancelled = true
     }
 
+    @Test
+    fun hopperCannotMoveItemsAcrossEmbassyChunkBoundary() {
+        fixture = createSingleChestDestinationFixture()
+        val destination = fixture.destinationBlock!!
+        val worldId = UUID.randomUUID()
+        `when`(fixture.world.uid).thenReturn(worldId)
+        `when`(fixture.sourceBlock.x).thenReturn(15)
+        `when`(destination.x).thenReturn(16)
+        `when`(embassyService.isParcelProtectionActive(worldId, 1, 0)).thenReturn(true)
+
+        uut.onInventoryMoveItem(fixture.event)
+
+        verify(fixture.event).isCancelled = true
+    }
+
+    @Test
+    fun hopperCannotRestockWithinEmbassyDuringClearing() {
+        fixture = createSingleChestDestinationFixture()
+        val worldId = UUID.randomUUID()
+        `when`(fixture.world.uid).thenReturn(worldId)
+        `when`(fixture.sourceBlock.x).thenReturn(17)
+        `when`(fixture.destinationBlock!!.x).thenReturn(18)
+        `when`(embassyService.isParcelProtectionActive(worldId, 1, 0)).thenReturn(true)
+
+        uut.onInventoryMoveItem(fixture.event)
+
+        verify(fixture.event).isCancelled = true
+    }
+
+    @Test
+    fun hopperCannotMoveStockFromDoubleChestStraddlingEmbassyBoundary() {
+        fixture = createDoubleChestFixture()
+        val worldId = UUID.randomUUID()
+        `when`(fixture.world.uid).thenReturn(worldId)
+        `when`(fixture.leftBlock!!.x).thenReturn(15)
+        `when`(fixture.rightBlock!!.x).thenReturn(16)
+        `when`(embassyService.isParcelProtectionActive(worldId, 1, 0)).thenReturn(true)
+
+        uut.onInventoryMoveItem(fixture.event)
+
+        verify(fixture.event).isCancelled = true
+    }
+
+    @Test
+    fun hopperMinecartCannotPickUpAnItemAcrossEmbassyBoundary() {
+        val world = testUtils.createMockWorld()
+        val worldId = UUID.randomUUID()
+        `when`(world.uid).thenReturn(worldId)
+        `when`(embassyService.isParcelProtectionActive(worldId, 1, 0)).thenReturn(true)
+        val minecart = mock(InventoryHolder::class.java, withSettings().extraInterfaces(Entity::class.java))
+        `when`((minecart as Entity).location).thenReturn(Location(world, 15.5, 64.0, 0.5))
+        val inventory = mock(Inventory::class.java)
+        `when`(inventory.holder).thenReturn(minecart)
+        val item = mock(Item::class.java)
+        `when`(item.location).thenReturn(Location(world, 16.5, 64.0, 0.5))
+        val event = mock(InventoryPickupItemEvent::class.java)
+        `when`(event.inventory).thenReturn(inventory)
+        `when`(event.item).thenReturn(item)
+
+        uut.onInventoryPickupItem(event)
+
+        verify(event).isCancelled = true
+    }
+
     // Helper functions
 
     private fun createSingleChestFixture(): InventoryMoveItemListenerTestFixture {
@@ -351,6 +423,7 @@ class InventoryMoveItemListenerTest {
     private fun mockServices() {
         val services = mock(Services::class.java)
         `when`(plugin.services).thenReturn(services)
+        embassyService = defaultEmbassyService(services)
 
         lockService = mock(MfLockService::class.java)
         `when`(services.lockService).thenReturn(lockService)

@@ -106,6 +106,11 @@ class MfFactionFlagSetCommand(private val plugin: MedievalFactions) : CommandExe
             return true
         }
 
+        if (flag.name.equals("maxEmbassyChunks", ignoreCase = true) && !hasForcePermission) {
+            sender.sendMessage("${RED}Embassy capacity is managed by staff. Your realm cannot increase its own allowance.")
+            return true
+        }
+
         if (parsedCommand.flagValue == null) {
             startConversation(sender, flag, parsedCommand.targetFaction, parsedCommand.returnPage)
         } else {
@@ -220,6 +225,15 @@ class MfFactionFlagSetCommand(private val plugin: MedievalFactions) : CommandExe
         targetFaction: MfFaction?,
         flag: MfFlag<Any>
     ): Boolean {
+        // The allowance is an administrative entitlement, even if a founder's role contains
+        // SET_FLAG for every registered flag. Recheck after the asynchronous handoff as well.
+        if (flag.name.equals("maxEmbassyChunks", ignoreCase = true)) {
+            if (!sender.hasPermission("mf.force.flag")) {
+                sender.sendMessage("${RED}Embassy capacity is managed by staff.")
+                return false
+            }
+            return true
+        }
         if (targetFaction != null) {
             if (!sender.hasPermission("mf.force.flag")) {
                 sender.sendMessage("$RED${plugin.language["CommandFactionFlagSetNoPermission"]}")

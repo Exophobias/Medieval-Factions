@@ -19,6 +19,7 @@ Faction flags are settings that can be configured per-faction to customize how t
   - [enableMobProtection](#enablemobprotection)
   - [protectVillagerTrade](#protectvillagertrade)
   - [coatofarms](#coatofarms)
+  - [maxEmbassyChunks](#maxembassychunks)
 - [Default Values](#default-values)
 - [Use Cases](#use-cases)
 
@@ -53,6 +54,23 @@ To set a flag value for your faction:
 Admin-managed faction territory also has staff-only protection settings for PvP, player damage, creature spawning, explosions, and fire spread. They are managed with `/f admin protection <faction>` and are not ordinary `/f flag` values or role grants. See [Admin Commands](COMMANDS.md#admin-commands).
 
 ## Available Flags
+
+### maxEmbassyChunks
+
+**Type:** Integer from 0 to 4096
+**Default:** `4`, from `factions.defaults.flags.maxEmbassyChunks` in `config.yml`
+
+Limits the faction's total hosted embassy chunks and, separately, its held embassy chunks. Offers, active plots and conquest/clearing recovery all count. Four chunks permit one 2×2 embassy; larger allowances permit expansion or more diplomatic partners. Zero prevents new offers. Lowering the limit leaves existing plots and retrieval periods intact.
+
+This entitlement is staff-managed even when a faction role grants `SET_FLAG(maxEmbassyChunks)`. Staff need `mf.flag.set` and `mf.force.flag`:
+
+```text
+/f flag set <realm> maxEmbassyChunks 8
+```
+
+Ordinary Peer-level and vassal realms may use their allowance. No noble title is required. See [embassy commands](COMMANDS.md#faction-embassy-or-f-embassy) for mutual offers and guest-only entry.
+
+---
 
 ### alliesCanInteractWithLand
 **Type:** Boolean (true/false)  
@@ -355,6 +373,7 @@ factions:
       acceptBonusPower: true
       enableMobProtection: false
       protectVillagerTrade: true
+      maxEmbassyChunks: 4
       coatofarms: ''  # or a code to give every new faction the same arms
 ```
 

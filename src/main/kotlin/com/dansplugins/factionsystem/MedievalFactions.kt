@@ -6,8 +6,11 @@ import com.dansplugins.factionsystem.chat.JooqMfChatChannelMessageRepository
 import com.dansplugins.factionsystem.chat.MfChatChannelMessageRepository
 import com.dansplugins.factionsystem.chat.MfChatService
 import com.dansplugins.factionsystem.claim.JooqMfClaimedChunkRepository
+import com.dansplugins.factionsystem.claim.JooqMfEmbassyRepository
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunkRepository
+import com.dansplugins.factionsystem.claim.MfEmbassyRepository
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.command.accessors.MfAccessorsCommand
 import com.dansplugins.factionsystem.command.duel.MfDuelCommand
 import com.dansplugins.factionsystem.command.faction.MfFactionCommand
@@ -59,6 +62,8 @@ import com.dansplugins.factionsystem.listener.EntityDamageByEntityListener
 import com.dansplugins.factionsystem.listener.EntityDamageListener
 import com.dansplugins.factionsystem.listener.EntityExplodeListener
 import com.dansplugins.factionsystem.listener.EntityInteractionProtection
+import com.dansplugins.factionsystem.listener.EmbassyBoundaryListener
+import com.dansplugins.factionsystem.listener.EmbassyWarListener
 import com.dansplugins.factionsystem.listener.InventoryClickListener
 import com.dansplugins.factionsystem.listener.InventoryMoveItemListener
 import com.dansplugins.factionsystem.listener.LingeringPotionSplashListener
@@ -244,6 +249,7 @@ class MedievalFactions : JavaPlugin() {
         val lawService = MfLawService(repositories.lawRepository)
         val factionRelationshipService = MfFactionRelationshipService(this, repositories.factionRelationshipRepository)
         val claimService = MfClaimService(this, repositories.claimedChunkRepository)
+        val embassyService = MfEmbassyService(this, repositories.embassyRepository)
         val lockService = MfLockService(this, repositories.lockRepository)
         val interactionService = MfInteractionService(repositories.interactionStatusRepository)
         val notificationService = setupNotificationService()
@@ -260,6 +266,7 @@ class MedievalFactions : JavaPlugin() {
             lawService,
             factionRelationshipService,
             claimService,
+            embassyService,
             lockService,
             interactionService,
             notificationService,
@@ -396,6 +403,7 @@ class MedievalFactions : JavaPlugin() {
         // Shared between the two entity interaction listeners so that a right-click raising both events
         // only produces a single message.
         val entityInteractionProtection = EntityInteractionProtection(this)
+        val playerMoveListener = PlayerMoveListener(this)
         listOf(
             com.dansplugins.factionsystem.api.impl.ApiFactionLifecycleListener(this),
             com.dansplugins.factionsystem.api.impl.ApiRelationshipListener(this),
@@ -412,6 +420,8 @@ class MedievalFactions : JavaPlugin() {
             CreatureSpawnListener(this),
             EntityDamageByEntityListener(this),
             EntityDamageListener(this),
+            EmbassyBoundaryListener(this),
+            EmbassyWarListener(this),
             EntityExplodeListener(this),
             InventoryClickListener(this),
             InventoryMoveItemListener(this),
@@ -423,13 +433,32 @@ class MedievalFactions : JavaPlugin() {
             PlayerInteractEntityListener(this, entityInteractionProtection),
             PlayerInteractListener(this),
             PlayerJoinListener(this),
-            PlayerMoveListener(this),
+            playerMoveListener,
             PlayerQuitListener(this, entityInteractionProtection),
             PlayerTeleportListener(this),
             PotionSplashListener(this)
         ).forEach { server.pluginManager.registerEvents(it, this) }
 
+        try {
+            playerMoveListener.registerStorageMountMovement()
+        } catch (failure: IllegalStateException) {
+            embassyService.blockNewAgreements("Embassies require Paper's storage-mount movement protection")
+            logger.log(java.util.logging.Level.SEVERE,
+                "Embassy offers and acceptance are unavailable: ${failure.message}", failure)
+        }
+
+        // Remove occupants who lose guest membership or remain inside when a war ends.
+        server.scheduler.runTaskTimer(this, Runnable {
+            playerMoveListener.sweepEmbassyOccupants()
+        }, 20L, 20L)
+
         registerCommand("faction", MfFactionCommand(this))
+        server.scheduler.runTaskTimerAsynchronously(this, Runnable {
+            val result = embassyService.sweep()
+            if (result is dev.forkhandles.result4k.Failure) {
+                logger.warning("Embassy expiry sweep failed: ${result.reason.message}")
+            }
+        }, 20L * 60L, 20L * 60L * 20L)
         registerCommand("lock", MfLockCommand(this))
         registerCommand("unlock", MfUnlockCommand(this))
         registerCommand("accessors", MfAccessorsCommand(this))
@@ -702,6 +731,7 @@ class MedievalFactions : JavaPlugin() {
         val lawRepository: MfLawRepository,
         val factionRelationshipRepository: MfFactionRelationshipRepository,
         val claimedChunkRepository: MfClaimedChunkRepository,
+        val embassyRepository: MfEmbassyRepository,
         val lockRepository: MfLockRepository,
         val interactionStatusRepository: MfInteractionStatusRepository,
         val gateRepository: MfGateRepository,
@@ -756,6 +786,7 @@ class MedievalFactions : JavaPlugin() {
             lawRepository = JooqMfLawRepository(dsl),
             factionRelationshipRepository = JooqMfFactionRelationshipRepository(dsl),
             claimedChunkRepository = JooqMfClaimedChunkRepository(dsl),
+            embassyRepository = JooqMfEmbassyRepository(dsl),
             lockRepository = JooqMfLockRepository(dsl),
             interactionStatusRepository = JooqMfInteractionStatusRepository(dsl),
             gateRepository = JooqMfGateRepository(this, dsl),
@@ -779,6 +810,7 @@ class MedievalFactions : JavaPlugin() {
             lawRepository = com.dansplugins.factionsystem.storage.json.JsonMfLawRepository(this, storageManager),
             factionRelationshipRepository = com.dansplugins.factionsystem.storage.json.JsonMfFactionRelationshipRepository(this, storageManager),
             claimedChunkRepository = com.dansplugins.factionsystem.storage.json.JsonMfClaimedChunkRepository(this, storageManager),
+            embassyRepository = com.dansplugins.factionsystem.storage.json.JsonMfEmbassyRepository(storageManager),
             lockRepository = com.dansplugins.factionsystem.storage.json.JsonMfLockRepository(this, storageManager),
             interactionStatusRepository = com.dansplugins.factionsystem.storage.json.JsonMfInteractionStatusRepository(this, storageManager),
             gateRepository = com.dansplugins.factionsystem.storage.json.JsonMfGateRepository(this, storageManager),

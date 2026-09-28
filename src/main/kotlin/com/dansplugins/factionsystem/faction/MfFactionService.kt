@@ -642,6 +642,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         val plan = mutableListOf<SaveMutation>()
         var committed = false
         var claimsBlocked = false
+        var embassiesBlocked = false
         var gatesBlocked = false
         var relationshipsBlocked = false
         try {
@@ -677,12 +678,15 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             )
 
             val claimService = plugin.services.claimService
+            val embassyService = plugin.services.embassyService
             val gateService = plugin.services.gateService
             val relationshipService = plugin.services.factionRelationshipService
             // The same source-side fences as ordinary disband: they wait out a prior child write and
             // prevent a new one from slipping between the parent-row cascade and cache eviction.
             claimService.blockFactionDeletion(sourceId)
             claimsBlocked = true
+            embassyService.blockFactionDeletion(sourceId)
+            embassiesBlocked = true
             gateService.blockFactionDeletion(sourceId)
             gatesBlocked = true
             relationshipService.blockFactionDeletion(sourceId)
@@ -718,6 +722,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                 plugin.services.factionRelationshipService.unblockFactionDeletion(sourceId)
             }
             if (gatesBlocked) plugin.services.gateService.unblockFactionDeletion(sourceId)
+            if (embassiesBlocked) plugin.services.embassyService.unblockFactionDeletion(sourceId)
             if (claimsBlocked) plugin.services.claimService.unblockFactionDeletion(sourceId)
             releaseSaveLifecycle(lifecycle)
             endFactionDeletion(sourceId)
@@ -801,9 +806,11 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             fireDisbandGates(factionId)
 
             val claimService = plugin.services.claimService
+            val embassyService = plugin.services.embassyService
             val gateService = plugin.services.gateService
             val relationshipService = plugin.services.factionRelationshipService
             var claimsBlocked = false
+            var embassiesBlocked = false
             var gatesBlocked = false
             var relationshipsBlocked = false
             try {
@@ -812,6 +819,8 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                 // is obtained, avoiding a cross-service lock-order cycle through plugin events.
                 claimService.blockFactionDeletion(factionId)
                 claimsBlocked = true
+                embassyService.blockFactionDeletion(factionId)
+                embassiesBlocked = true
                 gateService.blockFactionDeletion(factionId)
                 gatesBlocked = true
                 relationshipService.blockFactionDeletion(factionId)
@@ -843,6 +852,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             } finally {
                 if (relationshipsBlocked) relationshipService.unblockFactionDeletion(factionId)
                 if (gatesBlocked) gateService.unblockFactionDeletion(factionId)
+                if (embassiesBlocked) embassyService.unblockFactionDeletion(factionId)
                 if (claimsBlocked) claimService.unblockFactionDeletion(factionId)
             }
         } finally {

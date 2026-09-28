@@ -25,7 +25,7 @@ This document provides detailed information about all configuration options avai
 ## Configuration Schema and Upgrades
 
 `config-version` is the operator-configuration schema, independent of the plugin/JAR `version` and
-the Flyway database schema. The supported schema is currently `4`. A valid MF5-era `config.yml`
+the Flyway database schema. The supported schema is currently `5`. A valid MF5-era `config.yml`
 without the marker is schema 0 and is upgraded automatically: Medieval Factions rebuilds it in the
 latest bundled order, overlays explicit operator values and credentials, and retains unknown
 extension keys after the known keys in their nearest section. The schema is intentionally open so
@@ -48,7 +48,7 @@ partial in-place reload of database, language, listener, and scheduler settings.
 ### `config-version`
 **Type:** Plain, unquoted integer
 
-**Default:** `4`
+**Default:** `5`
 
 **Description:** Configuration schema used for safe automatic upgrades. Do not set it to the plugin version.
 
@@ -528,6 +528,15 @@ These settings define the default values for faction flags when a new faction is
 **Default:** Not currently set in config.yml (uses hardcoded default of `false`)  
 **Description:** Default setting for whether hostile mobs are protected from damage by non-members in faction territory. While the flag is available for factions to set, this config option is not currently implemented in the default config file.  
 **Note:** Factions can still set this flag individually using `/f flag set enableMobProtection [true/false]`.
+
+### `factions.defaults.flags.maxEmbassyChunks`
+
+**Type:** Integer from 0 to 4096
+**Default:** `4`
+
+**Description:** Default capacity for a faction's hosted embassy chunks and, separately, its held embassy chunks. Pending offers, active plots and recovery all count. A 2×2 embassy uses four chunks. An individual realm may have a staff-managed override through `/f flag set <realm> maxEmbassyChunks <limit>` with `mf.force.flag`.
+
+**Note:** Zero blocks new offers. Lowering capacity preserves existing plots and already reserved offers; it prevents new offers and expansion. Schema 4→5 adds this default without replacing explicit administrator values.
 
 ### `factions.defaults.flags.coatofarms`
 **Type:** String  

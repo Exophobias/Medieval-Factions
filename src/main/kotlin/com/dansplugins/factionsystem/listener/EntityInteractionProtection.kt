@@ -2,6 +2,8 @@ package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
+import com.dansplugins.factionsystem.claim.MfEmbassyStatus
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import dev.forkhandles.result4k.onFailure
@@ -14,6 +16,8 @@ import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerInteractEntityEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.inventory.InventoryHolder
+import org.bukkit.inventory.EquipmentSlot
+import org.bukkit.Material
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Level.SEVERE
@@ -61,6 +65,39 @@ class EntityInteractionProtection(
             notify(player, target, "$RED${plugin.language["CannotInteractWithEntityWhileClaimOwnerUnavailable"]}")
             return
         }
+        // A charter controls even entity inventories and villagers whose ordinary trade flag is
+        // open. Otherwise the host could reach private storage via a chest vehicle or bypass the
+        // embassy through the villager exemption.
+        val action = if (target is InventoryHolder) ClaimAction.CONTAINER else ClaimAction.INTERACT
+        when (plugin.services.embassyService.access(actor.id, claim, action)) {
+            EmbassyAccessDecision.GRANT -> {
+                val embassies = plugin.services.embassyService
+                if (action == ClaimAction.CONTAINER &&
+                    !(actor.isBypassEnabled && player.hasPermission("mf.bypass")) &&
+                    embassies.isParcelProtectionActive(claim.worldId, claim.x, claim.z)) {
+                    val status = embassies.getAt(claim.worldId, claim.x, claim.z)?.status
+                    if (status == MfEmbassyStatus.CLEARING || status == MfEmbassyStatus.CONQUEST_PASSAGE) {
+                        val held = if (event.hand == EquipmentSlot.OFF_HAND) player.inventory.itemInOffHand
+                            else player.inventory.itemInMainHand
+                        if (held != null && held.type != Material.AIR && held.amount > 0) {
+                            event.isCancelled = true
+                            notify(player, target, "${RED}Use an empty hand to withdraw from embassy storage during clearing.")
+                        }
+                    }
+                }
+                return
+            }
+            EmbassyAccessDecision.DENY -> {
+                if (actor.isBypassEnabled && player.hasPermission("mf.bypass")) {
+                    notify(player, target, "$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                } else {
+                    event.isCancelled = true
+                    notify(player, target, "$RED${plugin.language["CannotInteractWithEntityInFactionTerritory", faction.displayName]}")
+                }
+                return
+            }
+            EmbassyAccessDecision.NONE -> Unit
+        }
         val villager = target.type == EntityType.VILLAGER
         if (villager && !faction.flags[plugin.flags.protectVillagerTrade]) return
         if (claims.isInteractionAllowed(actor.id, claim)) return
@@ -70,7 +107,6 @@ class EntityInteractionProtection(
         }
         // Inventory holders must reach MF's hard CONTAINER exclusion before a provider can grant
         // a generic INTERACT carve-out, including storage minecarts, chest boats and mounts.
-        val action = if (target is InventoryHolder) ClaimAction.CONTAINER else ClaimAction.INTERACT
         if (claims.isOverridden(actor.id, target.world, position.blockX, position.blockY, position.blockZ, action)) return
         event.isCancelled = true
         val message = if (villager) {

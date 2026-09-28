@@ -1,5 +1,5 @@
 # Independent operator-configuration schema. Do not change this to the plugin/JAR version.
-config-version: 4
+config-version: 5
 version: @version@
 language: en-US
 storage:
@@ -138,6 +138,9 @@ factions:
       allowFriendlyFire: false
       acceptBonusPower: true
       protectVillagerTrade: true
+      # Default maximum chunks in one connected embassy area. Staff may override per faction.
+      # Accepts 0..4096; 0 disables new embassy offers for that faction.
+      maxEmbassyChunks: 4
       coatofarms: '' # The arms a new faction starts with, as the code the heraldry plugin issues. Empty means no arms. MedievalFactions stores this and reads nothing from it.
 chat:
   enableDefaultChatFormatting: true

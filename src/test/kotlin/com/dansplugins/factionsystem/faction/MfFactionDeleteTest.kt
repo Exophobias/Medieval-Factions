@@ -4,6 +4,7 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.event.FactionDisbandAttemptEvent
 import com.dansplugins.factionsystem.claim.MfClaimService
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.event.faction.FactionDeletedEvent
 import com.dansplugins.factionsystem.gate.MfGateService
 import com.dansplugins.factionsystem.map.MapService
@@ -78,7 +79,9 @@ class MfFactionDeleteTest {
         gates = mock(MfGateService::class.java)
         relationships = mock(MfFactionRelationshipService::class.java)
         val services = mock(Services::class.java)
+        val embassies = mock(MfEmbassyService::class.java)
         `when`(services.claimService).thenReturn(claims)
+        `when`(services.embassyService).thenReturn(embassies)
         `when`(services.gateService).thenReturn(gates)
         `when`(services.factionRelationshipService).thenReturn(relationships)
         `when`(services.mapService).thenReturn(mock(MapService::class.java))

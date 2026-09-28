@@ -7,6 +7,10 @@ import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.MfEmbassyService
+import com.dansplugins.factionsystem.claim.MfEmbassy
+import com.dansplugins.factionsystem.claim.MfEmbassyStatus
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.interaction.MfInteractionService
@@ -92,6 +96,7 @@ class PlayerInteractListenerTest {
     private lateinit var medievalFactions: MedievalFactions
     private lateinit var playerService: MfPlayerService
     private lateinit var claimService: MfClaimService
+    private lateinit var embassyService: MfEmbassyService
     private lateinit var interactionService: MfInteractionService
     private lateinit var lockService: MfLockService
     private lateinit var relationshipService: MfFactionRelationshipService
@@ -212,6 +217,102 @@ class PlayerInteractListenerTest {
 
         // Assert - event should NOT be cancelled because player is allowed to interact
         verifyEventNotCancelled()
+    }
+
+    @Test
+    fun embassyDeniesHostEvenWhenOwnClaimAndPublicDoorsWouldAllow() {
+        mockBlockData<Door>()
+        setupConfigForDoorInteraction(enabled = true)
+        val (_, playerId) = setupPlayerMocks(fixture.player)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+        `when`(claimService.isInteractionAllowed(playerId, claim)).thenReturn(true)
+        `when`(embassyService.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)).thenReturn(true)
+        `when`(embassyService.access(playerId, claim, ClaimAction.DOOR)).thenReturn(EmbassyAccessDecision.DENY)
+
+        uut.onPlayerInteract(fixture.event)
+
+        verifyEventCancelled()
+    }
+
+    @Test
+    fun embassyGrantsGuestDoorAccessWithoutOrdinaryClaimPermission() {
+        mockBlockData<Door>()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+        `when`(claimService.isInteractionAllowed(playerId, claim)).thenReturn(false)
+        `when`(embassyService.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)).thenReturn(true)
+        `when`(embassyService.access(playerId, claim, ClaimAction.DOOR)).thenReturn(EmbassyAccessDecision.GRANT)
+
+        uut.onPlayerInteract(fixture.event)
+
+        verifyEventNotCancelled()
+    }
+
+    @Test
+    fun clearingDoorAccessDoesNotAllowHeldFlintAndSteelUse() {
+        mockBlockData<Door>()
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, playerId) = setupPlayerMocks(fixture.player)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+        val parcel = mock(MfEmbassy::class.java)
+        `when`(parcel.status).thenReturn(MfEmbassyStatus.CLEARING)
+        `when`(embassyService.getAt(claim.worldId, claim.x, claim.z)).thenReturn(parcel)
+        `when`(embassyService.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)).thenReturn(true)
+        `when`(embassyService.access(playerId, claim, ClaimAction.DOOR)).thenReturn(EmbassyAccessDecision.GRANT)
+        val flint = mock(ItemStack::class.java)
+        `when`(flint.type).thenReturn(Material.FLINT_AND_STEEL)
+        `when`(fixture.event.item).thenReturn(flint)
+        `when`(fixture.event.hasItem()).thenReturn(true)
+
+        uut.onPlayerInteract(fixture.event)
+
+        verify(fixture.event).setUseItemInHand(Event.Result.DENY)
+        verifyEventNotCancelled()
+    }
+
+    @Test
+    fun clearingGenericInteractionDeniesBonemealMutation() {
+        val blockData = mock(BlockData::class.java)
+        `when`(fixture.block.blockData).thenReturn(blockData)
+        val (_, playerId) = setupPlayerMocks(fixture.player)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+        `when`(embassyService.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)).thenReturn(true)
+        `when`(embassyService.access(playerId, claim, ClaimAction.INTERACT)).thenReturn(EmbassyAccessDecision.DENY)
+        val boneMeal = mock(ItemStack::class.java)
+        val boneMealMaterial = mock(Material::class.java)
+        `when`(boneMealMaterial.isEdible).thenReturn(false)
+        `when`(boneMeal.type).thenReturn(boneMealMaterial)
+        `when`(fixture.event.item).thenReturn(boneMeal)
+        `when`(fixture.event.hasItem()).thenReturn(true)
+
+        uut.onPlayerInteract(fixture.event)
+
+        verifyEventCancelled()
+    }
+
+    @Test
+    fun embassyBoundaryStopsCrossChunkDoubleChestBeforeInventoryOpens() {
+        setupPlayerMocks(fixture.player)
+        val left = testUtils.createMockBlock(fixture.world, 15, 0, 0)
+        val right = testUtils.createMockBlock(fixture.world, 16, 0, 0)
+        val leftChest = mock(org.bukkit.block.Chest::class.java)
+        val rightChest = mock(org.bukkit.block.Chest::class.java)
+        val doubleChest = mock(org.bukkit.block.DoubleChest::class.java)
+        val clickedChest = mock(org.bukkit.block.Chest::class.java)
+        val inventory = mock(org.bukkit.inventory.Inventory::class.java)
+        `when`(leftChest.block).thenReturn(left)
+        `when`(rightChest.block).thenReturn(right)
+        `when`(doubleChest.leftSide).thenReturn(leftChest)
+        `when`(doubleChest.rightSide).thenReturn(rightChest)
+        `when`(inventory.holder).thenReturn(doubleChest)
+        `when`(clickedChest.inventory).thenReturn(inventory)
+        `when`(fixture.block.state).thenReturn(clickedChest)
+        `when`(embassyService.isParcelProtectionActive(fixture.world.uid, 1, 0)).thenReturn(true)
+
+        uut.onPlayerInteract(fixture.event)
+
+        verifyEventCancelled()
     }
 
     @Test
@@ -2029,6 +2130,7 @@ class PlayerInteractListenerTest {
 
         val services = mock(com.dansplugins.factionsystem.service.Services::class.java)
         `when`(medievalFactions.services).thenReturn(services)
+        embassyService = defaultEmbassyService(services)
         `when`(services.playerService).thenReturn(playerService)
         `when`(services.claimService).thenReturn(claimService)
         `when`(services.interactionService).thenReturn(interactionService)

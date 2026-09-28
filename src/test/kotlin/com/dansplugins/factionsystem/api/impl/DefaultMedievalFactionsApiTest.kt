@@ -2,11 +2,15 @@ package com.dansplugins.factionsystem.api.impl
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.anyArg
+import com.dansplugins.factionsystem.api.ClaimAction
+import com.dansplugins.factionsystem.api.EmbassyAccessDecision
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.PeaceOutcome
 import com.dansplugins.factionsystem.api.geometry.ChunkPos
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.MfEmbassyService
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision as NativeEmbassyAccessDecision
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
@@ -33,6 +37,7 @@ import dev.forkhandles.result4k.Success
 import org.bukkit.Chunk
 import org.bukkit.Server
 import org.bukkit.World
+import org.bukkit.entity.Player
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.plugin.PluginManager
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -61,6 +66,7 @@ class DefaultMedievalFactionsApiTest {
     private lateinit var claimService: MfClaimService
     private lateinit var relationshipService: MfFactionRelationshipService
     private lateinit var playerService: MfPlayerService
+    private lateinit var embassyService: MfEmbassyService
     private lateinit var api: DefaultMedievalFactionsApi
 
     /** The faction the last successful save was handed, so a flag write can be read back. */
@@ -92,6 +98,8 @@ class DefaultMedievalFactionsApiTest {
         `when`(services.factionRelationshipService).thenReturn(relationshipService)
         playerService = mock(MfPlayerService::class.java)
         `when`(services.playerService).thenReturn(playerService)
+        embassyService = mock(MfEmbassyService::class.java)
+        `when`(services.embassyService).thenReturn(embassyService)
         savedFaction = null
         `when`(factionService.save(anyArg())).thenAnswer { invocation ->
             val faction = invocation.getArgument<MfFaction>(0)
@@ -162,6 +170,42 @@ class DefaultMedievalFactionsApiTest {
         assertEquals(3, view.chunkX)
         assertEquals(7, view.chunkZ)
         assertEquals(FactionId("f1"), view.factionId)
+    }
+
+    @Test
+    fun embassyActionApiMapsNativeDecisionWithoutLoadingAChunk() {
+        val actor = UUID.randomUUID()
+        val world = UUID.randomUUID()
+        val claim = MfClaimedChunk(world, 3, 7, MfFactionId("host"))
+        `when`(claimService.getClaim(world, 3, 7)).thenReturn(claim)
+        `when`(embassyService.access(MfPlayerId(actor.toString()), claim, ClaimAction.BUILD))
+            .thenReturn(NativeEmbassyAccessDecision.DENY)
+
+        assertEquals(EmbassyAccessDecision.DENY,
+            api.embassyAccessAt(actor, world, 3, 7, ClaimAction.BUILD))
+        assertEquals(EmbassyAccessDecision.NONE,
+            api.embassyAccessAt(actor, world, 4, 7, ClaimAction.BUILD))
+        verify(claimService, never()).getClaim(anyArg<Chunk>())
+    }
+
+    @Test
+    fun embassyActionApiHonorsEnabledStaffBypassOnServerThread() {
+        val actor = UUID.randomUUID()
+        val world = UUID.randomUUID()
+        val claim = MfClaimedChunk(world, 3, 7, MfFactionId("host"))
+        `when`(claimService.getClaim(world, 3, 7)).thenReturn(claim)
+        `when`(embassyService.access(MfPlayerId(actor.toString()), claim, ClaimAction.CONTAINER))
+            .thenReturn(NativeEmbassyAccessDecision.DENY)
+        val mfPlayer = mock(MfPlayer::class.java)
+        `when`(mfPlayer.isBypassEnabled).thenReturn(true)
+        `when`(playerService.getPlayer(MfPlayerId(actor.toString()))).thenReturn(mfPlayer)
+        val bukkitPlayer = mock(Player::class.java)
+        `when`(bukkitPlayer.hasPermission("mf.bypass")).thenReturn(true)
+        `when`(plugin.server.isPrimaryThread).thenReturn(true)
+        `when`(plugin.server.getPlayer(actor)).thenReturn(bukkitPlayer)
+
+        assertEquals(EmbassyAccessDecision.GRANT,
+            api.embassyAccessAt(actor, world, 3, 7, ClaimAction.CONTAINER))
     }
 
     @Test

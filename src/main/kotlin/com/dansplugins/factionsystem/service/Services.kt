@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.service
 import com.dansplugins.factionsystem.approval.MfApprovalRequestService
 import com.dansplugins.factionsystem.chat.MfChatService
 import com.dansplugins.factionsystem.claim.MfClaimService
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.duel.MfDuelService
 import com.dansplugins.factionsystem.faction.MfFactionService
 import com.dansplugins.factionsystem.gate.MfGateService
@@ -23,6 +24,7 @@ class Services(
     val lawService: MfLawService,
     val factionRelationshipService: MfFactionRelationshipService,
     val claimService: MfClaimService,
+    val embassyService: MfEmbassyService,
     val lockService: MfLockService,
     val interactionService: MfInteractionService,
     val notificationService: MfNotificationService,

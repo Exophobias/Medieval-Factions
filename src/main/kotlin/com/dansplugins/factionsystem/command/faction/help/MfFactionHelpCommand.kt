@@ -50,6 +50,7 @@ class MfFactionHelpCommand(
                 arrayOf(TextComponent(plugin.language["CommandFactionHelpFactionDeclareIndependence"]).apply { color = SpigotChatColor.GRAY }),
                 arrayOf(TextComponent(plugin.language["CommandFactionHelpFactionDeclareWar"]).apply { color = SpigotChatColor.GRAY }),
                 arrayOf(TextComponent(plugin.language["CommandFactionHelpFactionDisband"]).apply { color = SpigotChatColor.GRAY }),
+                arrayOf(TextComponent("/f embassy — offer, accept and manage a faction embassy plot").apply { color = SpigotChatColor.GRAY }),
                 arrayOf(TextComponent(plugin.language["CommandFactionHelpFactionFlag"]).apply { color = SpigotChatColor.GRAY }),
                 arrayOf(TextComponent(plugin.language["CommandFactionHelpFactionFlagList"]).apply { color = SpigotChatColor.GRAY }),
                 arrayOf(TextComponent(plugin.language["CommandFactionHelpFactionFlagSet"]).apply { color = SpigotChatColor.GRAY }),

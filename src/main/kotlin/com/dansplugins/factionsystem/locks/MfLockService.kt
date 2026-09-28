@@ -55,6 +55,9 @@ class MfLockService(private val plugin: MedievalFactions, private val repository
                 require(liveFaction?.id == claim.factionId) {
                     "Player ${player.id.value} is no longer a member of the claiming faction"
                 }
+                require(!plugin.services.embassyService.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)) {
+                    "Cannot add a host-owned lock inside an active embassy"
+                }
                 val lockedBlock = repository.upsert(
                     MfLockedBlock(
                         block = MfBlockPosition(

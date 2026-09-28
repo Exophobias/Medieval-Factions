@@ -345,6 +345,7 @@ class PlayerInteractEntityListenerTest {
 
         val services = mock(Services::class.java)
         `when`(medievalFactions.services).thenReturn(services)
+        defaultEmbassyService(services)
         `when`(services.playerService).thenReturn(playerService)
         `when`(services.claimService).thenReturn(claimService)
         `when`(services.factionService).thenReturn(factionService)

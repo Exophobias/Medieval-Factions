@@ -5,6 +5,8 @@ import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.area.MfCuboidArea
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
+import com.dansplugins.factionsystem.claim.MfEmbassyStatus
 import com.dansplugins.factionsystem.gate.MfGate
 import com.dansplugins.factionsystem.gate.MfGateCreationContext
 import com.dansplugins.factionsystem.interaction.MfInteractionStatus.ADDING_ACCESSOR
@@ -51,6 +53,7 @@ import org.bukkit.block.data.type.Gate as FenceGateData
 class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
 
     private val pendingPlayers = ConcurrentHashMap.newKeySet<MfPlayerId>()
+    private val embassyBoundary = EmbassyBoundary(plugin)
     private companion object {
         // Hand-used items whose right-click use acts on the player rather than on the world - drinking,
         // throwing, drawing or raising - and which therefore have no block-targeted behaviour at all.
@@ -96,7 +99,11 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         if (event.hand != HAND) return
         val clickedBlock = event.clickedBlock ?: return
         val interactionService = plugin.services.interactionService
-        when (interactionService.getInteractionStatus(MfPlayerId(event.player.uniqueId.toString()))) {
+        val status = interactionService.getInteractionStatus(MfPlayerId(event.player.uniqueId.toString()))
+        // Lock and accessor modes return before normal territory protection. They must not give a
+        // host a way to modify an active guest embassy's containers or locks.
+        if (status != null && deniesEmbassyMode(event, clickedBlock)) return
+        when (status) {
             LOCKING -> {
                 lock(event.player, clickedBlock)
                 event.isCancelled = true
@@ -133,6 +140,26 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         }
     }
 
+    private fun deniesEmbassyMode(event: PlayerInteractEvent, block: Block): Boolean {
+        val actor = plugin.services.playerService.getPlayer(event.player) ?: return false
+        if (crossesEmbassyChestBoundary(block) &&
+            !(actor.isBypassEnabled && event.player.hasPermission("mf.bypass"))
+        ) {
+            event.isCancelled = true
+            event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", "embassy boundary"]}")
+            return true
+        }
+        val claim = plugin.services.claimService.getClaim(block.chunk) ?: return false
+        if (plugin.services.embassyService.access(actor.id, claim, ClaimAction.INTERACT) != EmbassyAccessDecision.DENY) {
+            return false
+        }
+        if (actor.isBypassEnabled && event.player.hasPermission("mf.bypass")) return false
+        event.isCancelled = true
+        val ownerName = plugin.services.factionService.getFaction(claim.factionId)?.name ?: claim.factionId.value
+        event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", ownerName]}")
+        return true
+    }
+
     /**
      * Checks if a player has the faction permission to bypass locks.
      * * @param mfPlayer The player to check
@@ -159,6 +186,44 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
             event.isCancelled = true
             registerMissingPlayer(event.player)
             return
+        }
+
+        // Bukkit exposes a cross-chunk double chest as one inventory. Refuse opening it at the
+        // edge before the ordinary clicked-half claim check or a lock accessor can return early.
+        if (crossesEmbassyChestBoundary(clickedBlock) &&
+            !(mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass"))
+        ) {
+            val deniedInFull = denyInteraction(event)
+            if (deniedInFull && notify) {
+                event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", "embassy boundary"]}")
+            }
+            return
+        }
+
+        val claim = claimService.getClaim(clickedBlock.chunk)
+        val embassies = plugin.services.embassyService
+        val embassyAccess = if (claim != null &&
+            embassies.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)
+        ) {
+            embassies.access(mfPlayer.id, claim, overrideActionFor(clickedBlock))
+        } else EmbassyAccessDecision.NONE
+        if (embassyAccess == EmbassyAccessDecision.DENY &&
+            !(mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass"))
+        ) {
+            val deniedInFull = denyInteraction(event)
+            if (deniedInFull && notify) {
+                val ownerName = claim?.let { plugin.services.factionService.getFaction(it.factionId)?.name ?: it.factionId.value } ?: ""
+                event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", ownerName]}")
+            }
+            return
+        }
+        if (embassyAccess == EmbassyAccessDecision.GRANT && event.action == RIGHT_CLICK_BLOCK && claim != null) {
+            val status = embassies.getAt(claim.worldId, claim.x, claim.z)?.status
+            if (status == MfEmbassyStatus.CLEARING || status == MfEmbassyStatus.CONQUEST_PASSAGE) {
+                // Guests may open a door or container to retrieve property, but a held item
+                // cannot bonemeal, ignite or otherwise mutate the parcel on that same click.
+                event.setUseItemInHand(DENY)
+            }
         }
 
         // Handle locks first
@@ -223,8 +288,6 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         }
 
         // Apply territory protection
-        val claim = claimService.getClaim(clickedBlock.chunk)
-
         if (claim == null) {
             if (plugin.config.getBoolean("wilderness.interaction.prevent", false)) {
                 // The option protects blocks, not the player's own food, so denyInteraction keeps
@@ -243,7 +306,8 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         // Check if player is allowed to interact based on faction relationships.
         // overrideActionFor is evaluated only when MF has already denied, so its BlockState
         // snapshot never costs anything on the allowed path.
-        if (!claimService.isInteractionAllowed(mfPlayer.id, claim) &&
+        if (embassyAccess == EmbassyAccessDecision.NONE &&
+            !claimService.isInteractionAllowed(mfPlayer.id, claim) &&
             !claimService.isOverridden(
                     mfPlayer.id,
                     clickedBlock.world,
@@ -329,6 +393,13 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         }
         event.isCancelled = true
         return true
+    }
+
+    private fun crossesEmbassyChestBoundary(block: Block): Boolean {
+        val holder = (block.state as? Chest)?.inventory?.holder as? DoubleChest ?: return false
+        val left = (holder.leftSide as? Chest)?.block ?: return true
+        val right = (holder.rightSide as? Chest)?.block ?: return true
+        return embassyBoundary.crosses(embassyBoundary.point(left), embassyBoundary.point(right))
     }
 
     /**
@@ -432,6 +503,12 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
                 val claimService = plugin.services.claimService
                 val claim = claimService.getClaim(block.chunk)
                 if (claim == null || claim.factionId != playerFaction.id) {
+                    player.sendMessage("$RED${plugin.language["BlockLockNotInFactionTerritory"]}")
+                    return@Runnable
+                }
+                // This task runs later than the click. A parcel may have become active while it
+                // waited in the scheduler, so recheck before persisting a host lock in guest land.
+                if (plugin.services.embassyService.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)) {
                     player.sendMessage("$RED${plugin.language["BlockLockNotInFactionTerritory"]}")
                     return@Runnable
                 }

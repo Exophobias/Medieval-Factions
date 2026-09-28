@@ -9,6 +9,9 @@ import com.dansplugins.factionsystem.api.event.FactionDisbandAttemptEvent
 import com.dansplugins.factionsystem.api.event.FactionMemberJoinedEvent
 import com.dansplugins.factionsystem.api.impl.ApiFactionLifecycleListener
 import com.dansplugins.factionsystem.api.impl.DefaultMedievalFactionsApi
+import com.dansplugins.factionsystem.claim.MfEmbassy
+import com.dansplugins.factionsystem.claim.MfEmbassyRepository
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.event.faction.FactionCreateEvent
 import com.dansplugins.factionsystem.event.faction.FactionDeletedEvent
 import com.dansplugins.factionsystem.event.faction.FactionDisbandEvent
@@ -153,6 +156,13 @@ class MfFactionMutationLifecycleTest {
         `when`(services.mapService).thenReturn(mapService)
         `when`(plugin.services).thenReturn(services)
         `when`(plugin.servicesOrNull).thenReturn(services)
+        val embassyService = MfEmbassyService(plugin, object : MfEmbassyRepository {
+            override fun getAll(): List<MfEmbassy> = emptyList()
+            override fun applyChanges(upserts: List<MfEmbassy>, deletes: List<MfEmbassy>) = Unit
+            override fun upsert(embassy: MfEmbassy) = Unit
+            override fun delete(worldId: UUID, chunkX: Int, chunkZ: Int) = Unit
+        })
+        `when`(services.embassyService).thenReturn(embassyService)
         api = DefaultMedievalFactionsApi(plugin)
         events.clear()
         publicationOrder.clear()

@@ -79,6 +79,7 @@ class PhysicalInteractionProtectionTest {
         asyncTasks.clear(); mainTasks.clear(); notices.clear()
         plugin = mock(MedievalFactions::class.java)
         val services = mock(Services::class.java)
+        defaultEmbassyService(services)
         players = mock(MfPlayerService::class.java)
         claims = mock(MfClaimService::class.java)
         factions = mock(MfFactionService::class.java)

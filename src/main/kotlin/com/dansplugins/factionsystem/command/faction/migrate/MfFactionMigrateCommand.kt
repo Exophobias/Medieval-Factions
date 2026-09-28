@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.command.faction.migrate
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.chat.JooqMfChatChannelMessageRepository
 import com.dansplugins.factionsystem.claim.JooqMfClaimedChunkRepository
+import com.dansplugins.factionsystem.claim.JooqMfEmbassyRepository
 import com.dansplugins.factionsystem.db.MfJdbc
 import com.dansplugins.factionsystem.duel.JooqMfDuelInviteRepository
 import com.dansplugins.factionsystem.duel.JooqMfDuelRepository
@@ -16,6 +17,7 @@ import com.dansplugins.factionsystem.player.JooqMfPlayerRepository
 import com.dansplugins.factionsystem.relationship.JooqMfFactionRelationshipRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfChatChannelMessageRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfClaimedChunkRepository
+import com.dansplugins.factionsystem.storage.json.JsonMfEmbassyRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfDuelInviteRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfDuelRepository
 import com.dansplugins.factionsystem.storage.json.JsonMfFactionRelationshipRepository
@@ -150,6 +152,7 @@ class MfFactionMigrateCommand(private val plugin: MedievalFactions) : CommandExe
                         val sourceLawRepo = JooqMfLawRepository(dsl)
                         val sourceRelationshipRepo = JooqMfFactionRelationshipRepository(dsl)
                         val sourceClaimRepo = JooqMfClaimedChunkRepository(dsl)
+                        val sourceEmbassyRepo = JooqMfEmbassyRepository(dsl)
                         val sourceLockRepo = JooqMfLockRepository(dsl)
                         val sourceInteractionRepo = JooqMfInteractionStatusRepository(dsl)
                         val sourceGateRepo = JooqMfGateRepository(plugin, dsl)
@@ -168,6 +171,7 @@ class MfFactionMigrateCommand(private val plugin: MedievalFactions) : CommandExe
                         val targetLawRepo = JsonMfLawRepository(plugin, storageManager)
                         val targetRelationshipRepo = JsonMfFactionRelationshipRepository(plugin, storageManager)
                         val targetClaimRepo = JsonMfClaimedChunkRepository(plugin, storageManager)
+                        val targetEmbassyRepo = JsonMfEmbassyRepository(storageManager)
                         val targetLockRepo = JsonMfLockRepository(plugin, storageManager)
                         val targetInteractionRepo = JsonMfInteractionStatusRepository(plugin, storageManager)
                         val targetGateRepo = JsonMfGateRepository(plugin, storageManager)
@@ -184,7 +188,8 @@ class MfFactionMigrateCommand(private val plugin: MedievalFactions) : CommandExe
                             sourceGateContextRepo, sourceChatRepo, sourceDuelRepo, sourceDuelInviteRepo,
                             targetPlayerRepo, targetFactionRepo, targetLawRepo, targetRelationshipRepo,
                             targetClaimRepo, targetLockRepo, targetInteractionRepo, targetGateRepo,
-                            targetGateContextRepo, targetChatRepo, targetDuelRepo, targetDuelInviteRepo
+                            targetGateContextRepo, targetChatRepo, targetDuelRepo, targetDuelInviteRepo,
+                            sourceEmbassyRepo, targetEmbassyRepo
                         )
 
                         val result = migrator.migrate()
@@ -261,6 +266,7 @@ class MfFactionMigrateCommand(private val plugin: MedievalFactions) : CommandExe
                     val sourceLawRepo = JsonMfLawRepository(plugin, storageManager)
                     val sourceRelationshipRepo = JsonMfFactionRelationshipRepository(plugin, storageManager)
                     val sourceClaimRepo = JsonMfClaimedChunkRepository(plugin, storageManager)
+                    val sourceEmbassyRepo = JsonMfEmbassyRepository(storageManager)
                     val sourceLockRepo = JsonMfLockRepository(plugin, storageManager)
                     val sourceInteractionRepo = JsonMfInteractionStatusRepository(plugin, storageManager)
                     val sourceGateRepo = JsonMfGateRepository(plugin, storageManager)
@@ -308,6 +314,7 @@ class MfFactionMigrateCommand(private val plugin: MedievalFactions) : CommandExe
                         val targetLawRepo = JooqMfLawRepository(dsl)
                         val targetRelationshipRepo = JooqMfFactionRelationshipRepository(dsl)
                         val targetClaimRepo = JooqMfClaimedChunkRepository(dsl)
+                        val targetEmbassyRepo = JooqMfEmbassyRepository(dsl)
                         val targetLockRepo = JooqMfLockRepository(dsl)
                         val targetInteractionRepo = JooqMfInteractionStatusRepository(dsl)
                         val targetGateRepo = JooqMfGateRepository(plugin, dsl)
@@ -324,7 +331,8 @@ class MfFactionMigrateCommand(private val plugin: MedievalFactions) : CommandExe
                             sourceGateContextRepo, sourceChatRepo, sourceDuelRepo, sourceDuelInviteRepo,
                             targetPlayerRepo, targetFactionRepo, targetLawRepo, targetRelationshipRepo,
                             targetClaimRepo, targetLockRepo, targetInteractionRepo, targetGateRepo,
-                            targetGateContextRepo, targetChatRepo, targetDuelRepo, targetDuelInviteRepo
+                            targetGateContextRepo, targetChatRepo, targetDuelRepo, targetDuelInviteRepo,
+                            sourceEmbassyRepo, targetEmbassyRepo
                         )
 
                         val result = migrator.migrate()

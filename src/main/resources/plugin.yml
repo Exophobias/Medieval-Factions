@@ -203,6 +203,9 @@ permissions:
   mf.claim:
     description: Allows claiming land
     default: true
+  mf.embassy:
+    description: Allows managing embassy offers and plots for your realm
+    default: true
   mf.claim.circle:
     description: Allows claiming land in a circle
     default: true

@@ -229,6 +229,24 @@ If you need to unclaim:
 
 ---
 
+### Embassy plots between realms
+
+An embassy is a connected area of whole claimed chunks that one realm offers to another. The host keeps the land claims and trade-tax right. Only guest members may enter, build, and use storage after accepting; even members of the host realm cannot enter while the peaceful charter is active. It is available to ordinary Peer-level and vassal realms; no noble title is needed.
+
+1. The host clears existing chests, other inventories and gates, stands in the claim, and uses `/f embassy offer <GuestRealm>`. For a four-chunk embassy, use `/f embassy offer <GuestRealm> 2x2`; the area extends toward increasing chunk X and Z. Keep every offered chunk loaded for inspection. Additional offers must adjoin that guest's active embassy.
+2. An authorized guest officer visits an offered chunk and uses `/f embassy accept` within seven days, accepting every chunk in the pending offer together. Non-guest occupants must leave the entire offered area first. Use `/f embassy info` to inspect the plot or `/f embassy decline` to refuse it.
+3. Either side can end the arrangement with `/f embassy revoke <worldUUID:x,z>` (host, from outside) or `/f embassy release` (guest). The guest then has 14 days to remove goods and blocks, and can use `/f embassy finish` when done. Use `/f embassy list` to copy the exact plot coordinates.
+
+The default allowance is **four chunks hosted and four chunks held per faction**. Pending offers and recovering plots count. Staff can upgrade a realm's `maxEmbassyChunks` flag; the server default is `factions.defaults.flags.maxEmbassyChunks`. A lower allowance preserves existing plots and retrieval time, while zero stops new offers. One host–guest pair has one connected embassy in one world, including any pending expansion.
+
+Host and guest officers need the appropriate faction role capability, as well as the `mf.embassy` server permission. The parcel gives no extra home, teleport, combat protection, or special stall tax. During clearing, guests may break blocks, use doors and withdraw goods; new construction, deposits and general block interactions stop. Actual war suspends peaceful entry and use and pauses clearing/passage time; offers and conquest decisions still expire on schedule. On conquest, the affected chunk closes to everyone during peace until the new landholder uses `/f embassy seize <worldUUID:x,z>` or `/f embassy passage <worldUUID:x,z>`; without a decision in seven days, 14-day guest retrieval begins automatically. Cancel offers and finish retrieval before unclaiming these chunks or disbanding a participating realm.
+
+Pistons, dispensers, droppers, and hoppers cannot run inside a peaceful embassy, since a player outside could otherwise power them remotely. Remove gates and physical inventories from the chunk before offering it. Neither realm can create an MF gate whose moving blocks touch the embassy until the charter and any clearing period end.
+
+Chest boats, storage minecarts and stocked mounts cannot cross a peaceful embassy's outer boundary, including when carried as passengers. Internal edges of the same protected area remain usable. During clearing, open entity storage with an empty hand, withdraw mount cargo before moving the animal, and withdraw vehicle contents before breaking the vehicle to take it away. Virtual market stalls use the same guest access and withdrawal rules; their ordinary landholder tax and separate conquest decisions still apply.
+
+---
+
 ### Inviting Members
 
 **Goal:** Grow your faction by inviting trusted players.

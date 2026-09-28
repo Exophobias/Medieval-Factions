@@ -27,6 +27,9 @@ class MfGateService(
     /** Serialises repository writes with publication to every gate index. */
     private val mutationLock = ReentrantLock(true)
 
+    /** Coordinate gate writes with activation of an embassy over the gate's block area. */
+    internal fun <T> withMutationLock(action: () -> T): T = mutationLock.withLock(action)
+
     /** Factions whose parent row is being cascade-deleted; guarded by [mutationLock]. */
     private val deletingFactions = HashSet<MfFactionId>()
 
@@ -76,6 +79,10 @@ class MfGateService(
         return candidates.mapNotNull(gatesById::get).filter { it.area.contains(block) }
     }
 
+    /** Indexed overlap query for an embassy parcel; a gate can change blocks remotely. */
+    fun hasGateAreaInChunk(worldId: UUID, chunkX: Int, chunkZ: Int): Boolean =
+        areaChunkIndex[GateChunkKey(worldId, chunkX, chunkZ)]?.isNotEmpty() == true
+
     @JvmName("getGatesByFactionId")
     fun getGatesByFaction(factionId: MfFactionId) = gatesById.values.filter { it.factionId == factionId }
     fun getGatesByStatus(status: MfGateStatus) = gatesById.values.filter { it.status == status }
@@ -99,6 +106,9 @@ class MfGateService(
             require(previousOwner == null || previousOwner !in deletingFactions) {
                 "Faction ${previousOwner?.value} is being deleted"
             }
+            require(areaChunkKeys(gate.area).none { key ->
+                plugin.services.embassyService.hasActiveOrClearingEmbassy(key.worldId, key.chunkX, key.chunkZ)
+            }) { "A gate cannot change blocks inside an active embassy" }
             var lastException: Exception? = null
             var currentGate = gate
             val targetStatus = gate.status // Preserve the intended status change

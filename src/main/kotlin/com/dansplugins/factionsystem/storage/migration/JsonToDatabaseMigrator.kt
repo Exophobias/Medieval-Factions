@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.storage.migration
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.chat.MfChatChannelMessageRepository
 import com.dansplugins.factionsystem.claim.MfClaimedChunkRepository
+import com.dansplugins.factionsystem.claim.MfEmbassyRepository
 import com.dansplugins.factionsystem.duel.MfDuelInviteRepository
 import com.dansplugins.factionsystem.duel.MfDuelRepository
 import com.dansplugins.factionsystem.faction.MfFactionRepository
@@ -42,7 +43,9 @@ class JsonToDatabaseMigrator(
     private val targetGateContextRepo: MfGateCreationContextRepository,
     private val targetChatRepo: MfChatChannelMessageRepository,
     private val targetDuelRepo: MfDuelRepository,
-    private val targetDuelInviteRepo: MfDuelInviteRepository
+    private val targetDuelInviteRepo: MfDuelInviteRepository,
+    private val sourceEmbassyRepo: MfEmbassyRepository? = null,
+    private val targetEmbassyRepo: MfEmbassyRepository? = null
 ) {
 
     fun migrate(): MigrationResult {
@@ -112,6 +115,13 @@ class JsonToDatabaseMigrator(
             }
             totalMigrated += claims.size
             plugin.logger.info("Migrated ${claims.size} claims")
+
+            if (sourceEmbassyRepo != null && targetEmbassyRepo != null) {
+                val embassies = sourceEmbassyRepo.getAll()
+                embassies.forEach(targetEmbassyRepo::upsert)
+                totalMigrated += embassies.size
+                plugin.logger.info("Migrated ${embassies.size} embassies")
+            }
 
             // Migrate locks
             plugin.logger.info("Migrating locks...")
@@ -224,6 +234,7 @@ class JsonToDatabaseMigrator(
         targetFactionRepo.getFactions().size.takeIf { it > 0 }?.let { existing += "$it factions" }
         targetRelationshipRepo.getFactionRelationships().size.takeIf { it > 0 }?.let { existing += "$it faction relationships" }
         targetClaimRepo.getClaims().size.takeIf { it > 0 }?.let { existing += "$it claims" }
+        targetEmbassyRepo?.getAll()?.size?.takeIf { it > 0 }?.let { existing += "$it embassies" }
         targetLockRepo.getLockedBlocks().size.takeIf { it > 0 }?.let { existing += "$it locked blocks" }
         targetGateRepo.getGates().size.takeIf { it > 0 }?.let { existing += "$it gates" }
         targetDuelRepo.getDuels().size.takeIf { it > 0 }?.let { existing += "$it duels" }

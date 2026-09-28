@@ -5,6 +5,9 @@ import com.dansplugins.factionsystem.TestUtils
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.MfEmbassyService
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
+import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
@@ -16,8 +19,10 @@ import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
 import org.bukkit.ChatColor
+import org.bukkit.Material
 import org.bukkit.World
 import org.bukkit.block.Block
+import org.bukkit.block.BlockFace
 import org.bukkit.entity.Player
 import org.bukkit.event.block.BlockPlaceEvent
 import org.junit.jupiter.api.BeforeEach
@@ -39,6 +44,7 @@ class BlockPlaceListenerTest {
     private lateinit var factionService: MfFactionService
     private lateinit var playerService: MfPlayerService
     private lateinit var relationshipService: MfFactionRelationshipService
+    private lateinit var embassyService: MfEmbassyService
     private lateinit var uut: BlockPlaceListener
 
     @BeforeEach
@@ -185,6 +191,52 @@ class BlockPlaceListenerTest {
         verify(player).sendMessage("${ChatColor.RED}Cannot place block in faction territory")
     }
 
+    @Test
+    fun chestCannotMergeAcrossPeacefulEmbassyBoundary() {
+        val block = fixture.block
+        `when`(block.type).thenReturn(Material.CHEST)
+        `when`(block.x).thenReturn(15)
+        for (face in listOf(BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST)) {
+            val neighbor = testUtils.createMockBlock(fixture.world, 15 + face.modX, 0, face.modZ)
+            `when`(neighbor.type).thenReturn(if (face == BlockFace.EAST) Material.CHEST else Material.AIR)
+            `when`(block.getRelative(face)).thenReturn(neighbor)
+        }
+        `when`(embassyService.isParcelProtectionActive(fixture.world.uid, 1, 0)).thenReturn(true)
+
+        uut.onBlockPlace(fixture.event)
+
+        verify(fixture.event).isCancelled = true
+    }
+
+    @Test
+    fun guestChestMayMergeAcrossInternalConnectedAreaCell() {
+        val block = fixture.block
+        `when`(block.type).thenReturn(Material.CHEST)
+        `when`(block.x).thenReturn(31)
+        for (face in listOf(BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST)) {
+            val neighbor = testUtils.createMockBlock(fixture.world, 31 + face.modX, 0, face.modZ)
+            `when`(neighbor.type).thenReturn(if (face == BlockFace.EAST) Material.CHEST else Material.AIR)
+            `when`(block.getRelative(face)).thenReturn(neighbor)
+        }
+        `when`(embassyService.isParcelProtectionActive(fixture.world.uid, 1, 0)).thenReturn(true)
+        `when`(embassyService.isParcelProtectionActive(fixture.world.uid, 2, 0)).thenReturn(true)
+        `when`(embassyService.sameProtectedArea(fixture.world.uid, 1, 0, 2, 0)).thenReturn(true)
+        val claim = mock(MfClaimedChunk::class.java)
+        val hostId = MfFactionId("host")
+        val host = mock(MfFaction::class.java)
+        val guest = MfPlayer(MfPlayerId("guest-member"))
+        `when`(claim.factionId).thenReturn(hostId)
+        `when`(claimService.getClaim(block.chunk)).thenReturn(claim)
+        `when`(factionService.getFaction(hostId)).thenReturn(host)
+        `when`(playerService.getPlayer(fixture.player)).thenReturn(guest)
+        `when`(embassyService.access(guest.id, claim, ClaimAction.BUILD))
+            .thenReturn(EmbassyAccessDecision.GRANT)
+
+        uut.onBlockPlace(fixture.event)
+
+        verify(fixture.event, never()).isCancelled = true
+    }
+
     // Helper functions
 
     private fun createBasicFixture(): BlockPlaceListenerTestFixture {
@@ -211,6 +263,7 @@ class BlockPlaceListenerTest {
 
         val services = mock(com.dansplugins.factionsystem.service.Services::class.java)
         `when`(medievalFactions.services).thenReturn(services)
+        embassyService = defaultEmbassyService(services)
         `when`(services.gateService).thenReturn(gateService)
         `when`(services.claimService).thenReturn(claimService)
         `when`(services.factionService).thenReturn(factionService)
