@@ -168,16 +168,18 @@ class PhysicalInteractionProtectionTest {
     }
 
     @Test
-    fun physicalBypassIsSilentAndRecheckedWhileExplicitBypassStillNotifies() {
+    fun physicalBypassIsSilentAndRecheckedWhileExplicitBypassDelegatesNotice() {
         actor = actor.copy(isBypassEnabled = true)
         `when`(player.hasPermission("mf.bypass")).thenReturn(true)
         repeat(3) { assertFalse(dispatch().isCancelled) }
         assertTrue(notices.isEmpty())
+        verify(plugin, never()).notifyTerritoryBypass(player, actor)
         assertFalse(dispatch(Action.RIGHT_CLICK_BLOCK).isCancelled)
-        assertEquals(1, notices.size)
+        verify(plugin).notifyTerritoryBypass(player, actor)
         `when`(player.hasPermission("mf.bypass")).thenReturn(false)
         assertTrue(dispatch().isCancelled)
-        assertEquals(1, notices.size)
+        verify(plugin, times(1)).notifyTerritoryBypass(player, actor)
+        assertTrue(notices.isEmpty())
     }
 
     @ParameterizedTest

@@ -151,7 +151,8 @@ class PlayerInteractEntityListenerTest {
 
         // Assert
         verify(event, never()).isCancelled = true
-        verify(player).sendMessage(any(String::class.java))
+        verify(medievalFactions).notifyTerritoryBypass(player, mfPlayer)
+        verify(player, never()).sendMessage(any(String::class.java))
     }
 
     @Test

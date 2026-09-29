@@ -17,6 +17,7 @@ import com.dansplugins.factionsystem.faction.flag.MfFlags
 import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.failure.ServiceFailureType
 import com.dansplugins.factionsystem.lang.Language
+import com.dansplugins.factionsystem.notification.TerritoryBypassWarnings
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
@@ -348,12 +349,22 @@ class EntityInteractionProtectionTest {
         val target = entity()
         actor = actor.copy(isBypassEnabled = true)
         `when`(player.hasPermission("mf.bypass")).thenReturn(true)
+        val bypassWarnings = TerritoryBypassWarnings(plugin) { now }
+        doAnswer {
+            bypassWarnings.notify(
+                it.arguments[0] as Player,
+                (it.arguments[1] as MfPlayer).isBypassWarningMuted
+            )
+            null
+        }.`when`(plugin).notifyTerritoryBypass(player, actor)
         assertFalse(dispatch(true, target).isCancelled)
         assertFalse(dispatch(false, target).isCancelled)
         assertEquals(1, notices.size)
+        verify(plugin, times(2)).notifyTerritoryBypass(player, actor)
         `when`(player.hasPermission("mf.bypass")).thenReturn(false)
         assertTrue(dispatch(false, target).isCancelled)
         assertEquals(2, notices.size)
+        verify(plugin, times(2)).notifyTerritoryBypass(player, actor)
     }
 
     @Test
