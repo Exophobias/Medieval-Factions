@@ -13,6 +13,7 @@ import org.bukkit.ChatColor.RED
 import org.bukkit.Server
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
+import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.entity.Player
 import org.bukkit.scheduler.BukkitScheduler
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -56,6 +57,9 @@ class MfFactionBypassCommandTest {
         `when`(language["CommandFactionBypassWarningsOn"]).thenReturn("Warnings on")
         `when`(language["CommandFactionBypassWarningsOff"]).thenReturn("Warnings off")
         `when`(plugin.logger).thenReturn(mock(Logger::class.java))
+        val config = mock(FileConfiguration::class.java)
+        `when`(plugin.config).thenReturn(config)
+        `when`(config.getDouble("players.initialPower")).thenReturn(10.0)
 
         val server = mock(Server::class.java)
         scheduler = mock(BukkitScheduler::class.java)
@@ -79,8 +83,10 @@ class MfFactionBypassCommandTest {
         `when`(player.hasPermission("mf.bypass")).thenReturn(true)
         `when`(player.isOnline).thenReturn(true)
         `when`(player.uniqueId).thenReturn(UUID.randomUUID())
+        `when`(server.getPlayer(player.uniqueId)).thenReturn(player)
         currentPlayer = MfPlayer(MfPlayerId(player.uniqueId.toString()))
         `when`(playerService.getPlayer(player)).thenAnswer { currentPlayer }
+        `when`(playerService.getPlayer(currentPlayer.id)).thenAnswer { currentPlayer }
         `when`(playerService.save(anyArg())).thenAnswer { invocation ->
             currentPlayer = invocation.getArgument<MfPlayer>(0).copy(version = currentPlayer.version + 1)
             savedPlayers += currentPlayer
@@ -140,6 +146,27 @@ class MfFactionBypassCommandTest {
         assertTrue(currentPlayer.isBypassEnabled)
         assertEquals(2, savedPlayers.size)
         verify(player, times(2)).sendMessage("${GREEN}Warnings on")
+    }
+
+    @Test
+    fun queuedCommandsUseEachPriorSaveAndFinishInSubmissionOrder() {
+        assertTrue(uut.onCommand(player, command, "f", arrayOf("warnings", "off")))
+        assertTrue(uut.onCommand(player, command, "f", arrayOf("warnings", "on")))
+        assertTrue(uut.onCommand(player, command, "f", emptyArray()))
+        assertTrue(uut.onCommand(player, command, "f", emptyArray()))
+
+        assertEquals(1, asyncTasks.size, "one worker serializes this player's queued changes")
+        assertTrue(savedPlayers.isEmpty())
+        runScheduledTasks()
+
+        assertEquals(
+            listOf(true to false, false to false, false to true, false to false),
+            savedPlayers.map { it.isBypassWarningMuted to it.isBypassEnabled }
+        )
+        assertFalse(currentPlayer.isBypassWarningMuted)
+        assertFalse(currentPlayer.isBypassEnabled)
+        assertEquals(4, currentPlayer.version)
+        assertTrue(asyncTasks.isEmpty())
     }
 
     @Test
