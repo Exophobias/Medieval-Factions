@@ -186,7 +186,7 @@ class InventoryClickListener(private val plugin: MedievalFactions) : Listener {
                 EmbassyAccessDecision.GRANT -> continue
                 EmbassyAccessDecision.DENY -> {
                     if (mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass")) {
-                        player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                        plugin.notifyTerritoryBypass(player, mfPlayer)
                         continue
                     }
                     event.isCancelled = true
@@ -209,7 +209,7 @@ class InventoryClickListener(private val plugin: MedievalFactions) : Listener {
                     )
             ) {
                 if (mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass")) {
-                    player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                    plugin.notifyTerritoryBypass(player, mfPlayer)
                     return
                 }
                 event.isCancelled = true

@@ -12,7 +12,8 @@ data class MfPlayer(
     val power: Double = 0.0,
     val powerAtLogout: Double = 0.0,
     val isBypassEnabled: Boolean = false,
-    val chatChannel: MfFactionChatChannel? = null
+    val chatChannel: MfFactionChatChannel? = null,
+    val isBypassWarningMuted: Boolean = false
 ) {
     fun toBukkit() = id.toBukkitPlayer()
 
@@ -33,7 +34,8 @@ data class MfPlayer(
         power: Double = 0.0,
         powerOnLogout: Double = power,
         isBypassEnabled: Boolean = false,
-        chatChannel: MfFactionChatChannel? = null
+        chatChannel: MfFactionChatChannel? = null,
+        isBypassWarningMuted: Boolean = false
     ) : this(
         MfPlayerId.fromBukkitPlayer(player),
         version,
@@ -41,7 +43,8 @@ data class MfPlayer(
         power,
         powerOnLogout,
         isBypassEnabled,
-        chatChannel
+        chatChannel,
+        isBypassWarningMuted
     )
 
     constructor(

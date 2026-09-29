@@ -49,7 +49,7 @@ class PlayerBucketListener(private val plugin: MedievalFactions) : Listener {
             EmbassyAccessDecision.GRANT -> return
             EmbassyAccessDecision.DENY -> {
                 if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
-                    event.player.sendMessage("${ChatColor.RED}${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                    plugin.notifyTerritoryBypass(event.player, mfPlayer)
                 } else {
                     event.isCancelled = true
                     event.player.sendMessage("${ChatColor.RED}${plugin.language["CannotBreakBlockInFactionTerritory", claimFaction.name]}")
@@ -69,7 +69,7 @@ class PlayerBucketListener(private val plugin: MedievalFactions) : Listener {
                 )
         ) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
-                event.player.sendMessage("${ChatColor.RED}${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                plugin.notifyTerritoryBypass(event.player, mfPlayer)
             } else {
                 event.isCancelled = true
                 event.player.sendMessage("${ChatColor.RED}${plugin.language["CannotBreakBlockInFactionTerritory", claimFaction.name]}")

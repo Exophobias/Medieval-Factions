@@ -22,24 +22,74 @@ class MfFactionBypassCommand(private val plugin: MedievalFactions) : CommandExec
             sender.sendMessage("$RED${plugin.language["CommandFactionBypassNotAPlayer"]}")
             return true
         }
+
+        if (args.isNotEmpty() && !args[0].equals("warnings", ignoreCase = true)) {
+            sender.sendMessage("$RED${plugin.language["CommandFactionBypassUsage"]}")
+            return true
+        }
+        if (args.size > 2 || (args.size == 2 && !args[1].equals("on", true) && !args[1].equals("off", true))) {
+            sender.sendMessage("$RED${plugin.language["CommandFactionBypassUsage"]}")
+            return true
+        }
+
+        val playerService = plugin.services.playerService
+        val mfPlayer = playerService.getPlayer(sender) ?: MfPlayer(plugin, sender)
+        if (args.size == 1) {
+            sender.sendMessage("$GREEN${warningStatus(mfPlayer)}")
+            return true
+        }
+
+        val updatedPlayer = if (args.size == 2) {
+            mfPlayer.copy(isBypassWarningMuted = args[1].equals("off", true))
+        } else {
+            mfPlayer.copy(isBypassEnabled = !mfPlayer.isBypassEnabled)
+        }
         plugin.server.scheduler.runTaskAsynchronously(
             plugin,
             Runnable {
-                val playerService = plugin.services.playerService
-                val mfPlayer = playerService.getPlayer(sender) ?: MfPlayer(plugin, sender)
-                val updatedMfPlayer = playerService.save(mfPlayer.copy(isBypassEnabled = !mfPlayer.isBypassEnabled)).onFailure {
-                    sender.sendMessage("$RED${plugin.language["CommandFactionBypassFailedToSavePlayer"]}")
+                val saved = playerService.save(updatedPlayer).onFailure {
                     plugin.logger.log(Level.SEVERE, "Failed to save player: ${it.reason.message}", it.reason.cause)
+                    plugin.server.scheduler.runTask(
+                        plugin,
+                        Runnable {
+                            if (sender.isOnline) {
+                                sender.sendMessage("$RED${plugin.language["CommandFactionBypassFailedToSavePlayer"]}")
+                            }
+                        }
+                    )
                     return@Runnable
                 }
-                if (updatedMfPlayer.isBypassEnabled) {
-                    sender.sendMessage("$GREEN${plugin.language["CommandFactionBypassEnabled"]}")
-                } else {
-                    sender.sendMessage("$GREEN${plugin.language["CommandFactionBypassDisabled"]}")
-                }
+                plugin.server.scheduler.runTask(
+                    plugin,
+                    Runnable {
+                        if (args.size == 2 || saved.isBypassEnabled) {
+                            // Re-enabling warnings or bypass gives an immediate reminder on the next protected action.
+                            plugin.resetTerritoryBypassWarning(sender.uniqueId)
+                        }
+                        if (sender.isOnline) {
+                            val message = if (args.size == 2) {
+                                warningStatus(saved)
+                            } else if (saved.isBypassEnabled) {
+                                plugin.language["CommandFactionBypassEnabled"]
+                            } else {
+                                plugin.language["CommandFactionBypassDisabled"]
+                            }
+                            sender.sendMessage("$GREEN$message")
+                        }
+                    }
+                )
             }
         )
         return true
+    }
+
+    private fun warningStatus(player: MfPlayer): String {
+        val key = if (player.isBypassWarningMuted) {
+            "CommandFactionBypassWarningsOff"
+        } else {
+            "CommandFactionBypassWarningsOn"
+        }
+        return plugin.language[key]
     }
 
     override fun onTabComplete(
@@ -47,5 +97,16 @@ class MfFactionBypassCommand(private val plugin: MedievalFactions) : CommandExec
         command: Command,
         label: String,
         args: Array<out String>
-    ) = emptyList<String>()
+    ): List<String> {
+        if (!sender.hasPermission("mf.bypass")) return emptyList()
+        return when (args.size) {
+            1 -> listOf("warnings").filter { it.startsWith(args[0], ignoreCase = true) }
+            2 -> if (args[0].equals("warnings", true)) {
+                listOf("on", "off").filter { it.startsWith(args[1], ignoreCase = true) }
+            } else {
+                emptyList()
+            }
+            else -> emptyList()
+        }
+    }
 }

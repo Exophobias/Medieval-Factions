@@ -72,7 +72,7 @@ class BlockBreakListener(private val plugin: MedievalFactions) : Listener {
         val embassyAccess = plugin.services.embassyService.access(mfPlayer.id, claim, ClaimAction.BREAK)
         if (embassyAccess == EmbassyAccessDecision.DENY) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
-                event.player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                plugin.notifyTerritoryBypass(event.player, mfPlayer)
             } else {
                 event.isCancelled = true
                 event.player.sendMessage("$RED${plugin.language["CannotBreakBlockInFactionTerritory", claimFaction.name]}")
@@ -91,7 +91,7 @@ class BlockBreakListener(private val plugin: MedievalFactions) : Listener {
                 )
         ) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
-                event.player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                plugin.notifyTerritoryBypass(event.player, mfPlayer)
             } else if (!claimService.isWartimeBreakableBlock(mfPlayer.id, claim, event.block.type)) {
                 event.isCancelled = true
                 event.player.sendMessage("$RED${plugin.language["CannotBreakBlockInFactionTerritory", claimFaction.name]}")

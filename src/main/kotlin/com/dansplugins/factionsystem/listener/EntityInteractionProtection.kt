@@ -93,7 +93,7 @@ class EntityInteractionProtection(
             }
             EmbassyAccessDecision.DENY -> {
                 if (actor.isBypassEnabled && player.hasPermission("mf.bypass")) {
-                    notify(player, target, "$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                    plugin.notifyTerritoryBypass(player, actor)
                 } else {
                     event.isCancelled = true
                     notify(player, target, "$RED${plugin.language["CannotInteractWithEntityInFactionTerritory", faction.displayName]}")
@@ -106,7 +106,7 @@ class EntityInteractionProtection(
         if (villager && !faction.flags[plugin.flags.protectVillagerTrade]) return
         if (claims.isInteractionAllowed(actor.id, claim)) return
         if (actor.isBypassEnabled && player.hasPermission("mf.bypass")) {
-            notify(player, target, "$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+            plugin.notifyTerritoryBypass(player, actor)
             return
         }
         // Inventory holders must reach MF's hard CONTAINER exclusion before a provider can grant

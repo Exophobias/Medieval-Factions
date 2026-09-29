@@ -84,11 +84,13 @@ import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.locks.MfRpkLockService
 import com.dansplugins.factionsystem.map.dynmap.DynmapService
 import com.dansplugins.factionsystem.notification.MfNotificationService
+import com.dansplugins.factionsystem.notification.TerritoryBypassWarnings
 import com.dansplugins.factionsystem.notification.mailboxes.MailboxesNotificationService
 import com.dansplugins.factionsystem.notification.noop.NoOpNotificationService
 import com.dansplugins.factionsystem.notification.rpkit.RpkNotificationService
 import com.dansplugins.factionsystem.placeholder.MedievalFactionsPlaceholderExpansion
 import com.dansplugins.factionsystem.player.JooqMfPlayerRepository
+import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerRepository
 import com.dansplugins.factionsystem.player.MfPlayerService
@@ -137,6 +139,20 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 
 class MedievalFactions : JavaPlugin() {
+    private val territoryBypassWarnings by lazy { TerritoryBypassWarnings(this) }
+
+    fun notifyTerritoryBypass(player: Player, mfPlayer: MfPlayer) {
+        territoryBypassWarnings.notify(player, mfPlayer.isBypassWarningMuted)
+    }
+
+    fun resetTerritoryBypassWarning(playerId: UUID) {
+        territoryBypassWarnings.reset(playerId)
+    }
+
+    fun forgetTerritoryBypassWarning(playerId: UUID) {
+        territoryBypassWarnings.forget(playerId)
+    }
+
     var disposableFixtureMutationFence: com.dansplugins.factionsystem.fixture.DisposableFixtureMutationFence? = null
         private set
 

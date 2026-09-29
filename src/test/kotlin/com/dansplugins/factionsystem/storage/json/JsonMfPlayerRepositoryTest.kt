@@ -5,6 +5,7 @@ import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
 import java.util.logging.Logger
@@ -143,6 +145,24 @@ class JsonMfPlayerRepositoryTest {
         val result = repository.upsert(player)
 
         assertTrue(result.isBypassEnabled)
+    }
+
+    @Test
+    fun `legacy JSON players default to unmuted and preference round trips`() {
+        val playerId = MfPlayerId(UUID.randomUUID().toString())
+        Files.writeString(
+            tempDir.resolve("players.json"),
+            """{"players":[{"id":"${playerId.value}","version":1,"name":"Legacy","power":10.0,"powerAtLogout":10.0,"isBypassEnabled":true}]}"""
+        )
+
+        val legacy = repository.getPlayer(playerId)!!
+        assertFalse(legacy.isBypassWarningMuted)
+
+        repository.upsert(legacy.copy(isBypassWarningMuted = true))
+        assertTrue(repository.getPlayer(playerId)!!.isBypassWarningMuted)
+
+        val persisted = Files.readString(tempDir.resolve("players.json"))
+        assertTrue(persisted.contains("\"isBypassWarningMuted\": true"))
     }
 
     @Test

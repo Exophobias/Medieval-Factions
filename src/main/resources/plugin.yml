@@ -65,7 +65,7 @@ commands:
       /f sethome - Sets your faction's home
       /f home - Teleports to your faction's home
       /f flag [list|set] - Faction flag management
-      /f bypass - Toggles bypass mode
+      /f bypass - Toggles bypass mode; /f bypass warnings [on|off] controls territory warnings
       /f chat (faction|vassals|allies) - Toggles faction chat
       /f set [name|description|prefix] (value) - Sets faction name/description/prefix
       /f bonuspower [faction] [bonus power] - Sets faction bonus power

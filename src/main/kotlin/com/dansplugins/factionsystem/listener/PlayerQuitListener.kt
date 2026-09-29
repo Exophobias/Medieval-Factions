@@ -16,6 +16,7 @@ class PlayerQuitListener(
     @EventHandler
     fun onPlayerQuit(event: PlayerQuitEvent) {
         entityInteractionProtection.forgetPlayer(event.player.uniqueId)
+        plugin.forgetTerritoryBypassWarning(event.player.uniqueId)
 
         val teleportService = plugin.services.teleportService
         teleportService.cancelTeleportation(event.player)

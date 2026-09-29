@@ -30,12 +30,14 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
             .set(MF_PLAYER.POWER, player.power)
             .set(MF_PLAYER.POWER_AT_LOGOUT, player.powerAtLogout)
             .set(MF_PLAYER.BYPASS_ENABLED, player.isBypassEnabled)
+            .set(MF_PLAYER.BYPASS_WARNING_MUTED, player.isBypassWarningMuted)
             .set(MF_PLAYER.CHAT_CHANNEL, player.chatChannel?.name)
             .onConflict(MF_PLAYER.ID).doUpdate()
             .set(MF_PLAYER.NAME, player.name)
             .set(MF_PLAYER.POWER, player.power)
             .set(MF_PLAYER.POWER_AT_LOGOUT, player.powerAtLogout)
             .set(MF_PLAYER.BYPASS_ENABLED, player.isBypassEnabled)
+            .set(MF_PLAYER.BYPASS_WARNING_MUTED, player.isBypassWarningMuted)
             .set(MF_PLAYER.CHAT_CHANNEL, player.chatChannel?.name)
             .set(MF_PLAYER.VERSION, player.version + 1)
             .where(MF_PLAYER.ID.eq(player.id.value))
@@ -127,6 +129,7 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
         power,
         powerAtLogout,
         bypassEnabled,
-        chatChannel?.let(MfFactionChatChannel::valueOf)
+        chatChannel?.let(MfFactionChatChannel::valueOf),
+        bypassWarningMuted
     )
 }

@@ -320,7 +320,7 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
                 )
         ) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
-                if (notify) event.player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                if (notify) plugin.notifyTerritoryBypass(event.player, mfPlayer)
             } else {
                 // Check if player is at war and trying to place a ladder
                 // Only allow if they're right-clicking with a ladder on a solid, non-interactable block

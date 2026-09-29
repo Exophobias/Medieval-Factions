@@ -18,6 +18,7 @@ class MfPlayerTest {
         val power = 10.0
         val powerAtLogout = 8.0
         val isBypassEnabled = true
+        val isBypassWarningMuted = true
         val chatChannel = MfFactionChatChannel.FACTION
 
         // execute
@@ -28,7 +29,8 @@ class MfPlayerTest {
             power = power,
             powerAtLogout = powerAtLogout,
             isBypassEnabled = isBypassEnabled,
-            chatChannel = chatChannel
+            chatChannel = chatChannel,
+            isBypassWarningMuted = isBypassWarningMuted
         )
 
         // verify
@@ -38,6 +40,7 @@ class MfPlayerTest {
         assertEquals(power, player.power)
         assertEquals(powerAtLogout, player.powerAtLogout)
         assertTrue(player.isBypassEnabled)
+        assertTrue(player.isBypassWarningMuted)
         assertEquals(chatChannel, player.chatChannel)
     }
 
@@ -56,6 +59,7 @@ class MfPlayerTest {
         assertEquals(0.0, player.power)
         assertEquals(0.0, player.powerAtLogout)
         assertFalse(player.isBypassEnabled)
+        assertFalse(player.isBypassWarningMuted)
         assertNull(player.chatChannel)
     }
 
@@ -137,6 +141,14 @@ class MfPlayerTest {
 
         // verify
         assertFalse(player.isBypassEnabled)
+    }
+
+    @Test
+    fun testBypassWarningPreferenceSurvivesCopy() {
+        val player = MfPlayer(id = MfPlayerId("test-player-id"), isBypassWarningMuted = true)
+
+        assertTrue(player.copy(power = 12.0).isBypassWarningMuted)
+        assertFalse(player.copy(isBypassWarningMuted = false).isBypassWarningMuted)
     }
 
     @Test

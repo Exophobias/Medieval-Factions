@@ -86,7 +86,7 @@ class BlockPlaceListener(private val plugin: MedievalFactions) : Listener {
             EmbassyAccessDecision.GRANT -> return
             EmbassyAccessDecision.DENY -> {
                 if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
-                    event.player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                    plugin.notifyTerritoryBypass(event.player, mfPlayer)
                 } else {
                     event.isCancelled = true
                     event.player.sendMessage("$RED${plugin.language["CannotPlaceBlockInFactionTerritory", claimFaction.name]}")
@@ -106,7 +106,7 @@ class BlockPlaceListener(private val plugin: MedievalFactions) : Listener {
                 )
         ) {
             if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
-                event.player.sendMessage("$RED${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                plugin.notifyTerritoryBypass(event.player, mfPlayer)
             } else if (playerFaction != null && relationshipService.getFactionsAtWarWith(playerFaction.id).contains(claimFaction.id)) {
                 val isLadderAllowed = event.block.type == Material.LADDER && plugin.config.getBoolean("factions.laddersPlaceableInEnemyFactionTerritory")
                 if (!isLadderAllowed && !claimService.isWartimePlaceableBlock(mfPlayer.id, claim, event.block.type)) {

@@ -63,7 +63,7 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
                         EmbassyAccessDecision.GRANT -> return
                         EmbassyAccessDecision.DENY -> {
                             if (damagerMfPlayer.isBypassEnabled && damagerPlayer.hasPermission("mf.bypass")) {
-                                damagerPlayer.sendMessage("${ChatColor.RED}${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                                plugin.notifyTerritoryBypass(damagerPlayer, damagerMfPlayer)
                             } else {
                                 event.isCancelled = true
                             }
@@ -88,7 +88,7 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
                     return
                 }
                 if (damagerMfPlayer.isBypassEnabled && damagerPlayer.hasPermission("mf.bypass")) {
-                    damagerPlayer.sendMessage("${ChatColor.RED}${plugin.language["FactionTerritoryProtectionBypassed"]}")
+                    plugin.notifyTerritoryBypass(damagerPlayer, damagerMfPlayer)
                     return
                 }
                 event.isCancelled = true

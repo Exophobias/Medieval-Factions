@@ -523,8 +523,8 @@ An ended active embassy enters a 14-day clearing period. Guests may break blocks
 
 ### `/faction bypass` or `/f bypass`
 **Permission:** `mf.bypass` (default: op)  
-**Description:** Toggles bypass mode, allowing you to bypass faction protections.  
-**Usage:** `/f bypass`
+**Description:** Toggles bypass mode, allowing you to bypass faction protections. Territory bypass warnings appear at most once every 60 seconds per player by default. You can turn those warning messages off or back on without changing bypass mode. The warning choice is saved per player. Lock bypass messages are separate.
+**Usage:** `/f bypass`; `/f bypass warnings [on|off]` (omit `on|off` to view the current setting)
 
 ### `/faction admin create [name]` or `/f admin create [name]`
 **Permission:** `mf.admin.create` (default: op)  
