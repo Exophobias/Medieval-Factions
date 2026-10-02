@@ -48,7 +48,9 @@ class BlockInteractionPolicy(private val plugin: MedievalFactions) {
         val embassies = plugin.services.embassyService
         val embassyAccess = if (claim != null && embassies.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)) {
             embassies.access(actor.id, claim, overrideActionFor(block))
-        } else EmbassyAccessDecision.NONE
+        } else {
+            EmbassyAccessDecision.NONE
+        }
         if (embassyAccess == EmbassyAccessDecision.DENY && !bypass) {
             return Decision(Denial.EMBASSY, claim?.let { plugin.services.factionService.getFaction(it.factionId)?.name ?: it.factionId.value } ?: "")
         }
@@ -58,43 +60,65 @@ class BlockInteractionPolicy(private val plugin: MedievalFactions) {
         val blockData = block.blockData
         val holder = (block.state as? Chest)?.inventory?.holder
         val parts = if (blockData is Bisected) {
-            if (blockData.half == Bisected.Half.BOTTOM) listOf(block, block.getRelative(UP))
-            else listOf(block, block.getRelative(DOWN))
+            if (blockData.half == Bisected.Half.BOTTOM) {
+                listOf(block, block.getRelative(UP))
+            } else {
+                listOf(block, block.getRelative(DOWN))
+            }
         } else if (holder is DoubleChest) {
             listOfNotNull((holder.leftSide as? Chest)?.block, (holder.rightSide as? Chest)?.block)
-        } else listOf(block)
+        } else {
+            listOf(block)
+        }
         val lock = parts.mapNotNull { plugin.services.lockService.getLockedBlock(MfBlockPosition.fromBukkitBlock(it)) }.firstOrNull()
         if (lock != null) {
             if (player.uniqueId.toString() in (lock.accessors + lock.playerId).map(MfPlayerId::value)) {
                 return Decision(restrictHeldItem = restrictHeldItem)
             }
-            return if (bypass || hasLockBypassPermission(actor)) Decision(lockOwner = lock.playerId, lockBypass = true, restrictHeldItem = restrictHeldItem)
-            else Decision(Denial.LOCKED, lockOwner = lock.playerId, restrictHeldItem = restrictHeldItem)
+            return if (bypass || hasLockBypassPermission(actor)) {
+                Decision(lockOwner = lock.playerId, lockBypass = true, restrictHeldItem = restrictHeldItem)
+            } else {
+                Decision(Denial.LOCKED, lockOwner = lock.playerId, restrictHeldItem = restrictHeldItem)
+            }
         }
         if (plugin.config.getBoolean("factions.nonMembersCanInteractWithDoors") &&
-            (blockData is Door || blockData is TrapDoor || blockData is FenceGateData)) {
+            (blockData is Door || blockData is TrapDoor || blockData is FenceGateData)
+        ) {
             return Decision(restrictHeldItem = restrictHeldItem)
         }
         if (claim == null) {
-            return if (plugin.config.getBoolean("wilderness.interaction.prevent", false)) Decision(Denial.WILDERNESS)
-            else Decision()
+            return if (plugin.config.getBoolean("wilderness.interaction.prevent", false)) {
+                Decision(Denial.WILDERNESS)
+            } else {
+                Decision()
+            }
         }
         val claimFaction = plugin.services.factionService.getFaction(claim.factionId) ?: return Decision(restrictHeldItem = restrictHeldItem)
         if (embassyAccess != EmbassyAccessDecision.NONE || claims.isInteractionAllowed(actor.id, claim) ||
-            claims.isOverridden(actor.id, block.world, block.x, block.y, block.z, overrideActionFor(block))) {
+            claims.isOverridden(actor.id, block.world, block.x, block.y, block.z, overrideActionFor(block))
+        ) {
             return Decision(restrictHeldItem = restrictHeldItem)
         }
         if (bypass) return Decision(territoryBypass = actor, restrictHeldItem = restrictHeldItem)
         if (action == Action.RIGHT_CLICK_BLOCK && heldMaterial == Material.LADDER && block.type.isSolid && !block.type.isInteractable &&
-            claims.isWartimeLadderPlacementAllowed(actor.id, claim, true)) return Decision(restrictHeldItem = restrictHeldItem)
+            claims.isWartimeLadderPlacementAllowed(actor.id, claim, true)
+        ) {
+                return Decision(restrictHeldItem = restrictHeldItem)
+            }
         val wartime = when (action) {
             Action.LEFT_CLICK_BLOCK -> claims.isWartimeBreakableBlock(actor.id, claim, block.type)
-            Action.RIGHT_CLICK_BLOCK -> if (block.type.isInteractable) claims.isWartimeInteractableBlock(actor.id, claim, block.type)
-                else heldMaterial != null && claims.isWartimePlaceableBlock(actor.id, claim, heldMaterial)
+            Action.RIGHT_CLICK_BLOCK -> if (block.type.isInteractable) {
+                claims.isWartimeInteractableBlock(actor.id, claim, block.type)
+            } else {
+                heldMaterial != null && claims.isWartimePlaceableBlock(actor.id, claim, heldMaterial)
+            }
             else -> false
         }
-        return if (wartime) Decision(restrictHeldItem = restrictHeldItem)
-        else Decision(Denial.TERRITORY, claimFaction.name ?: claim.factionId.value, restrictHeldItem = restrictHeldItem)
+        return if (wartime) {
+            Decision(restrictHeldItem = restrictHeldItem)
+        } else {
+            Decision(Denial.TERRITORY, claimFaction.name ?: claim.factionId.value, restrictHeldItem = restrictHeldItem)
+        }
     }
 
     fun hasLockBypassPermission(actor: MfPlayer): Boolean {

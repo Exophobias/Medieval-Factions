@@ -26,6 +26,7 @@ import com.dansplugins.factionsystem.faction.flag.MfFlagValueCoercionSuccess
 import com.dansplugins.factionsystem.faction.role.MfFactionRoles
 import com.dansplugins.factionsystem.faction.withRole
 import com.dansplugins.factionsystem.failure.ServiceFailure
+import com.dansplugins.factionsystem.listener.BlockInteractionPolicy
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationship
@@ -37,12 +38,11 @@ import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.Success
 import org.bukkit.Chunk
 import org.bukkit.Location
-import org.bukkit.World
 import org.bukkit.Material
+import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
 import org.bukkit.event.block.Action
-import com.dansplugins.factionsystem.listener.BlockInteractionPolicy
 import java.util.UUID
 import com.dansplugins.factionsystem.claim.EmbassyAccessDecision as NativeEmbassyAccessDecision
 

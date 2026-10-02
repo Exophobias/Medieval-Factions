@@ -175,10 +175,13 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         if (decision.restrictHeldItem) event.setUseItemInHand(DENY)
         if (decision.allowed) {
             if (decision.lockBypass && notify) {
-                plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable {
+                plugin.server.scheduler.runTaskAsynchronously(
+                    plugin,
+                    Runnable {
                     val owner = plugin.services.playerService.getPlayer(decision.lockOwner!!)
                     event.player.sendMessage("$RED${plugin.language["LockProtectionBypassed", owner?.toBukkit()?.name ?: plugin.language["UnknownPlayer"]]}")
-                })
+                }
+                )
             }
             if (decision.territoryBypass != null && notify) plugin.notifyTerritoryBypass(event.player, decision.territoryBypass)
             return
@@ -190,10 +193,13 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
                 event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", "embassy boundary"]}")
             BlockInteractionPolicy.Denial.EMBASSY, BlockInteractionPolicy.Denial.TERRITORY ->
                 event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", decision.ownerName]}")
-            BlockInteractionPolicy.Denial.LOCKED -> plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable {
+            BlockInteractionPolicy.Denial.LOCKED -> plugin.server.scheduler.runTaskAsynchronously(
+                plugin,
+                Runnable {
                 val owner = plugin.services.playerService.getPlayer(decision.lockOwner!!)
                 event.player.sendMessage("$RED${plugin.language["BlockLocked", owner?.toBukkit()?.name ?: plugin.language["UnknownPlayer"]]}")
-            })
+            }
+            )
             BlockInteractionPolicy.Denial.WILDERNESS -> if (plugin.config.getBoolean("wilderness.interaction.alert", true)) {
                 event.player.sendMessage("$RED${plugin.language["CannotInteractBlockInWilderness"]}")
             }
@@ -737,5 +743,4 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
             }
         )
     }
-
 }
