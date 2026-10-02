@@ -1863,6 +1863,7 @@ class PlayerInteractListenerTest {
 
     @Test
     fun publicBlockAdmissionRechecksLiveClaimPolicyWithoutEventsOrSideEffects() {
+        mockBlockData<BlockData>()
         setupConfigForDoorInteraction(enabled = false)
         val (_, actor) = setupPlayerMocks(fixture.player)
         val (claim, _) = setupClaimAndFaction(fixture.block)
@@ -1882,6 +1883,7 @@ class PlayerInteractListenerTest {
 
     @Test
     fun publicBlockAdmissionHonorsLocksAndRefusesInteractionModesAndUnavailableProvider() {
+        mockBlockData<BlockData>()
         setupConfigForDoorInteraction(enabled = false)
         val (_, actor) = setupPlayerMocks(fixture.player)
         `when`(fixture.player.isOnline).thenReturn(true)

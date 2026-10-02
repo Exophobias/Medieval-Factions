@@ -94,7 +94,7 @@ class BlockInteractionPolicy(private val plugin: MedievalFactions) {
             else -> false
         }
         return if (wartime) Decision(restrictHeldItem = restrictHeldItem)
-        else Decision(Denial.TERRITORY, claimFaction.name, restrictHeldItem = restrictHeldItem)
+        else Decision(Denial.TERRITORY, claimFaction.name ?: claim.factionId.value, restrictHeldItem = restrictHeldItem)
     }
 
     fun hasLockBypassPermission(actor: MfPlayer): Boolean {
