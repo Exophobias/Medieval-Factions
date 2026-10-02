@@ -38,6 +38,11 @@ import dev.forkhandles.result4k.Success
 import org.bukkit.Chunk
 import org.bukkit.Location
 import org.bukkit.World
+import org.bukkit.Material
+import org.bukkit.block.Block
+import org.bukkit.entity.Player
+import org.bukkit.event.block.Action
+import com.dansplugins.factionsystem.listener.BlockInteractionPolicy
 import java.util.UUID
 import com.dansplugins.factionsystem.claim.EmbassyAccessDecision as NativeEmbassyAccessDecision
 
@@ -47,6 +52,16 @@ import com.dansplugins.factionsystem.claim.EmbassyAccessDecision as NativeEmbass
  * service layer, so an internal refactor is contained here and never reaches API consumers.
  */
 class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : MedievalFactionsApi {
+
+    private val blockInteractionPolicy = BlockInteractionPolicy(plugin)
+
+    override fun canInteractWithBlock(player: Player, block: Block, action: Action, heldMaterial: Material?): Boolean {
+        if (!plugin.isEnabled || !plugin.server.isPrimaryThread || !player.isOnline || player.world != block.world) return false
+        if (action != Action.LEFT_CLICK_BLOCK && action != Action.RIGHT_CLICK_BLOCK && action != Action.PHYSICAL) return false
+        if (plugin.services.interactionService.getInteractionStatus(MfPlayerId(player.uniqueId.toString())) != null) return false
+        val decision = blockInteractionPolicy.evaluate(player, block, action, heldMaterial)
+        return decision.allowed && !decision.restrictHeldItem
+    }
 
     override fun isEmbassyReservedAt(worldId: UUID, chunkX: Int, chunkZ: Int): Boolean =
         plugin.services.embassyService.hasReservedEmbassy(worldId, chunkX, chunkZ)

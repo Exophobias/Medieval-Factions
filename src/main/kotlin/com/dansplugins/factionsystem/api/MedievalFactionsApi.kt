@@ -5,6 +5,10 @@ import org.bukkit.Bukkit
 import org.bukkit.Chunk
 import org.bukkit.Location
 import org.bukkit.World
+import org.bukkit.Material
+import org.bukkit.block.Block
+import org.bukkit.entity.Player
+import org.bukkit.event.block.Action
 import java.util.UUID
 
 /**
@@ -90,6 +94,15 @@ import java.util.UUID
  * stale identity with fresh territory. Re-fetch rather than caching a view.
  */
 interface MedievalFactionsApi {
+
+    /**
+     * Live native block interaction policy, including locks, embassies, wilderness,
+     * faction overrides, war exceptions, and the saved staff bypass toggle. Main thread
+     * only: reads Bukkit block state. No chat, player registration, mode actions, events,
+     * persistence, or world changes. Active lock/gate interaction modes are refused.
+     * The default refuses so providers without this capability cannot authorize work.
+     */
+    fun canInteractWithBlock(player: Player, block: Block, action: Action, heldMaterial: Material?): Boolean = false
 
     // --- Reads ---
     //

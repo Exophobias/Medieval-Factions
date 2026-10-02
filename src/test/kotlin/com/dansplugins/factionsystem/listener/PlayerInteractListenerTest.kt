@@ -1861,6 +1861,47 @@ class PlayerInteractListenerTest {
         `when`(fixture.block.blockData).thenReturn(blockData as BlockData?)
     }
 
+    @Test
+    fun publicBlockAdmissionRechecksLiveClaimPolicyWithoutEventsOrSideEffects() {
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, actor) = setupPlayerMocks(fixture.player)
+        val (claim, _) = setupClaimAndFaction(fixture.block)
+        `when`(fixture.player.isOnline).thenReturn(true)
+        `when`(fixture.player.world).thenReturn(fixture.world)
+        `when`(medievalFactions.isEnabled).thenReturn(true)
+        `when`(medievalFactions.server.isPrimaryThread).thenReturn(true)
+        `when`(claimService.isInteractionAllowed(actor, claim)).thenReturn(true)
+        val api = com.dansplugins.factionsystem.api.impl.DefaultMedievalFactionsApi(medievalFactions)
+        kotlin.test.assertTrue(api.canInteractWithBlock(fixture.player, fixture.block, Action.RIGHT_CLICK_BLOCK, null))
+        `when`(claimService.isInteractionAllowed(actor, claim)).thenReturn(false)
+        kotlin.test.assertFalse(api.canInteractWithBlock(fixture.player, fixture.block, Action.RIGHT_CLICK_BLOCK, null))
+        verify(fixture.player, never()).sendMessage(any(String::class.java))
+        verify(scheduler, never()).runTaskAsynchronously(eq(medievalFactions), any(Runnable::class.java))
+        verify(fixture.event, never()).isCancelled = true
+    }
+
+    @Test
+    fun publicBlockAdmissionHonorsLocksAndRefusesInteractionModesAndUnavailableProvider() {
+        setupConfigForDoorInteraction(enabled = false)
+        val (_, actor) = setupPlayerMocks(fixture.player)
+        `when`(fixture.player.isOnline).thenReturn(true)
+        `when`(fixture.player.world).thenReturn(fixture.world)
+        `when`(medievalFactions.isEnabled).thenReturn(true)
+        `when`(medievalFactions.server.isPrimaryThread).thenReturn(true)
+        setupLockedBlock(playerIsAccessor = true, playerIdForAccess = actor)
+        val api = com.dansplugins.factionsystem.api.impl.DefaultMedievalFactionsApi(medievalFactions)
+        kotlin.test.assertTrue(api.canInteractWithBlock(fixture.player, fixture.block, Action.RIGHT_CLICK_BLOCK, null))
+        `when`(interactionService.getInteractionStatus(actor)).thenReturn(com.dansplugins.factionsystem.interaction.MfInteractionStatus.LOCKING)
+        kotlin.test.assertFalse(api.canInteractWithBlock(fixture.player, fixture.block, Action.RIGHT_CLICK_BLOCK, null))
+        `when`(interactionService.getInteractionStatus(actor)).thenReturn(null)
+        setupLockedBlock()
+        kotlin.test.assertFalse(api.canInteractWithBlock(fixture.player, fixture.block, Action.RIGHT_CLICK_BLOCK, null))
+        `when`(medievalFactions.isEnabled).thenReturn(false)
+        kotlin.test.assertFalse(api.canInteractWithBlock(fixture.player, fixture.block, Action.RIGHT_CLICK_BLOCK, null))
+        verify(fixture.player, never()).sendMessage(any(String::class.java))
+        verify(scheduler, never()).runTaskAsynchronously(eq(medievalFactions), any(Runnable::class.java))
+    }
+
     private fun setupConfigForDoorInteraction(enabled: Boolean) {
         `when`(medievalFactions.config).thenReturn(mock(org.bukkit.configuration.file.FileConfiguration::class.java))
         `when`(medievalFactions.config.getBoolean("factions.nonMembersCanInteractWithDoors")).thenReturn(enabled)

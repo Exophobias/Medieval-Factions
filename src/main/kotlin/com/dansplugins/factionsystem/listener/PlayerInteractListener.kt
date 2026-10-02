@@ -5,8 +5,6 @@ import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.area.MfCuboidArea
 import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
-import com.dansplugins.factionsystem.claim.MfClaimedChunk
-import com.dansplugins.factionsystem.claim.MfEmbassyStatus
 import com.dansplugins.factionsystem.gate.MfGate
 import com.dansplugins.factionsystem.gate.MfGateCreationContext
 import com.dansplugins.factionsystem.interaction.MfInteractionStatus.ADDING_ACCESSOR
@@ -33,9 +31,7 @@ import org.bukkit.block.Chest
 import org.bukkit.block.DoubleChest
 import org.bukkit.block.data.Bisected
 import org.bukkit.block.data.Bisected.Half.BOTTOM
-import org.bukkit.block.data.Openable
 import org.bukkit.block.data.type.Door
-import org.bukkit.block.data.type.TrapDoor
 import org.bukkit.entity.Player
 import org.bukkit.event.Event.Result.DENY
 import org.bukkit.event.EventHandler
@@ -45,15 +41,13 @@ import org.bukkit.event.block.Action.PHYSICAL
 import org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot.HAND
-import org.bukkit.inventory.InventoryHolder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Level.SEVERE
-import org.bukkit.block.data.type.Gate as FenceGateData
 
 class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
 
     private val pendingPlayers = ConcurrentHashMap.newKeySet<MfPlayerId>()
-    private val embassyBoundary = EmbassyBoundary(plugin)
+    private val interactionPolicy = BlockInteractionPolicy(plugin)
     private companion object {
         // Hand-used items whose right-click use acts on the player rather than on the world - drinking,
         // throwing, drawing or raising - and which therefore have no block-targeted behaviour at all.
@@ -166,194 +160,46 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
      * @return true if the player's faction role has the BYPASS_LOCKS permission, false otherwise
      *         (including when the player has no faction or no role)
      */
-    private fun hasLockBypassPermission(mfPlayer: MfPlayer): Boolean {
-        val factionService = plugin.services.factionService
-        val playerFaction = factionService.getFaction(mfPlayer.id) ?: return false
-        val role = playerFaction.getRole(mfPlayer.id) ?: return false
-        return role.hasPermission(playerFaction, plugin.factionPermissions.bypassLocks)
-    }
+    private fun hasLockBypassPermission(mfPlayer: MfPlayer): Boolean =
+        interactionPolicy.hasLockBypassPermission(mfPlayer)
 
     private fun applyProtections(event: PlayerInteractEvent) {
-        val clickedBlock = event.clickedBlock ?: return
-        val playerService = plugin.services.playerService
-        val claimService = plugin.services.claimService
-        val mfPlayer = playerService.getPlayer(event.player)
-        // Physical events repeat while a player stands on a protected block. Recheck enforcement
-        // every time, but do not schedule owner-name lookups or flood chat for those passive events.
+        val block = event.clickedBlock ?: return
+        val decision = interactionPolicy.evaluate(event.player, block, event.action, if (event.hasItem()) event.item?.type else null)
         val notify = event.action != PHYSICAL
-
-        if (mfPlayer == null) {
+        if (decision.denial == BlockInteractionPolicy.Denial.UNKNOWN_PLAYER) {
             event.isCancelled = true
             registerMissingPlayer(event.player)
             return
         }
-
-        // Bukkit exposes a cross-chunk double chest as one inventory. Refuse opening it at the
-        // edge before the ordinary clicked-half claim check or a lock accessor can return early.
-        if (crossesEmbassyChestBoundary(clickedBlock) &&
-            !(mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass"))
-        ) {
-            val deniedInFull = denyInteraction(event)
-            if (deniedInFull && notify) {
+        if (decision.restrictHeldItem) event.setUseItemInHand(DENY)
+        if (decision.allowed) {
+            if (decision.lockBypass && notify) {
+                plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable {
+                    val owner = plugin.services.playerService.getPlayer(decision.lockOwner!!)
+                    event.player.sendMessage("$RED${plugin.language["LockProtectionBypassed", owner?.toBukkit()?.name ?: plugin.language["UnknownPlayer"]]}")
+                })
+            }
+            if (decision.territoryBypass != null && notify) plugin.notifyTerritoryBypass(event.player, decision.territoryBypass)
+            return
+        }
+        val deniedInFull = denyInteraction(event)
+        if (!deniedInFull || !notify) return
+        when (decision.denial) {
+            BlockInteractionPolicy.Denial.EMBASSY_BOUNDARY ->
                 event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", "embassy boundary"]}")
+            BlockInteractionPolicy.Denial.EMBASSY, BlockInteractionPolicy.Denial.TERRITORY ->
+                event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", decision.ownerName]}")
+            BlockInteractionPolicy.Denial.LOCKED -> plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable {
+                val owner = plugin.services.playerService.getPlayer(decision.lockOwner!!)
+                event.player.sendMessage("$RED${plugin.language["BlockLocked", owner?.toBukkit()?.name ?: plugin.language["UnknownPlayer"]]}")
+            })
+            BlockInteractionPolicy.Denial.WILDERNESS -> if (plugin.config.getBoolean("wilderness.interaction.alert", true)) {
+                event.player.sendMessage("$RED${plugin.language["CannotInteractBlockInWilderness"]}")
             }
-            return
-        }
-
-        val claim = claimService.getClaim(clickedBlock.chunk)
-        val embassies = plugin.services.embassyService
-        val embassyAccess = if (claim != null &&
-            embassies.hasActiveOrClearingEmbassy(claim.worldId, claim.x, claim.z)
-        ) {
-            embassies.access(mfPlayer.id, claim, overrideActionFor(clickedBlock))
-        } else {
-            EmbassyAccessDecision.NONE
-        }
-        if (embassyAccess == EmbassyAccessDecision.DENY &&
-            !(mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass"))
-        ) {
-            val deniedInFull = denyInteraction(event)
-            if (deniedInFull && notify) {
-                val ownerName = claim?.let { plugin.services.factionService.getFaction(it.factionId)?.name ?: it.factionId.value } ?: ""
-                event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", ownerName]}")
-            }
-            return
-        }
-        if (embassyAccess == EmbassyAccessDecision.GRANT && event.action == RIGHT_CLICK_BLOCK && claim != null) {
-            val status = embassies.getAt(claim.worldId, claim.x, claim.z)?.status
-            if (status == MfEmbassyStatus.CLEARING || status == MfEmbassyStatus.CONQUEST_PASSAGE) {
-                // Guests may open a door or container to retrieve property, but a held item
-                // cannot bonemeal, ignite or otherwise mutate the parcel on that same click.
-                event.setUseItemInHand(DENY)
-            }
-        }
-
-        // Handle locks first
-        val lockService = plugin.services.lockService
-        val blockData = clickedBlock.blockData
-        val holder = (clickedBlock.state as? Chest)?.inventory?.holder
-        val blocks = if (blockData is Bisected) {
-            if (blockData.half == BOTTOM) {
-                listOf(clickedBlock, clickedBlock.getRelative(UP))
-            } else {
-                listOf(clickedBlock, clickedBlock.getRelative(DOWN))
-            }
-        } else if (holder is DoubleChest) {
-            val left = holder.leftSide as? Chest
-            val right = holder.rightSide as? Chest
-            listOfNotNull(left?.block, right?.block)
-        } else {
-            listOf(clickedBlock)
-        }
-        val lockedBlocks = blocks.mapNotNull { lockService.getLockedBlock(MfBlockPosition.fromBukkitBlock(it)) }
-        val lockedBlock = lockedBlocks.firstOrNull()
-
-        if (lockedBlock != null) {
-            if (event.player.uniqueId.toString() !in (lockedBlock.accessors + lockedBlock.playerId).map(MfPlayerId::value)) {
-                // Check if player has bypass permission from mf.bypass or faction permission
-                if ((mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) || hasLockBypassPermission(mfPlayer)) {
-                    if (notify) {
-                        plugin.server.scheduler.runTaskAsynchronously(
-                            plugin,
-                            Runnable {
-                                val owner = playerService.getPlayer(lockedBlock.playerId)
-                                event.player.sendMessage("$RED${plugin.language["LockProtectionBypassed", owner?.toBukkit()?.name ?: plugin.language["UnknownPlayer"]]}")
-                            }
-                        )
-                    }
-                } else {
-                    // A lock is a separate protection mechanism from territory, but the two-result
-                    // distinction applies to it identically: the locked block must stay shut, while an
-                    // item that cannot act on it has no reason to be suppressed.
-                    val deniedInFull = denyInteraction(event)
-                    if (deniedInFull && notify) {
-                        plugin.server.scheduler.runTaskAsynchronously(
-                            plugin,
-                            Runnable {
-                                val owner = playerService.getPlayer(lockedBlock.playerId)
-                                event.player.sendMessage("$RED${plugin.language["BlockLocked", owner?.toBukkit()?.name ?: plugin.language["UnknownPlayer"]]}")
-                            }
-                        )
-                    }
-                }
-                return
-            } else {
-                return // bypass claim protection to allow access to locks where a player is an accessor
-            }
-        }
-
-        // Handle door/trapdoor/fence-gate special case
-        if (plugin.config.getBoolean("factions.nonMembersCanInteractWithDoors")) {
-            if (blockData is Door || blockData is TrapDoor || blockData is FenceGateData) {
-                return
-            }
-        }
-
-        // Apply territory protection
-        if (claim == null) {
-            if (plugin.config.getBoolean("wilderness.interaction.prevent", false)) {
-                // The option protects blocks, not the player's own food, so denyInteraction keeps
-                // eating and drinking working here exactly as it does inside a claim - see #1747.
-                val deniedInFull = denyInteraction(event)
-                if (deniedInFull && notify && plugin.config.getBoolean("wilderness.interaction.alert", true)) {
-                    event.player.sendMessage("$RED${plugin.language["CannotInteractBlockInWilderness"]}")
-                }
-            }
-            return
-        }
-
-        val factionService = plugin.services.factionService
-        val claimFaction = factionService.getFaction(claim.factionId) ?: return
-
-        // Check if player is allowed to interact based on faction relationships.
-        // overrideActionFor is evaluated only when MF has already denied, so its BlockState
-        // snapshot never costs anything on the allowed path.
-        if (embassyAccess == EmbassyAccessDecision.NONE &&
-            !claimService.isInteractionAllowed(mfPlayer.id, claim) &&
-            !claimService.isOverridden(
-                    mfPlayer.id,
-                    clickedBlock.world,
-                    clickedBlock.x,
-                    clickedBlock.y,
-                    clickedBlock.z,
-                    overrideActionFor(clickedBlock)
-                )
-        ) {
-            if (mfPlayer.isBypassEnabled && event.player.hasPermission("mf.bypass")) {
-                if (notify) plugin.notifyTerritoryBypass(event.player, mfPlayer)
-            } else {
-                // Check if player is at war and trying to place a ladder
-                // Only allow if they're right-clicking with a ladder on a solid, non-interactable block
-                val isPlacingLadder = event.action == RIGHT_CLICK_BLOCK &&
-                    event.hasItem() && event.item?.type == Material.LADDER && clickedBlock.type.isSolid && !isInteractiveBlock(clickedBlock.type)
-                if (isPlacingLadder && claimService.isWartimeLadderPlacementAllowed(
-                        mfPlayer.id,
-                        claim,
-                        true
-                    )
-                ) {
-                    // Allow ladder placement in enemy territory during wartime
-                    return
-                }
-                if (isWartimeActionAllowed(event, clickedBlock, mfPlayer, claim)) {
-                    return
-                }
-                val deniedInFull = denyInteraction(event)
-                if (deniedInFull && notify) {
-                    event.player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", claimFaction.name]}")
-                }
-            }
+            else -> Unit
         }
     }
-
-    /**
-     * Named predicate for "interactive block" (chest, lever, door, etc. - anything that responds
-     * to a right-click independently of what the player is holding). Kept as a thin wrapper around
-     * Bukkit's [Material.isInteractable] - already the definition used elsewhere in this listener
-     * (the ladder-placement and wartime checks) - so the definition lives in one named place per
-     * #1970, rather than being re-derived inline at each call site.
-     */
-    private fun isInteractiveBlock(material: Material): Boolean = material.isInteractable
 
     /**
      * True when this interaction is the player using what they are holding on themselves - eating,
@@ -397,45 +243,8 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         return true
     }
 
-    private fun crossesEmbassyChestBoundary(block: Block): Boolean {
-        val holder = (block.state as? Chest)?.inventory?.holder as? DoubleChest ?: return false
-        val left = (holder.leftSide as? Chest)?.block ?: return true
-        val right = (holder.rightSide as? Chest)?.block ?: return true
-        return embassyBoundary.crosses(embassyBoundary.point(left), embassyBoundary.point(right))
-    }
-
-    /**
-     * Strictly gates which wartime permission check (if any) is consulted, based solely on the
-     * Bukkit [org.bukkit.event.block.Action] and whether the clicked block is interactive. The
-     * action type is resolved first and is the sole determinant of which branch runs; the held
-     * item's material plays no role in branch selection (only in the value passed to the placeable
-     * check once that branch is already chosen). This keeps action-type detection and wartime
-     * config evaluation as two separate steps with no overlap - see #1968, #1970.
-     */
-    private fun isWartimeActionAllowed(
-        event: PlayerInteractEvent,
-        clickedBlock: Block,
-        mfPlayer: MfPlayer,
-        claim: MfClaimedChunk
-    ): Boolean {
-        val claimService = plugin.services.claimService
-        return when (event.action) {
-            LEFT_CLICK_BLOCK ->
-                // Block is in the wartime breakable list; allow the left-click so BlockBreakEvent can fire
-                claimService.isWartimeBreakableBlock(mfPlayer.id, claim, clickedBlock.type)
-            RIGHT_CLICK_BLOCK -> if (isInteractiveBlock(clickedBlock.type)) {
-                // Block is in the wartime interactable list; allow the interaction
-                claimService.isWartimeInteractableBlock(mfPlayer.id, claim, clickedBlock.type)
-            } else if (event.hasItem()) {
-                // Item in hand is in the wartime placeable list; allow the right-click so BlockPlaceEvent can fire
-                val itemType = event.item?.type
-                itemType != null && claimService.isWartimePlaceableBlock(mfPlayer.id, claim, itemType)
-            } else {
-                false
-            }
-            else -> false
-        }
-    }
+    private fun crossesEmbassyChestBoundary(block: Block): Boolean =
+        interactionPolicy.crossesEmbassyChestBoundary(block)
 
     private fun registerMissingPlayer(player: Player) {
         val id = MfPlayerId.fromBukkitPlayer(player)
@@ -929,21 +738,4 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         )
     }
 
-    /**
-     * Classify a right-clicked block for the claim-override SPI.
-     *
-     * CONTAINER is tested FIRST, and by inventory rather than by [Openable], because a chest is
-     * both things at once: it opens, and it holds items. Classifying it as DOOR or INTERACT hands
-     * any provider that grants ordinary interaction the ability to empty it, and
-     * InventoryClickListener is not a reliable backstop for a double chest. That combination was a
-     * live hole: a religion carve-out granting INTERACT could open the landholder's storage.
-     *
-     * Anything carrying an inventory counts. Over-classifying costs a provider a lectern;
-     * under-classifying costs a landholder their chests, so this deliberately errs closed.
-     */
-    private fun overrideActionFor(block: Block): ClaimAction = when {
-        block.state is InventoryHolder -> ClaimAction.CONTAINER
-        block.blockData is Openable -> ClaimAction.DOOR
-        else -> ClaimAction.INTERACT
-    }
 }
