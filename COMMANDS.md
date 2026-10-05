@@ -467,11 +467,23 @@ An ended active embassy enters a 14-day clearing period. Guests may break blocks
 **Usage:** `/f power`  
 **Notes:** With `mf.power.view.other` (default: true), an argument can be given to view another player's or faction's power instead of your own; this also allows console usage.
 
-### `/power set [player] [amount]`
+### `/f setpower <player> <amount>` or `/power set <player> <amount>`
 **Permission:** `mf.power.set` or `mf.force.power` (default: op)  
 **Aliases:** `/macht set`, `/pouvoir set`  
-**Description:** Sets a player's power level (admin command).  
-**Usage:** `/power set PlayerName 15`
+**Description:** Sets a known player's current power, including an amount above their maximum. The amount must be finite and at least `players.minPower`. It does not change their maximum.
+**Usage:** `/f setpower PlayerName 40` gives `40/20` when their maximum is 20. Offline players are supported.
+
+### `/f fillpower <player>` or `/power fill <player>`
+**Permission:** `mf.power.fill` or `mf.force.power` (default: op)
+**Description:** Sets a known player's current power to their effective maximum, including their personal maximum override.
+**Usage:** `/f fillpower PlayerName` fills a player with a 50 maximum to `50/50`. If current power exceeds the maximum, this command sets it down to that maximum.
+
+### `/f setmaxpower <player> <max|reset>` or `/power setmax <player> <max|reset>`
+**Permission:** `mf.power.setmax` or `mf.force.power` (default: op)
+**Description:** Sets a persistent personal maximum for a known player, or removes it with `reset` so the player follows `players.maxPower` again. The maximum must be finite, positive and at least `players.minPower`. Current power remains unchanged; use `fillpower` afterward to fill the new maximum.
+**Usage:** `/f setmaxpower PlayerName 50`, then `/f fillpower PlayerName`; `/f setmaxpower PlayerName reset` restores the server default.
+
+Power edits work for online and known offline players. Setting or filling current power also resets the stored logout power used by offline decay. Current power above the maximum remains available for faction power and loses power normally on death or through offline decay; it does not regenerate further until it is below the maximum. Personal maximums also contribute to the faction's maximum power, power displays and placeholders.
 
 ### `/faction bonuspower [faction] [amount]` or `/f bonuspower [faction] [amount]`
 **Permission:** `mf.force.bonuspower` (default: op)  
@@ -633,6 +645,8 @@ The `mf.admin` permission grants access to all admin commands including:
 - `mf.bypass` - Bypass protections
 - `mf.relationship.*` - Manage relationships
 - `mf.power.set` - Set player power
+- `mf.power.fill` - Fill player power to their maximum
+- `mf.power.setmax` - Set or reset a player's personal maximum power
 - `mf.admin.create` - Create leaderless factions
 - `mf.admin.protection` - Set protection in admin-managed faction claims
 - `mf.admin.setleader` - Set faction leaders
@@ -650,7 +664,7 @@ The `mf.force.*` nodes (all `default: op`) do not add new commands — each one 
 | `mf.force.flag` | [`/f flag list`, `/f flag set`](#faction-flag-listset-or-f-flag-listset) | Lists/sets flags on another faction, bypassing its role permissions. |
 | `mf.force.join` | [`/f join`](#faction-join-faction-or-f-join-faction), [`/f addmember`](#faction-addmember-faction-player-or-f-addmember-faction-player) | Joins a faction without an invite (confirmation prompt, or `-f` to skip it). Also grants `/f addmember`. |
 | `mf.force.kick` | [`/f kick`](#faction-kick-player-or-f-kick-player) | Targets a faction other than your own; the target faction's role check still applies. |
-| `mf.force.power` | [`/power set`](#power-set-player-amount) | Sets a player's power (alternative to `mf.power.set`). |
+| `mf.force.power` | `/f setpower`, `/f fillpower`, `/f setmaxpower` and their `/power` forms | Sets, fills or changes a player's maximum power (alternative to the individual power permissions). |
 | `mf.force.rename` | [`/f set name`](#faction-set-namedescriptionprefix-value-or-f-set-namedescriptionprefix-value) | Targets a faction other than your own; the target faction's role check still applies. |
 | `mf.force.unlock` | [`/unlock`](#unlock-cancel), block breaking | Unlocks blocks locked by another player. |
 

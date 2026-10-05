@@ -96,7 +96,10 @@ data class MfFaction(
     val memberPower
         get() = members.sumOf { plugin.services.playerService.getPlayer(it.playerId)?.power ?: 0.0 }
     val maxMemberPower
-        get() = members.size * plugin.config.getDouble("players.maxPower")
+        get() = members.sumOf {
+            plugin.services.playerService.getPlayer(it.playerId)?.effectiveMaxPower(plugin)
+                ?: plugin.config.getDouble("players.maxPower")
+        }
     val vassalPower
         get() = plugin.services.factionRelationshipService.getVassals(id)
             .mapNotNull(plugin.services.factionService::getFaction)

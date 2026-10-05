@@ -3,6 +3,8 @@ package com.dansplugins.factionsystem.storage.json
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
+import com.dansplugins.factionsystem.player.MfPlayerPowerRepositoryContract
+import com.dansplugins.factionsystem.player.MfPlayerRepository
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -19,7 +21,7 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.logging.Logger
 
-class JsonMfPlayerRepositoryTest {
+class JsonMfPlayerRepositoryTest : MfPlayerPowerRepositoryContract() {
 
     @TempDir
     lateinit var tempDir: Path
@@ -40,7 +42,10 @@ class JsonMfPlayerRepositoryTest {
             .thenAnswer { java.io.File("src/main/resources/schemas/players.json").inputStream() }
         storageManager = JsonStorageManager(plugin, tempDir.toString())
         repository = JsonMfPlayerRepository(plugin, storageManager)
+        configurePowerRepository(plugin, repository)
     }
+
+    override fun reopenPowerRepository(): MfPlayerRepository = JsonMfPlayerRepository(plugin, storageManager)
 
     @AfterEach
     fun cleanup() {
@@ -157,6 +162,8 @@ class JsonMfPlayerRepositoryTest {
 
         val legacy = repository.getPlayer(playerId)!!
         assertFalse(legacy.isBypassWarningMuted)
+        assertNull(legacy.maxPowerOverride)
+        assertEquals(20.0, legacy.effectiveMaxPower(plugin))
 
         repository.upsert(legacy.copy(isBypassWarningMuted = true))
         assertTrue(repository.getPlayer(playerId)!!.isBypassWarningMuted)

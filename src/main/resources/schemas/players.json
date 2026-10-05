@@ -38,6 +38,11 @@
           "type": "number",
           "description": "Player power at last logout"
         },
+        "maxPowerOverride": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0,
+          "description": "Individual power maximum, or null to use the server default"
+        },
         "isBypassEnabled": {
           "type": "boolean",
           "description": "Whether bypass mode is enabled"

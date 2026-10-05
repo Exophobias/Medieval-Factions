@@ -95,7 +95,7 @@ class PlayerDeathListener(private val plugin: MedievalFactions) : Listener {
     ) {
         val newPower = (victimMfPlayer.power - powerLostOnDeath)
             .coerceAtLeast(0.0)
-            .coerceAtMost(plugin.config.getDouble("players.maxPower"))
+            .coerceAtMost(maxOf(victimMfPlayer.power, victimMfPlayer.effectiveMaxPower(plugin)))
         if (abs(newPower - victimMfPlayer.power) < 0.00001) {
             return
         }
@@ -117,7 +117,7 @@ class PlayerDeathListener(private val plugin: MedievalFactions) : Listener {
     ) {
         val newPower = (killerMfPlayer.power + powerGainedOnKill)
             .coerceAtLeast(0.0)
-            .coerceAtMost(plugin.config.getDouble("players.maxPower"))
+            .coerceAtMost(maxOf(killerMfPlayer.power, killerMfPlayer.effectiveMaxPower(plugin)))
         if (abs(newPower - killerMfPlayer.power) < 0.00001) {
             return
         }

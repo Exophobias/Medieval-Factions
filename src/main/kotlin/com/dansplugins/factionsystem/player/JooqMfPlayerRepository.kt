@@ -6,6 +6,7 @@ import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.jooq.Tables.MF_PLAYER
 import com.dansplugins.factionsystem.jooq.tables.records.MfPlayerRecord
 import org.jooq.DSLContext
+import org.jooq.impl.DSL.coalesce
 import org.jooq.impl.DSL.greatest
 import org.jooq.impl.DSL.least
 import org.jooq.impl.DSL.value
@@ -29,6 +30,7 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
             .set(MF_PLAYER.NAME, player.name)
             .set(MF_PLAYER.POWER, player.power)
             .set(MF_PLAYER.POWER_AT_LOGOUT, player.powerAtLogout)
+            .set(MF_PLAYER.MAX_POWER_OVERRIDE, player.maxPowerOverride)
             .set(MF_PLAYER.BYPASS_ENABLED, player.isBypassEnabled)
             .set(MF_PLAYER.BYPASS_WARNING_MUTED, player.isBypassWarningMuted)
             .set(MF_PLAYER.CHAT_CHANNEL, player.chatChannel?.name)
@@ -36,6 +38,7 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
             .set(MF_PLAYER.NAME, player.name)
             .set(MF_PLAYER.POWER, player.power)
             .set(MF_PLAYER.POWER_AT_LOGOUT, player.powerAtLogout)
+            .set(MF_PLAYER.MAX_POWER_OVERRIDE, player.maxPowerOverride)
             .set(MF_PLAYER.BYPASS_ENABLED, player.isBypassEnabled)
             .set(MF_PLAYER.BYPASS_WARNING_MUTED, player.isBypassWarningMuted)
             .set(MF_PLAYER.CHAT_CHANNEL, player.chatChannel?.name)
@@ -49,14 +52,14 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
 
     override fun increaseOnlinePlayerPower(onlinePlayerIds: List<MfPlayerId>) {
         val minPower = plugin.config.getDouble("players.minPower")
-        val maxPower = plugin.config.getDouble("players.maxPower")
+        val maxPower = coalesce(MF_PLAYER.MAX_POWER_OVERRIDE, value(plugin.config.getDouble("players.maxPower")))
         val hoursToReachMax = plugin.config.getDouble("players.hoursToReachMaxPower")
         val timeIncrementHours = 0.25
         dsl.update(MF_PLAYER)
             .set(
                 MF_PLAYER.POWER,
                 least(
-                    value(maxPower),
+                    maxPower,
                     greatest(
                         value(minPower),
                         value((hoursToReachMax * 2) + timeIncrementHours)
@@ -84,7 +87,7 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
     }
 
     override fun decreaseOfflinePlayerPower(onlinePlayerIds: List<MfPlayerId>) {
-        val maxPower = plugin.config.getDouble("players.maxPower")
+        val maxPower = coalesce(MF_PLAYER.MAX_POWER_OVERRIDE, value(plugin.config.getDouble("players.maxPower")))
         val minPower = plugin.config.getDouble("players.minPower")
         val hoursToReachMin = plugin.config.getDouble("players.hoursToReachMinPower")
         val timeIncrementHours = 0.25
@@ -92,11 +95,11 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
             .set(
                 MF_PLAYER.POWER,
                 least(
-                    value(maxPower),
+                    greatest(maxPower, MF_PLAYER.POWER_AT_LOGOUT),
                     greatest(
                         value(minPower),
                         // Determine the current time by running the inverse
-                        least(MF_PLAYER.POWER, MF_PLAYER.POWER_AT_LOGOUT, maxPower)
+                        least(MF_PLAYER.POWER, MF_PLAYER.POWER_AT_LOGOUT)
                             .minus(minPower)
                             .div(MF_PLAYER.POWER_AT_LOGOUT.minus(minPower))
                             .minus(1)
@@ -130,6 +133,7 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
         powerAtLogout,
         bypassEnabled,
         chatChannel?.let(MfFactionChatChannel::valueOf),
-        bypassWarningMuted
+        bypassWarningMuted,
+        maxPowerOverride
     )
 }

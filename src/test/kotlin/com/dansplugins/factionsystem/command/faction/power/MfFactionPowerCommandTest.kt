@@ -10,9 +10,11 @@ import com.dansplugins.factionsystem.faction.flag.MfFlagValues
 import com.dansplugins.factionsystem.faction.flag.MfFlags
 import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.player.MfPlayer
+import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
 import com.dansplugins.factionsystem.service.Services
 import org.bukkit.ChatColor
+import org.bukkit.OfflinePlayer
 import org.bukkit.Server
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.scheduler.BukkitScheduler
@@ -26,6 +28,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.util.Locale
+import java.util.UUID
 import java.util.logging.Logger
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -132,6 +135,53 @@ class MfFactionPowerCommandTest {
         // verify
         assertTrue(result)
         verify(player).sendMessage("${ChatColor.GRAY}Faction claims: 2")
+    }
+
+    @Test
+    fun testOnCommand_showsOwnCustomMaximumWithoutHidingSurplus() {
+        val player = fixture.player
+        val snapshot = MfPlayer(MfPlayerId(UUID.randomUUID().toString()), power = 40.0, maxPowerOverride = 50.0)
+        `when`(player.hasPermission("mf.power")).thenReturn(true)
+        `when`(playerService.getPlayer(player)).thenReturn(snapshot)
+        `when`(config.getDouble("players.maxPower")).thenReturn(20.0)
+        `when`(language["CommandFactionPowerPlayerPower", "40", "50"]).thenReturn("Your power: 40/50")
+
+        assertTrue(uut.onCommand(player, fixture.command, "f", emptyArray()))
+
+        verify(player).sendMessage("${ChatColor.GRAY}Your power: 40/50")
+    }
+
+    @Test
+    fun testOnCommand_showsOwnSurplusAgainstInheritedMaximum() {
+        val player = fixture.player
+        val snapshot = MfPlayer(MfPlayerId(UUID.randomUUID().toString()), power = 40.0)
+        `when`(player.hasPermission("mf.power")).thenReturn(true)
+        `when`(playerService.getPlayer(player)).thenReturn(snapshot)
+        `when`(config.getDouble("players.maxPower")).thenReturn(20.0)
+        `when`(language["CommandFactionPowerPlayerPower", "40", "20"]).thenReturn("Your power: 40/20")
+
+        assertTrue(uut.onCommand(player, fixture.command, "f", emptyArray()))
+
+        verify(player).sendMessage("${ChatColor.GRAY}Your power: 40/20")
+    }
+
+    @Test
+    fun testOnCommand_showsOtherPlayersCustomMaximum() {
+        val sender = fixture.sender
+        val target = mock(OfflinePlayer::class.java)
+        val snapshot = MfPlayer(MfPlayerId(UUID.randomUUID().toString()), power = 40.0, maxPowerOverride = 50.0)
+        `when`(sender.hasPermission("mf.power")).thenReturn(true)
+        `when`(sender.hasPermission("mf.power.view.other")).thenReturn(true)
+        `when`(plugin.server.getOfflinePlayer("Target")).thenReturn(target)
+        `when`(target.name).thenReturn("Target")
+        `when`(target.hasPlayedBefore()).thenReturn(true)
+        `when`(playerService.getPlayer(target)).thenReturn(snapshot)
+        `when`(config.getDouble("players.maxPower")).thenReturn(20.0)
+        `when`(language["CommandFactionPowerOtherPlayerPower", "Target", "40", "50"]).thenReturn("Target's power: 40/50")
+
+        assertTrue(uut.onCommand(sender, fixture.command, "f", arrayOf("Target")))
+
+        verify(sender).sendMessage("${ChatColor.GRAY}Target's power: 40/50")
     }
 
     // Helper functions

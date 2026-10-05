@@ -11,6 +11,7 @@ import com.dansplugins.factionsystem.gate.MfGate
 import com.dansplugins.factionsystem.gate.MfGateService
 import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.player.MfPlayer
+import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
 import com.dansplugins.factionsystem.relationship.MfFactionRelationship
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
@@ -310,6 +311,31 @@ class MedievalFactionsPlaceholderExpansionTest {
     }
 
     @Test
+    fun testPlayerPowerPlaceholdersUseCustomMaximumAndPreserveSurplus() {
+        val player = fixture.player
+        val snapshot = MfPlayer(MfPlayerId(UUID.randomUUID().toString()), power = 40.0, maxPowerOverride = 50.0)
+        `when`(playerService.getPlayer(player)).thenReturn(snapshot)
+        `when`(plugin.config.getDouble("players.maxPower")).thenReturn(20.0)
+
+        assertEquals("40", uut.onRequest(player, "faction_player_power"))
+        assertEquals("50", uut.onRequest(player, "faction_player_max_power"))
+        assertEquals("40/50", uut.onRequest(player, "faction_player_power_full"))
+    }
+
+    @Test
+    fun testPlayerMaximumPlaceholderFallsBackForLegacyAndMissingPlayers() {
+        val player = fixture.player
+        `when`(plugin.config.getDouble("players.maxPower")).thenReturn(20.0)
+        `when`(playerService.getPlayer(player)).thenReturn(MfPlayer(MfPlayerId(UUID.randomUUID().toString()), power = 40.0))
+
+        assertEquals("20", uut.onRequest(player, "faction_player_max_power"))
+        assertEquals("40/20", uut.onRequest(player, "faction_player_power_full"))
+
+        `when`(playerService.getPlayer(player)).thenReturn(null)
+        assertEquals("20", uut.onRequest(player, "faction_player_max_power"))
+    }
+
+    @Test
     fun testPlayerLocation() {
         val player = fixture.player
         val onlinePlayer = mock(Player::class.java)
@@ -382,7 +408,7 @@ class MedievalFactionsPlaceholderExpansionTest {
         assertNull(uut.onRequest(fixture.player, "faction_flag_thereisnosuchflag"))
     }
 
-    // TODO: add unit tests for the following placeholders: faction_bonus_power, faction_power, faction_player_max_power, faction_player_power_full, faction_at_location, faction_color, player_chunk_location, player_world
+    // TODO: add unit tests for the following placeholders: faction_bonus_power, faction_power, faction_at_location, faction_color, player_chunk_location, player_world
 
     // Helper functions
 

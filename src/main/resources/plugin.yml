@@ -51,6 +51,9 @@ commands:
       /f checkclaim - Checks who has claimed the chunk you are in
       /f unclaimall - Unclaims all claimed land
       /f power - Views power stats
+      /f fillpower [player] - Fills a player's power.
+      /f setpower [player] [power] - Sets a player's current power.
+      /f setmaxpower [player] [max|reset] - Sets or resets a player's maximum power.
       /f who - Views a player's faction
       /f disband - Disbands your faction
       /f invoke [ally] [enemy] - Invokes a faction into war
@@ -76,7 +79,7 @@ commands:
       /f deny [id] - Denies a pending faction action
       /f pendingactions - Lists all pending faction actions awaiting approval
     aliases: [medievalfactions, mf, f, fraktion]
-    usage: /<command> [help|ally|breakalliance|declarewar|makepeace|create|invite|join|law|role|list|claim|unclaim|checkclaim|unclaimall|power|who|invoke|leave|vassalize|swearfealty|declinevassalization|declareindependence|grantindependence|kick|map|sethome|home|flag|bypass|chat|set|bonuspower|relationship|approve|deny|pendingactions]
+    usage: /<command> [help|ally|breakalliance|declarewar|makepeace|create|invite|join|law|role|list|claim|unclaim|checkclaim|unclaimall|power|fillpower|setpower|setmaxpower|who|invoke|leave|vassalize|swearfealty|declinevassalization|declareindependence|grantindependence|kick|map|sethome|home|flag|bypass|chat|set|bonuspower|relationship|approve|deny|pendingactions]
   lock:
     description: Enables or disables lock mode. To cancel lock mode, use /lock cancel.
     aliases: [verschlieBen, verschliessen, verrouiller]
@@ -96,9 +99,11 @@ commands:
   power:
     description: |
       Power management command
-      /power set [player] [power] - Sets a player's power.
+      /power set [player] [power] - Sets a player's current power.
+      /power fill [player] - Fills a player's power.
+      /power setmax [player] [max|reset] - Sets or resets a player's maximum power.
     aliases: [macht, pouvoir]
-    usage: /<command> [set]
+    usage: /<command> [set|fill|setmax]
   gate:
     description: |
       Gate management command
@@ -317,6 +322,12 @@ permissions:
   mf.map:
     description: Allows showing the faction map
     default: true
+  mf.power.fill:
+    description: Allows filling player power to their maximum
+    default: op
+  mf.power.setmax:
+    description: Allows setting or resetting maximum player power
+    default: op
   mf.power.set:
     description: Allows setting player power
     default: op
@@ -446,6 +457,8 @@ permissions:
     - mf.relationship.add
     - mf.relationship.remove
     - mf.power.set
+    - mf.power.fill
+    - mf.power.setmax
     - mf.admin.create
     - mf.admin.makeleaderless
     - mf.admin.setleader

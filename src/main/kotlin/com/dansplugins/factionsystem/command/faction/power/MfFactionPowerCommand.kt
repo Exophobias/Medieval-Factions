@@ -90,7 +90,7 @@ class MfFactionPowerCommand(private val plugin: MedievalFactions) : CommandExecu
                                 plugin.language[
                                     "CommandFactionPowerPlayerPower",
                                     decimalFormat.format(floor(mfPlayer.power)),
-                                    decimalFormat.format(floor(plugin.config.getDouble("players.maxPower")))
+                                    decimalFormat.format(floor(mfPlayer.effectiveMaxPower(plugin)))
                                 ]
                                 }"
                             )
@@ -101,7 +101,7 @@ class MfFactionPowerCommand(private val plugin: MedievalFactions) : CommandExecu
                                     "CommandFactionPowerOtherPlayerPower",
                                     targetPlayer?.name ?: plugin.language["UnknownPlayer"],
                                     decimalFormat.format(floor(mfPlayer.power)),
-                                    decimalFormat.format(floor(plugin.config.getDouble("players.maxPower")))
+                                    decimalFormat.format(floor(mfPlayer.effectiveMaxPower(plugin)))
                                 ]
                                 }"
                             )

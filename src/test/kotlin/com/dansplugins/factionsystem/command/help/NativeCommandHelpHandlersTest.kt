@@ -191,4 +191,49 @@ class NativeCommandHelpHandlersTest {
         clear(); run(embassy, "offer", "Nation"); assertTrue(text.single().contains("in game"))
         clear(); run(MfFactionClaimCommand(plugin), "help"); assertTrue(rows().any { "claim circle" in it }); assertFalse(rows().any { "claim auto" in it })
     }
+
+    @Test fun powerEditsStayOnFilteredStaffPagesWithIndependentPermissionsAndSuggestions() {
+        permissions += setOf("mf.help", "mf.invite", "mf.power.fill")
+        val factions = MfFactionCommand(plugin)
+        val power = MfPowerCommand(plugin)
+        run(factions, "help")
+        assertTrue(rows().any { it.startsWith("/f invite ") })
+        assertFalse(rows().any { "fillpower" in it || "setpower" in it || "setmaxpower" in it || it.startsWith("/power ") })
+        assertTrue(text.last().contains("/f help 2 for more"))
+
+        clear(); run(factions, "help", "staff", "99")
+        assertTrue(text.first().contains("Medieval Factions Staff"))
+        assertEquals(setOf("/f fillpower <player>", "/power", "/power fill <player>"), rows().map { it.substringBefore(" - ") }.toSet())
+        assertTrue(text.last().all { it == '-' })
+        val factionTabs = factions.onTabComplete(sender, command, "f", arrayOf("")).orEmpty()
+        assertTrue("fillpower" in factionTabs)
+        assertFalse("setpower" in factionTabs || "setmaxpower" in factionTabs)
+        assertTrue(factions.onTabComplete(sender, command, "f", arrayOf("setmaxpower", "Target", "")).orEmpty().isEmpty())
+        assertEquals(setOf("help", "fill"), power.onTabComplete(sender, command, "power", arrayOf("")).orEmpty().toSet())
+        assertTrue(power.onTabComplete(sender, command, "power", arrayOf("set", "")).orEmpty().isEmpty())
+        assertTrue(power.onTabComplete(sender, command, "power", arrayOf("setmax", "Target", "")).orEmpty().isEmpty())
+
+        clear(); run(factions, "setpower", "Target", "40")
+        assertTrue(text.single().contains("NoPermission"))
+        clear(); run(power, "setmax", "Target", "50")
+        assertTrue(text.single().contains("NoPermission"))
+        verify(server, never()).getOfflinePlayer(anyString())
+        verify(server, never()).scheduler
+    }
+
+    @Test fun forcePowerGrantOffersAllNativePowerAliasesWithoutOtherStaffTools() {
+        permissions += setOf("mf.help", "mf.force.power")
+        val factions = MfFactionCommand(plugin)
+        val power = MfPowerCommand(plugin)
+        run(factions, "help", "staff")
+        assertEquals(7, rows().size)
+        assertTrue(rows().all { it.startsWith("/f fillpower") || it.startsWith("/f setpower") || it.startsWith("/f setmaxpower") || it.startsWith("/power") })
+        assertFalse(rows().any { "bonuspower" in it || "admin " in it })
+        assertTrue(text.last().all { it == '-' })
+        assertTrue(factions.onTabComplete(sender, command, "f", arrayOf("")).orEmpty().containsAll(listOf("fillpower", "setpower", "setmaxpower")))
+        assertTrue(power.onTabComplete(sender, command, "power", arrayOf("")).orEmpty().containsAll(listOf("set", "fill", "setmax")))
+        clear(); run(power, "help", "staff", "99")
+        assertEquals(3, rows().size)
+        assertTrue(text.first().contains("Staff")); assertTrue(text.last().all { it == '-' })
+    }
 }

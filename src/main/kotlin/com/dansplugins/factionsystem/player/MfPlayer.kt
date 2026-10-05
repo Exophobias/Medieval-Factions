@@ -13,9 +13,13 @@ data class MfPlayer(
     val powerAtLogout: Double = 0.0,
     val isBypassEnabled: Boolean = false,
     val chatChannel: MfFactionChatChannel? = null,
-    val isBypassWarningMuted: Boolean = false
+    val isBypassWarningMuted: Boolean = false,
+    val maxPowerOverride: Double? = null
 ) {
     fun toBukkit() = id.toBukkitPlayer()
+
+    fun effectiveMaxPower(plugin: MedievalFactions): Double =
+        maxPowerOverride ?: plugin.config.getDouble("players.maxPower")
 
     constructor(
         plugin: MedievalFactions,
@@ -35,7 +39,8 @@ data class MfPlayer(
         powerOnLogout: Double = power,
         isBypassEnabled: Boolean = false,
         chatChannel: MfFactionChatChannel? = null,
-        isBypassWarningMuted: Boolean = false
+        isBypassWarningMuted: Boolean = false,
+        maxPowerOverride: Double? = null
     ) : this(
         MfPlayerId.fromBukkitPlayer(player),
         version,
@@ -44,7 +49,8 @@ data class MfPlayer(
         powerOnLogout,
         isBypassEnabled,
         chatChannel,
-        isBypassWarningMuted
+        isBypassWarningMuted,
+        maxPowerOverride
     )
 
     constructor(

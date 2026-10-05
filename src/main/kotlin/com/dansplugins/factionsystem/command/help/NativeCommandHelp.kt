@@ -103,6 +103,9 @@ internal object NativeCommandHelp {
             row("FactionMembers", "/f members [faction]", "mf.members"),
             row("FactionPower", "/f power", "mf.power"),
             row("FactionPower", "/f power <faction|player>", "mf.power&mf.power.view.other"),
+            row("PowerFill", "/f fillpower <player>", "mf.power.fill|mf.force.power", true),
+            row("PowerSet", "/f setpower <player> <power>", "mf.power.set|mf.force.power", true),
+            row("PowerSetMax", "/f setmaxpower <player> <max|reset>", "mf.power.setmax|mf.force.power", true),
             Entry("/f relationship", "View faction relationships", emptyList(), container = true),
             container("FactionRelationship", "/f relationship", true),
             row("FactionRelationshipAdd", "/f relationship add <faction1> <faction2> <type>", "mf.relationship.add", true),
@@ -139,6 +142,8 @@ internal object NativeCommandHelp {
             row("Lock", "/lock cancel", "mf.lock", false, "Cancel block locking"),
             container("Power", "/power", true),
             row("PowerSet", "/power set <player> <power>", "mf.power.set|mf.force.power", true),
+            row("PowerFill", "/power fill <player>", "mf.power.fill|mf.force.power", true),
+            row("PowerSetMax", "/power setmax <player> <max|reset>", "mf.power.setmax|mf.force.power", true),
             row("Unlock", "/unlock", "mf.unlock"),
             row("Unlock", "/unlock cancel", "mf.unlock", false, "Cancel block unlocking"),
             row("AddMember", "/f addmember <player> <faction>", "mf.force.addmember|mf.force.join", true),
@@ -224,11 +229,11 @@ internal object NativeCommandHelp {
         if (total > 1) {
             header.addExtra(
                 component(
-                    " (" to ChatColor.GRAY,
+                    " (" to ChatColor.DARK_GRAY,
                     "$page" to ChatColor.WHITE,
                 "/" to ChatColor.GRAY,
                     "$total" to ChatColor.WHITE,
-                    ")" to ChatColor.GRAY
+                    ")" to ChatColor.DARK_GRAY
                 )
             )
         }

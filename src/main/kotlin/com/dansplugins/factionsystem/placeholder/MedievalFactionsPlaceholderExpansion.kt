@@ -45,7 +45,7 @@ class MedievalFactionsPlaceholderExpansion(private val plugin: MedievalFactions)
             "faction_population" -> getFactionPopulation(player)
             "faction_rank" -> getFactionRole(player)
             "faction_player_power" -> getPower(player)
-            "faction_player_max_power" -> getMaxPower()
+            "faction_player_max_power" -> getMaxPower(player)
             "faction_player_power_full" -> getFormattedPlayerPower(player)
             "faction_at_location" -> getFactionAtLocation(player)
             "faction_color", "faction_colour" -> getFactionColor(player)
@@ -211,12 +211,14 @@ class MedievalFactionsPlaceholderExpansion(private val plugin: MedievalFactions)
         return decimalFormat.format(floor(mfPlayer.power))
     }
 
-    private fun getMaxPower(): String {
-        return decimalFormat.format(floor(plugin.config.getDouble("players.maxPower")))
+    private fun getMaxPower(player: OfflinePlayer): String {
+        val maxPower = plugin.services.playerService.getPlayer(player)?.effectiveMaxPower(plugin)
+            ?: plugin.config.getDouble("players.maxPower")
+        return decimalFormat.format(floor(maxPower))
     }
 
     private fun getFormattedPlayerPower(player: OfflinePlayer): String {
-        return getPower(player) + "/" + getMaxPower()
+        return getPower(player) + "/" + getMaxPower(player)
     }
 
     private fun getFactionAtLocation(player: OfflinePlayer): String? {

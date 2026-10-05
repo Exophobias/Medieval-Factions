@@ -55,6 +55,9 @@ import com.dansplugins.factionsystem.command.faction.vassalize.MfFactionVassaliz
 import com.dansplugins.factionsystem.command.faction.version.MfFactionVersionCommand
 import com.dansplugins.factionsystem.command.faction.who.MfFactionWhoCommand
 import com.dansplugins.factionsystem.command.help.NativeCommandHelp
+import com.dansplugins.factionsystem.command.power.fill.MfPowerFillCommand
+import com.dansplugins.factionsystem.command.power.set.MfPowerSetCommand
+import com.dansplugins.factionsystem.command.power.setmax.MfPowerSetMaxCommand
 import org.bukkit.ChatColor
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
@@ -83,6 +86,9 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
     private val factionUnclaimCommand = MfFactionUnclaimCommand(plugin)
     private val factionUnclaimAllCommand = MfFactionUnclaimAllCommand(plugin)
     private val factionPowerCommand = MfFactionPowerCommand(plugin)
+    private val powerFillCommand = MfPowerFillCommand(plugin)
+    private val powerSetCommand = MfPowerSetCommand(plugin)
+    private val powerSetMaxCommand = MfPowerSetMaxCommand(plugin)
     private val factionWhoCommand = MfFactionWhoCommand(plugin)
     private val factionVersionCommand = MfFactionVersionCommand(plugin)
     private val factionDisbandCommand = MfFactionDisbandCommand(plugin)
@@ -137,6 +143,9 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
     private val unclaimAliases = listOf("unclaim", plugin.language["CmdFactionUnclaim"])
     private val unclaimAllAliases = listOf("unclaimall", plugin.language["CmdFactionUnclaimAll"])
     private val powerAliases = listOf("power", plugin.language["CmdFactionPower"])
+    private val fillPowerAliases = listOf("fillpower")
+    private val setPowerAliases = listOf("setpower")
+    private val setMaxPowerAliases = listOf("setmaxpower")
     private val whoAliases = listOf("who", plugin.language["CmdFactionWho"])
     private val versionAliases = listOf("version", "ver", "about", plugin.language["CmdFactionVersion"])
     private val disbandAliases = listOf("disband", plugin.language["CmdFactionDisband"])
@@ -191,6 +200,9 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
         unclaimAliases +
         unclaimAllAliases +
         powerAliases +
+        fillPowerAliases +
+        setPowerAliases +
+        setMaxPowerAliases +
         whoAliases +
         disbandAliases +
         embassyAliases +
@@ -250,6 +262,9 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in unclaimAliases -> NativeCommandHelp.canUse(sender, "/f unclaim", entries)
             in unclaimAllAliases -> NativeCommandHelp.canUse(sender, "/f unclaimall", entries)
             in powerAliases -> NativeCommandHelp.canUse(sender, "/f power", entries)
+            in fillPowerAliases -> NativeCommandHelp.canUse(sender, "/f fillpower", entries)
+            in setPowerAliases -> NativeCommandHelp.canUse(sender, "/f setpower", entries)
+            in setMaxPowerAliases -> NativeCommandHelp.canUse(sender, "/f setmaxpower", entries)
             in whoAliases -> NativeCommandHelp.canUse(sender, "/f who", entries)
             in versionAliases -> NativeCommandHelp.canUse(sender, "/f version", entries)
             in disbandAliases -> NativeCommandHelp.canUse(sender, "/f disband", entries)
@@ -313,6 +328,9 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in unclaimAliases -> factionUnclaimCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in unclaimAllAliases -> factionUnclaimAllCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in powerAliases -> factionPowerCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
+            in fillPowerAliases -> powerFillCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
+            in setPowerAliases -> powerSetCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
+            in setMaxPowerAliases -> powerSetMaxCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in whoAliases -> factionWhoCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in versionAliases -> factionVersionCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in disbandAliases -> factionDisbandCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
@@ -391,6 +409,9 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in unclaimAliases -> factionUnclaimCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in unclaimAllAliases -> factionUnclaimAllCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in powerAliases -> factionPowerCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
+            in fillPowerAliases -> powerFillCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
+            in setPowerAliases -> powerSetCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
+            in setMaxPowerAliases -> powerSetMaxCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in whoAliases -> factionWhoCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in disbandAliases -> factionDisbandCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in embassyAliases -> factionEmbassyCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
