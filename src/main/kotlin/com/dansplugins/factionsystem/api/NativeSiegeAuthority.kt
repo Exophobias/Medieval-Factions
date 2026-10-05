@@ -41,9 +41,16 @@ class SiegeNativeExpectation @JvmOverloads constructor(val epoch: UUID, wars: Li
     val members: List<SiegeMember> = java.util.Collections.unmodifiableList(ArrayList(members))
     val claims: List<SiegeClaim> = java.util.Collections.unmodifiableList(ArrayList(claims))
 }
-class SiegeGate @JvmOverloads constructor(val id: String, val revision: Int, val owner: String,
-                blocks: List<SiegeBlock>, val material: String, val state: String,
-                val disruptionOperation: String? = null, val disruptionPhase: String? = null) {
+class SiegeGate @JvmOverloads constructor(
+    val id: String,
+    val revision: Int,
+    val owner: String,
+                blocks: List<SiegeBlock>,
+    val material: String,
+    val state: String,
+                val disruptionOperation: String? = null,
+    val disruptionPhase: String? = null
+) {
     val blocks: List<SiegeBlock> = java.util.Collections.unmodifiableList(ArrayList(blocks))
 }
 interface SiegeEffectLease : AutoCloseable { override fun close() }

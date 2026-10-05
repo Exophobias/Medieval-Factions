@@ -1,6 +1,11 @@
 package com.dansplugins.factionsystem.siege
 
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -14,12 +19,14 @@ class SiegeMutationFenceTest {
         val workers = Executors.newFixedThreadPool(2)
         try {
             val mutations = (1..2).map {
-                workers.submit { fence.mutate {
+                workers.submit {
+                    fence.mutate {
                     entered.countDown()
                     assertTrue(entered.await(1, TimeUnit.SECONDS))
                     assertNull(fence.tryAcquire())
                     assertTrue(release.await(1, TimeUnit.SECONDS))
-                } }
+                }
+                }
             }
             assertTrue(entered.await(1, TimeUnit.SECONDS))
             assertNull(fence.tryAcquire())
@@ -51,19 +58,21 @@ class SiegeMutationFenceTest {
             future.get(1, TimeUnit.SECONDS)
             assertEquals(0L, committed.count)
             requireNotNull(fence.tryAcquire()).close()
-        } finally {effect.close();worker.shutdownNow()}
+        } finally { effect.close(); worker.shutdownNow() }
     }
+
     @Test fun reentrantNativeMutationCannotCommitDuringDamageEvents() {
         val fence = SiegeMutationFence(); var wrote = false
         requireNotNull(fence.tryAcquire()).use {
-            assertThrows(IllegalStateException::class.java) {fence.mutate {wrote=true}}
+            assertThrows(IllegalStateException::class.java) { fence.mutate { wrote = true } }
         }
         assertFalse(wrote)
-        fence.mutate {wrote=true};assertTrue(wrote)
+        fence.mutate { wrote = true }; assertTrue(wrote)
     }
+
     @Test fun failedWriteReleasesPendingIntentAndEpochIsPerRuntime() {
         val fence = SiegeMutationFence()
-        assertThrows(IllegalArgumentException::class.java) {fence.mutate {throw IllegalArgumentException("write failed")}}
+        assertThrows(IllegalArgumentException::class.java) { fence.mutate { throw IllegalArgumentException("write failed") } }
         requireNotNull(fence.tryAcquire()).close()
         assertNotEquals(fence.epoch, SiegeMutationFence().epoch)
     }

@@ -1,10 +1,10 @@
 package com.dansplugins.factionsystem.command.gate
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.command.gate.cancel.MfGateCancelCommand
 import com.dansplugins.factionsystem.command.gate.create.MfGateCreateCommand
 import com.dansplugins.factionsystem.command.gate.remove.MfGateRemoveCommand
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import org.bukkit.ChatColor.RED
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor

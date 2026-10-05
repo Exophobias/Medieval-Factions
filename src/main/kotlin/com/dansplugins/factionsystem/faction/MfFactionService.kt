@@ -1,8 +1,5 @@
 package com.dansplugins.factionsystem.faction
 
-import com.dansplugins.factionsystem.siege.fenceSiegeMutation
-import com.dansplugins.factionsystem.siege.commitSiegeRepository
-
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.WarEndNotice
@@ -35,6 +32,8 @@ import com.dansplugins.factionsystem.fixture.guardFixtureFaction
 import com.dansplugins.factionsystem.fixture.guardFixturePlayers
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
+import com.dansplugins.factionsystem.siege.commitSiegeRepository
+import com.dansplugins.factionsystem.siege.fenceSiegeMutation
 import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.mapFailure
 import dev.forkhandles.result4k.onFailure
@@ -767,11 +766,13 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             val departedLockOwners = plan.flatMap(SaveMutation::removedMembers).toSet()
             plugin.services.lockService.withMutationLock {
                 val persisted = try {
-                    plugin.commitSiegeRepository { repository.upsertAllAndDeleteWithWarEnds(
+                    plugin.commitSiegeRepository {
+                        repository.upsertAllAndDeleteWithWarEnds(
                         plan.map(SaveMutation::proposed),
                         listOf(deletedFaction),
                         departedLockOwners
-                    ) }
+                    )
+                    }
                 } catch (conflict: OptimisticLockingFailureException) {
                     throw conflict
                 } catch (failure: Throwable) {
@@ -846,11 +847,13 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                 // all have ON DELETE CASCADE migrations, so the database commits the entire removal
                 // as one statement. The old order irreversibly deleted children before this final
                 // statement; a repository failure left a live faction stripped of every asset.
-                val warEnds = plugin.fenceSiegeMutation { commitLock(factionId).withLock {
+                val warEnds = plugin.fenceSiegeMutation {
+                    commitLock(factionId).withLock {
                     val committedWarEnds = plugin.commitSiegeRepository { repository.deleteWithWarEnds(factionId) }
                     factionCacheLock.write { factionsById.remove(factionId) }
                     committedWarEnds
-                } }
+                }
+                }
 
                 // Only after that statement commits do the service caches mirror its cascades. A
                 // failed parent delete therefore leaves database and live indexes untouched.

@@ -1,10 +1,10 @@
 package com.dansplugins.factionsystem.command.faction.embassy
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.claim.MfEmbassy
 import com.dansplugins.factionsystem.claim.MfEmbassyService.ChunkPos
 import com.dansplugins.factionsystem.claim.MfEmbassyStatus
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.player.MfPlayerId
@@ -42,8 +42,12 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
             return true
         }
         if (args.isEmpty() || args.first().equals("help", true)) {
-            NativeCommandHelp.render(sender, "f embassy", args.drop(if (args.isEmpty()) 0 else 1).toTypedArray(),
-                NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f embassy"))
+            NativeCommandHelp.render(
+                sender,
+                "f embassy",
+                args.drop(if (args.isEmpty()) 0 else 1).toTypedArray(),
+                NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f embassy")
+            )
             return true
         }
         if (args.first().lowercase() !in verbs) {

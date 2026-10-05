@@ -1,7 +1,5 @@
 package com.dansplugins.factionsystem.gate
 
-import com.dansplugins.factionsystem.siege.fenceSiegeMutation
-import com.dansplugins.factionsystem.siege.commitSiegeRepository
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.area.MfCuboidArea
@@ -10,6 +8,8 @@ import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.failure.ServiceFailureType
 import com.dansplugins.factionsystem.player.MfPlayerId
+import com.dansplugins.factionsystem.siege.commitSiegeRepository
+import com.dansplugins.factionsystem.siege.fenceSiegeMutation
 import dev.forkhandles.result4k.mapFailure
 import dev.forkhandles.result4k.onFailure
 import dev.forkhandles.result4k.resultFrom
@@ -101,8 +101,10 @@ class MfGateService(
         requireIdentity(reservation.record, gateId, expectedRevision)
         val original = reservation.record.original
         val phase = reservation.phase.get()
-        if (phase == "ACTIVATED") return requireNotNull(gatesById[gateId]).also {
+        if (phase == "ACTIVATED") {
+            return requireNotNull(gatesById[gateId]).also {
             check(it == original.copy(version = expectedRevision + 1, status = MfGateStatus.DISRUPTED))
+        }
         }
         require(phase == "PREPARED" && gatesById[gateId] == original) { "Gate preparation changed or requires review" }
         val activated = original.copy(version = expectedRevision + 1, status = MfGateStatus.DISRUPTED)
@@ -143,7 +145,15 @@ class MfGateService(
                 return@withLock if (after) terminal.original.copy(version = expectedRevision + 1, status = MfGateStatus.DISRUPTED) else terminal.original
             }
             requireIdentity(reservation.record, gateId, expectedRevision)
-            require(reservation.phase.get() == if (review) "REVIEWING" else if (after) "ACTIVATED" else "PREPARED") {
+            require(
+                reservation.phase.get() == if (review) {
+                    "REVIEWING"
+                } else if (after) {
+                "ACTIVATED"
+            } else {
+                "PREPARED"
+            }
+            ) {
                 "Native gate state requires explicit review"
             }
             try {
@@ -178,8 +188,7 @@ class MfGateService(
             if (record.phase == "PREPARED") {
                 check(reservationByGate.putIfAbsent(record.original.id, record.operationId) == null) { "Duplicate unresolved gate reservations" }
                 reservations[record.operationId] = Reservation(record, "QUARANTINED")
-            } else if (record.phase == "COMMITTED" && gatesById[record.original.id] == record.original.copy(
-                    version = record.original.version + 1, status = MfGateStatus.DISRUPTED)) {
+            } else if (record.phase == "COMMITTED" && gatesById[record.original.id] == record.original.copy(version = record.original.version + 1, status = MfGateStatus.DISRUPTED)) {
                 check(committedByGate.putIfAbsent(record.original.id, record) == null) { "Ambiguous committed gate receipt" }
             }
         }
@@ -229,7 +238,8 @@ class MfGateService(
      * @param maxRetries Maximum number of retry attempts (default: 3)
      * @return Result containing the saved gate or a ServiceFailure
      */
-    fun save(gate: MfGate, maxRetries: Int = 3) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    fun save(gate: MfGate, maxRetries: Int = 3) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             require(!reservationByGate.containsKey(gate.id)) { "Gate has an unresolved disruption" }
             require(gate.factionId !in deletingFactions) { "Faction ${gate.factionId.value} is being deleted" }
@@ -272,10 +282,12 @@ class MfGateService(
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-    } }
+    }
+    }
 
     @JvmName("deleteGateByGateId")
-    fun delete(gateId: MfGateId) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    fun delete(gateId: MfGateId) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             require(!reservationByGate.containsKey(gateId)) { "Gate has an unresolved disruption" }
             val live = gatesById[gateId]
@@ -292,10 +304,12 @@ class MfGateService(
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-    } }
+    }
+    }
 
     @JvmName("deleteAllGatesByFactionId")
-    fun deleteAllGates(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    fun deleteAllGates(factionId: MfFactionId) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             require(reservations.values.none { it.record.original.factionId == factionId }) { "Faction has unresolved gate disruptions" }
             require(factionId !in deletingFactions) { "Faction ${factionId.value} is being deleted" }
@@ -305,12 +319,15 @@ class MfGateService(
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-    } }
+    }
+    }
 
     /** Mirror the gate rows removed by a successful faction-delete cascade. */
-    internal fun evictAllGates(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    internal fun evictAllGates(factionId: MfFactionId) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         evictAllGatesLocked(factionId)
-    } }
+    }
+    }
 
     private fun evictAllGatesLocked(factionId: MfFactionId) {
         val gatesToDelete = gatesById.filterValues { it.factionId == factionId }
@@ -322,14 +339,18 @@ class MfGateService(
         }
     }
 
-    internal fun blockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    internal fun blockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         check(reservations.values.none { it.record.original.factionId == factionId }) { "Faction has unresolved gate disruptions; staff must review them before deletion" }
         check(deletingFactions.add(factionId)) { "Faction ${factionId.value} is already being deleted" }
-    } }
+    }
+    }
 
-    internal fun unblockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    internal fun unblockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         deletingFactions.remove(factionId)
-    } }
+    }
+    }
 
     @JvmName("getGateCreationContextByPlayerId")
     fun getGateCreationContext(playerId: MfPlayerId) = resultFrom {

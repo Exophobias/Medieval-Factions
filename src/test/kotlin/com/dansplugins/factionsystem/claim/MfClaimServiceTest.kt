@@ -19,6 +19,7 @@ import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.locks.MfLockRepository
 import com.dansplugins.factionsystem.locks.MfLockService
 import com.dansplugins.factionsystem.service.Services
+import com.dansplugins.factionsystem.siege.NativeFenceRegistry
 import dev.forkhandles.result4k.Failure
 import org.bukkit.Server
 import org.bukkit.event.Event
@@ -48,7 +49,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.logging.Logger
-import com.dansplugins.factionsystem.siege.NativeFenceRegistry
 
 /**
  * Exercises the per-faction claim index that backs getClaims(factionId)/getClaimCount/hasClaims, and

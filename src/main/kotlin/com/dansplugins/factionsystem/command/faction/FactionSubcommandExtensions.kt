@@ -49,8 +49,10 @@ internal class FactionSubcommandExtensions(private val plugin: MedievalFactions)
         registrations()
             .filter { registration -> validAliases(registration.provider).any { it !in reservedAliases } }
             .flatMap { it.provider.helpLines }
-            .filter { line -> (line.permission.isNullOrBlank() || sender.hasPermission(line.permission!!)) &&
-                (line.additionalPermission.isNullOrBlank() || sender.hasPermission(line.additionalPermission!!)) }
+            .filter { line ->
+                (line.permission.isNullOrBlank() || sender.hasPermission(line.permission!!)) &&
+                (line.additionalPermission.isNullOrBlank() || sender.hasPermission(line.additionalPermission!!))
+            }
 
     private fun resolve(alias: String, reservedAliases: Set<String>): FactionSubcommandExtension? {
         val normalized = alias.lowercase()

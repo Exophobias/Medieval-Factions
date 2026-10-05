@@ -1,10 +1,10 @@
 package com.dansplugins.factionsystem.command.duel
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.command.duel.accept.MfDuelAcceptCommand
 import com.dansplugins.factionsystem.command.duel.cancel.MfDuelCancelCommand
 import com.dansplugins.factionsystem.command.duel.challenge.MfDuelChallengeCommand
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import org.bukkit.ChatColor.RED
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor

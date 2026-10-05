@@ -1,15 +1,21 @@
 package com.dansplugins.factionsystem.siege
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.api.*
+import com.dansplugins.factionsystem.api.ApiOutcome
+import com.dansplugins.factionsystem.api.MercenaryCombatProvider
+import com.dansplugins.factionsystem.api.NativeSiegeAuthority
+import com.dansplugins.factionsystem.api.SiegeBlock
+import com.dansplugins.factionsystem.api.SiegeEffectLease
+import com.dansplugins.factionsystem.api.SiegeGate
+import com.dansplugins.factionsystem.api.SiegeNativeExpectation
 import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.faction.AdminFactionProtection
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.gate.MfGate
 import com.dansplugins.factionsystem.gate.MfGateId
 import com.dansplugins.factionsystem.gate.MfGateStatus
-import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.listener.MercenaryCombatGate
+import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.AT_WAR
 import org.bukkit.entity.Player
 import java.util.UUID
@@ -21,8 +27,13 @@ class DefaultNativeSiegeAuthority(private val plugin: MedievalFactions) : Native
 
     override fun warIdentity(firstRealm: String, secondRealm: String): String? {
         if (!plugin.isEnabled || firstRealm == secondRealm ||
-            listOf(firstRealm, secondRealm).any { !plugin.services.factionService.factionExistsForSiege(MfFactionId(it)) ||
-                plugin.services.factionService.isDeletionPending(MfFactionId(it)) }) return null
+            listOf(firstRealm, secondRealm).any {
+                !plugin.services.factionService.factionExistsForSiege(MfFactionId(it)) ||
+                plugin.services.factionService.isDeletionPending(MfFactionId(it))
+            }
+        ) {
+                    return null
+                }
         val service = plugin.services.factionRelationshipService
         val first = service.getRelationships(MfFactionId(firstRealm), MfFactionId(secondRealm)).filter { it.type == AT_WAR }
         val second = service.getRelationships(MfFactionId(secondRealm), MfFactionId(firstRealm)).filter { it.type == AT_WAR }
@@ -67,8 +78,13 @@ class DefaultNativeSiegeAuthority(private val plugin: MedievalFactions) : Native
             services.claimService.getClaim(world.uid, location.blockX shr 4, location.blockZ shr 4)
         }
         val territory = claim?.let { services.factionService.getFaction(it.factionId) }
-        if (territory != null && (!AdminFactionProtection.PLAYER_DAMAGE.isAllowed(territory) ||
-                !AdminFactionProtection.PVP.isAllowed(territory))) return false
+        if (territory != null && (
+            !AdminFactionProtection.PLAYER_DAMAGE.isAllowed(territory) ||
+                !AdminFactionProtection.PVP.isAllowed(territory)
+        )
+        ) {
+                    return false
+                }
         val duelOne = services.duelService.getDuel(attackerId)
         val duelTwo = services.duelService.getDuel(victimId)
         if (duelOne != null && duelTwo != null && duelOne.id == duelTwo.id) return true
@@ -83,8 +99,10 @@ class DefaultNativeSiegeAuthority(private val plugin: MedievalFactions) : Native
             else -> Unit
         }
         return !plugin.config.getBoolean("pvp.warRequiredForPlayersOfDifferentFactions") ||
-            (services.factionRelationshipService.getRelationships(first.id, second.id) +
-                services.factionRelationshipService.getRelationships(second.id, first.id)).any { it.type == AT_WAR }
+            (
+                services.factionRelationshipService.getRelationships(first.id, second.id) +
+                services.factionRelationshipService.getRelationships(second.id, first.id)
+            ).any { it.type == AT_WAR }
     }
 
     override fun gatesAt(block: SiegeBlock): List<SiegeGate> {
@@ -95,13 +113,19 @@ class DefaultNativeSiegeAuthority(private val plugin: MedievalFactions) : Native
 
     override fun tryAcquireEffectLease(expected: SiegeNativeExpectation): SiegeEffectLease? {
         if (!available() || expected.epoch != epoch || expected.wars.size > 64 ||
-            expected.claims.isEmpty() || expected.claims.size > 256 || expected.members.size > 64) return null
+            expected.claims.isEmpty() || expected.claims.size > 256 || expected.members.size > 64
+        ) {
+                return null
+            }
         val lease = NativeFenceRegistry.get(plugin).tryAcquire() ?: return null
         try {
             if (!available() || expected.wars.any { warIdentity(it.firstRealm, it.secondRealm) != it.identity } ||
                 expected.claims.any { claimOwner(it.worldId, it.chunkX, it.chunkZ) != it.owner } ||
-                expected.members.any { plugin.services.factionService.isDeletionPending(MfFactionId(it.realm)) ||
-                    plugin.services.factionService.getFaction(MfPlayerId(it.actor.toString()))?.id?.value != it.realm }) {
+                expected.members.any {
+                    plugin.services.factionService.isDeletionPending(MfFactionId(it.realm)) ||
+                    plugin.services.factionService.getFaction(MfPlayerId(it.actor.toString()))?.id?.value != it.realm
+                }
+            ) {
                 lease.close(); return null
             }
             return lease
@@ -133,13 +157,14 @@ class DefaultNativeSiegeAuthority(private val plugin: MedievalFactions) : Native
         val service = plugin.services.gateService
         val lease = NativeFenceRegistry.get(plugin).tryAcquire()
         if (lease == null) { future.complete(ApiOutcome.failure("A native transition is in progress")); return future }
-        try { service.beginDisruptionReview(operationId, MfGateId(gateId), expectedRevision) }
-        catch (failure: Exception) { future.complete(ApiOutcome.failure(failure.message ?: "Native review refused")); return future }
-        finally { lease.close() }
+        try { service.beginDisruptionReview(operationId, MfGateId(gateId), expectedRevision) } catch (failure: Exception) { future.complete(ApiOutcome.failure(failure.message ?: "Native review refused")); return future } finally { lease.close() }
         try {
-            plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable {
+            plugin.server.scheduler.runTaskAsynchronously(
+                plugin,
+                Runnable {
                 future.complete(gateOutcome { service.finishDisruptionReview(operationId, MfGateId(gateId), expectedRevision, observedAfter) })
-            })
+            }
+            )
         } catch (failure: Exception) {
             service.abandonDisruptionReview(operationId)
             future.complete(ApiOutcome.failure(failure.message ?: "Native review scheduling failed"))
@@ -151,16 +176,22 @@ class DefaultNativeSiegeAuthority(private val plugin: MedievalFactions) : Native
         if (!plugin.isEnabled || plugin.server.isPrimaryThread) return ApiOutcome.failure("Gate persistence requires an enabled provider and a worker thread")
         return gateOutcome(action)
     }
-    private fun gateOutcome(action: () -> MfGate): ApiOutcome<SiegeGate> = try { ApiOutcome.success(view(action())) }
-        catch (failure: Exception) { ApiOutcome.failure(failure.message ?: "Gate operation failed") }
+    private fun gateOutcome(action: () -> MfGate): ApiOutcome<SiegeGate> = try { ApiOutcome.success(view(action())) } catch (failure: Exception) { ApiOutcome.failure(failure.message ?: "Gate operation failed") }
 
     private fun view(gate: MfGate): SiegeGate {
         val min = gate.area.minPosition; val max = gate.area.maxPosition
         val count = Math.multiplyExact(Math.multiplyExact(max.x.toLong() - min.x + 1, max.y.toLong() - min.y + 1), max.z.toLong() - min.z + 1)
         require(count in 1..512) { "Gate exceeds the supported siege footprint" }
         val metadata = plugin.services.gateService.disruptionMetadata(gate.id)
-        return SiegeGate(gate.id.value, gate.version, gate.factionId.value,
-            gate.area.blocks.map { SiegeBlock(it.worldId, it.x, it.y, it.z) }, gate.material.name, gate.status.name,
-            metadata?.first, metadata?.second)
+        return SiegeGate(
+            gate.id.value,
+            gate.version,
+            gate.factionId.value,
+            gate.area.blocks.map { SiegeBlock(it.worldId, it.x, it.y, it.z) },
+            gate.material.name,
+            gate.status.name,
+            metadata?.first,
+            metadata?.second
+        )
     }
 }

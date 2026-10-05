@@ -1,11 +1,11 @@
 package com.dansplugins.factionsystem.command.faction.set
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.command.faction.set.description.MfFactionSetDescriptionCommand
 import com.dansplugins.factionsystem.command.faction.set.displayname.MfFactionSetDisplayNameCommand
 import com.dansplugins.factionsystem.command.faction.set.name.MfFactionSetNameCommand
 import com.dansplugins.factionsystem.command.faction.set.prefix.MfFactionSetPrefixCommand
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import org.bukkit.ChatColor.RED
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor

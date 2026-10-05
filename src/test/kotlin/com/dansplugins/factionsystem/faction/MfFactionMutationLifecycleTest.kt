@@ -30,6 +30,7 @@ import com.dansplugins.factionsystem.map.MapService
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipService
 import com.dansplugins.factionsystem.service.Services
+import com.dansplugins.factionsystem.siege.NativeFenceRegistry
 import dev.forkhandles.result4k.Failure
 import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.onFailure
@@ -64,7 +65,6 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Logger
 import kotlin.concurrent.thread
 import com.dansplugins.factionsystem.api.event.FactionCreateEvent as ApiFactionCreateEvent
-import com.dansplugins.factionsystem.siege.NativeFenceRegistry
 
 class MfFactionMutationLifecycleTest {
 

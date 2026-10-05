@@ -3,24 +3,24 @@ package com.dansplugins.factionsystem.command.faction.dpc
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.TestUtils
 import com.dansplugins.factionsystem.lang.Language
-import net.md_5.bungee.api.chat.BaseComponent
-import org.bukkit.command.CommandSender
-import org.bukkit.configuration.file.FileConfiguration
-import org.mockito.Answers
-import org.mockito.stubbing.Answer
 import com.dansplugins.factionsystem.service.Services
 import net.md_5.bungee.api.ChatColor
+import net.md_5.bungee.api.chat.BaseComponent
 import org.bukkit.Server
+import org.bukkit.command.CommandSender
+import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.scheduler.BukkitScheduler
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.mockito.Answers
 import org.mockito.ArgumentMatchers.anyMap
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.mockito.stubbing.Answer
 import java.util.logging.Logger
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -271,10 +271,16 @@ class MfFactionDpcCommandTest {
     }
 
     private fun mockLanguageSystem() {
-        language = mock(Language::class.java, Answer { invocation ->
-            if (invocation.method.returnType == String::class.java) invocation.arguments.firstOrNull()?.toString().orEmpty()
-            else Answers.RETURNS_DEFAULTS.answer(invocation)
-        })
+        language = mock(
+            Language::class.java,
+            Answer { invocation ->
+            if (invocation.method.returnType == String::class.java) {
+                invocation.arguments.firstOrNull()?.toString().orEmpty()
+            } else {
+                Answers.RETURNS_DEFAULTS.answer(invocation)
+            }
+        }
+        )
         `when`(plugin.language).thenReturn(language)
     }
 

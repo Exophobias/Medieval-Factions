@@ -1,9 +1,9 @@
 package com.dansplugins.factionsystem.command.faction.chat
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.chat.MfFactionChatChannel
 import com.dansplugins.factionsystem.chat.MfFactionChatChannel.FACTION
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor.GREEN
@@ -30,7 +30,8 @@ class MfFactionChatCommand(private val plugin: MedievalFactions) : CommandExecut
             return true
         }
         if (args.isNotEmpty() && args.first().lowercase() !in historyAliases &&
-            MfFactionChatChannel.values().none { it.name.equals(args.first(), true) }) {
+            MfFactionChatChannel.values().none { it.name.equals(args.first(), true) }
+        ) {
             NativeCommandHelp.unknown(sender)
             NativeCommandHelp.render(sender, "f chat", emptyArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f chat"))
             return true

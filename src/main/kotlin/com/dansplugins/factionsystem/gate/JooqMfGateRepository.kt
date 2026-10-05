@@ -68,8 +68,10 @@ class JooqMfGateRepository(
     }
 
     override fun getGateDisruptions(): List<MfGateDisruption> =
-        dsl.fetch("SELECT d.* FROM mf_gate_disruption d WHERE d.phase = 'PREPARED' OR (d.phase = 'COMMITTED' AND EXISTS " +
-            "(SELECT 1 FROM mf_gate g WHERE g.id = d.gate_id AND g.version = d.result_version AND g.status = 'DISRUPTED'))").map(::disruption)
+        dsl.fetch(
+            "SELECT d.* FROM mf_gate_disruption d WHERE d.phase = 'PREPARED' OR (d.phase = 'COMMITTED' AND EXISTS " +
+            "(SELECT 1 FROM mf_gate g WHERE g.id = d.gate_id AND g.version = d.result_version AND g.status = 'DISRUPTED'))"
+        ).map(::disruption)
 
     override fun getGateDisruption(operationId: UUID): MfGateDisruption? =
         dsl.fetchOne("SELECT * FROM mf_gate_disruption WHERE operation_id = ?", operationId.toString())?.let(::disruption)
@@ -80,14 +82,24 @@ class JooqMfGateRepository(
     private fun disruption(row: org.jooq.Record): MfGateDisruption {
         fun number(name: String) = (row.get(name) as Number).toInt()
         val world = UUID.fromString(row.get("world_id", String::class.java))
-        val original = MfGate(plugin, MfGateId(row.get("gate_id", String::class.java)), number("result_version") - 1,
+        val original = MfGate(
+            plugin,
+            MfGateId(row.get("gate_id", String::class.java)),
+            number("result_version") - 1,
             MfFactionId(row.get("faction_id", String::class.java)),
-            MfCuboidArea(MfBlockPosition(world, number("min_x"), number("min_y"), number("min_z")),
-                MfBlockPosition(world, number("max_x"), number("max_y"), number("max_z"))),
+            MfCuboidArea(
+                MfBlockPosition(world, number("min_x"), number("min_y"), number("min_z")),
+                MfBlockPosition(world, number("max_x"), number("max_y"), number("max_z"))
+            ),
             MfBlockPosition(world, number("trigger_x"), number("trigger_y"), number("trigger_z")),
-            requireNotNull(Material.getMaterial(row.get("material", String::class.java))), MfGateStatus.CLOSED)
-        return MfGateDisruption(UUID.fromString(row.get("operation_id", String::class.java)), original,
-            requireNotNull(row.get("phase", String::class.java)))
+            requireNotNull(Material.getMaterial(row.get("material", String::class.java))),
+            MfGateStatus.CLOSED
+        )
+        return MfGateDisruption(
+            UUID.fromString(row.get("operation_id", String::class.java)),
+            original,
+            requireNotNull(row.get("phase", String::class.java))
+        )
     }
 
     override fun prepareDisruption(operationId: UUID, gate: MfGate): MfGateDisruption = dsl.transactionResult { configuration ->
@@ -97,8 +109,12 @@ class JooqMfGateRepository(
             return@transactionResult it
         }
         require(gate.status == MfGateStatus.CLOSED && transaction.getGate(gate.id) == gate) { "Gate revision/state changed" }
-        require(transaction.dsl.fetchCount(transaction.dsl.selectFrom(org.jooq.impl.DSL.table("mf_gate_disruption"))
-            .where(org.jooq.impl.DSL.field("gate_id").eq(gate.id.value)).and(org.jooq.impl.DSL.field("phase").eq("PREPARED"))) == 0) {
+        require(
+            transaction.dsl.fetchCount(
+                transaction.dsl.selectFrom(org.jooq.impl.DSL.table("mf_gate_disruption"))
+            .where(org.jooq.impl.DSL.field("gate_id").eq(gate.id.value)).and(org.jooq.impl.DSL.field("phase").eq("PREPARED"))
+            ) == 0
+        ) {
             "Gate already has an unresolved disruption"
         }
         transaction.insertDisruption(operationId, gate, "PREPARED")
@@ -114,8 +130,13 @@ class JooqMfGateRepository(
         require(prior.phase == "PREPARED") { "Gate disruption is already terminal" }
         require(transaction.getGate(gate.id) == gate) { "Prepared gate identity/revision changed" }
         if (after) transaction.upsert(gate.copy(status = MfGateStatus.DISRUPTED))
-        check(transaction.dsl.execute("UPDATE mf_gate_disruption SET phase = ? WHERE operation_id = ? AND phase = 'PREPARED'",
-            desired, operationId.toString()) == 1) { "Gate disruption completion raced" }
+        check(
+            transaction.dsl.execute(
+                "UPDATE mf_gate_disruption SET phase = ? WHERE operation_id = ? AND phase = 'PREPARED'",
+            desired,
+                operationId.toString()
+            ) == 1
+        ) { "Gate disruption completion raced" }
         requireNotNull(transaction.getGateDisruption(operationId))
     }
 
@@ -126,7 +147,8 @@ class JooqMfGateRepository(
                 "min_x, min_y, min_z, max_x, max_y, max_z, trigger_x, trigger_y, trigger_z, material, phase) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             operationId.toString(), gate.id.value, gate.version + 1, gate.factionId.value, min.worldId.toString(),
-            min.x, min.y, min.z, max.x, max.y, max.z, gate.trigger.x, gate.trigger.y, gate.trigger.z, gate.material.name, phase)
+            min.x, min.y, min.z, max.x, max.y, max.z, gate.trigger.x, gate.trigger.y, gate.trigger.z, gate.material.name, phase
+        )
     }
 
     /** Low-level transaction compatibility; production artillery uses prepare/activate/commit. */

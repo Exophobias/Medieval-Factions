@@ -8,17 +8,32 @@ import org.bukkit.command.CommandSender
 
 /** Permission metadata mirrors the native handlers; each inner group contains OR alternatives. */
 internal object NativeCommandHelp {
-    data class Entry(val command: String, val description: String, val permissions: List<List<String>>,
-                     val staff: Boolean = false, val container: Boolean = false, val debug: Boolean = false) {
+    data class Entry(
+        val command: String,
+        val description: String,
+        val permissions: List<List<String>>,
+                     val staff: Boolean = false,
+        val container: Boolean = false,
+        val debug: Boolean = false
+    ) {
         fun allowed(sender: CommandSender) = permissions.all { group -> group.any(sender::hasPermission) }
     }
 
     fun catalog(plugin: MedievalFactions): List<Entry> {
         fun description(key: String, fallback: String = "Manage faction settings") =
             plugin.language["CommandFactionHelp$key"].substringAfter(" - ", fallback).replace("''", "'")
-        fun row(key: String, command: String, permissions: String, staff: Boolean = false,
-                fallback: String = "Manage faction settings") = Entry(command, description(key, fallback),
-            permissions.split('&').filter(String::isNotBlank).map { it.split('|') }, staff)
+        fun row(
+            key: String,
+            command: String,
+            permissions: String,
+            staff: Boolean = false,
+                fallback: String = "Manage faction settings"
+        ) = Entry(
+            command,
+            description(key, fallback),
+            permissions.split('&').filter(String::isNotBlank).map { it.split('|') },
+            staff
+        )
         fun container(key: String, command: String, staff: Boolean = false) =
             Entry(command, description(key), emptyList(), staff, container = true)
         return listOf(
@@ -146,28 +161,37 @@ internal object NativeCommandHelp {
             row("FactionApprove", "/f approve <id>", "mf.approve", true),
             row("FactionDeny", "/f deny <id>", "mf.approve", true),
             row("FactionPendingActions", "/f pendingactions", "mf.approve", true)
-        ) + if (plugin.config.getBoolean("dev.enableDevCommands")) listOf(
+        ) + if (plugin.config.getBoolean("dev.enableDevCommands")) {
+            listOf(
             Entry("/f dev generate <count>", "Generate development factions", listOf(listOf("mf.admin")), true, debug = true),
             Entry("/f dev powercycle", "Run a development power cycle", listOf(listOf("mf.admin")), true, debug = true)
-        ) else emptyList()
+        )
+        } else {
+            emptyList()
+        }
     }
 
-    fun extension(line: FactionSubcommandHelpLine): Entry = Entry(line.text.substringBefore(" - "),
+    fun extension(line: FactionSubcommandHelpLine): Entry = Entry(
+        line.text.substringBefore(" - "),
         line.text.substringAfter(" - ", "Faction extension command"),
         listOfNotNull(line.permission?.takeIf(String::isNotBlank), line.additionalPermission?.takeIf(String::isNotBlank))
-            .map { listOf(it) }, line.staff)
+            .map { listOf(it) },
+                line.staff
+    )
 
     fun forRoot(entries: List<Entry>, root: String): List<Entry> =
-        if (root == "f") entries else entries.filter { it.command.startsWith("/$root ") || it.command == "/$root" && !it.container }
+        if (root == "f") entries else entries.filter { it.command.startsWith("/$root ") || (it.command == "/$root" && !it.container) }
 
     fun canUse(sender: CommandSender, prefix: String, entries: List<Entry>): Boolean = entries.any {
         !it.container && (it.command == prefix || it.command.startsWith("$prefix ")) && it.allowed(sender)
     }
 
     private fun visible(sender: CommandSender, entries: List<Entry>): List<Entry> = entries.filter { entry ->
-        entry.allowed(sender) && (!entry.container || entries.any { child ->
+        entry.allowed(sender) && (
+            !entry.container || entries.any { child ->
             !child.container && child.staff == entry.staff && child.command.startsWith("${entry.command} ") && child.allowed(sender)
-        })
+        }
+        )
     }
 
     fun deny(sender: CommandSender) { sender.sendMessage("§cYou may not use that.") }
@@ -183,7 +207,7 @@ internal object NativeCommandHelp {
         val ordinary = available.filterNot(Entry::staff)
         val staff = available.filter(Entry::staff).sortedBy(Entry::debug)
         val directStaff = args.firstOrNull()?.equals("staff", true) == true
-        if (available.isEmpty() || directStaff && staff.isEmpty()) { deny(sender); return }
+        if (available.isEmpty() || (directStaff && staff.isEmpty())) { deny(sender); return }
         val ordinaryPages = pages(ordinary.size)
         val staffPages = pages(staff.size)
         val total = ordinaryPages + staffPages
@@ -193,21 +217,44 @@ internal object NativeCommandHelp {
         val staffSection = page > ordinaryPages
         val sectionPage = if (staffSection) page - ordinaryPages else page
         val section = if (staffSection) staff else ordinary
-        val header = component("---------- " to ChatColor.DARK_GRAY,
-            ("Medieval Factions" + if (staffSection) " Staff" else "") to ChatColor.GREEN)
+        val header = component(
+            "---------- " to ChatColor.DARK_GRAY,
+            ("Medieval Factions" + if (staffSection) " Staff" else "") to ChatColor.GREEN
+        )
         if (total > 1) {
-            header.addExtra(component(" (" to ChatColor.GRAY, "$page" to ChatColor.WHITE,
-                "/" to ChatColor.GRAY, "$total" to ChatColor.WHITE, ")" to ChatColor.GRAY))
+            header.addExtra(
+                component(
+                    " (" to ChatColor.GRAY,
+                    "$page" to ChatColor.WHITE,
+                "/" to ChatColor.GRAY,
+                    "$total" to ChatColor.WHITE,
+                    ")" to ChatColor.GRAY
+                )
+            )
         }
         header.addExtra(component(" ----------" to ChatColor.DARK_GRAY))
         sender.spigot().sendMessage(header)
         section.drop((sectionPage - 1) * 8).take(8).forEach { entry ->
-            sender.spigot().sendMessage(component(entry.command to ChatColor.GREEN,
-                " - " to ChatColor.DARK_GRAY, entry.description to ChatColor.GRAY))
+            sender.spigot().sendMessage(
+                component(
+                    entry.command to ChatColor.GREEN,
+                " - " to ChatColor.DARK_GRAY,
+                    entry.description to ChatColor.GRAY
+                )
+            )
         }
-        sender.spigot().sendMessage(if (page < total) component("---------- " to ChatColor.DARK_GRAY,
-            "/$root help ${page + 1}" to ChatColor.GREEN, " for more " to ChatColor.GRAY,
-            "----------" to ChatColor.DARK_GRAY) else component("----------------------------------------" to ChatColor.DARK_GRAY))
+        sender.spigot().sendMessage(
+            if (page < total) {
+            component(
+                "---------- " to ChatColor.DARK_GRAY,
+            "/$root help ${page + 1}" to ChatColor.GREEN,
+                " for more " to ChatColor.GRAY,
+            "----------" to ChatColor.DARK_GRAY
+            )
+        } else {
+            component("----------------------------------------" to ChatColor.DARK_GRAY)
+        }
+        )
     }
 
     fun helpTabs(sender: CommandSender, args: Array<out String>, entries: List<Entry>): List<String> {
@@ -215,9 +262,12 @@ internal object NativeCommandHelp {
         val staffPages = pages(available.count(Entry::staff))
         val total = pages(available.count { !it.staff }) + staffPages
         val directStaff = args.firstOrNull()?.equals("staff", true) == true
-        if (directStaff && staffPages == 0 || args.size > (if (directStaff) 2 else 1)) return emptyList()
-        val options = if (directStaff) (1..staffPages).map(Int::toString)
-            else (1..total).map(Int::toString) + if (staffPages > 0) listOf("staff") else emptyList()
+        if ((directStaff && staffPages == 0) || args.size > (if (directStaff) 2 else 1)) return emptyList()
+        val options = if (directStaff) {
+            (1..staffPages).map(Int::toString)
+        } else {
+            (1..total).map(Int::toString) + if (staffPages > 0) listOf("staff") else emptyList()
+        }
         return options.filter { it.startsWith(args.lastOrNull().orEmpty().lowercase()) }
     }
 }

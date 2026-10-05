@@ -1,7 +1,5 @@
 package com.dansplugins.factionsystem.claim
 
-import com.dansplugins.factionsystem.siege.fenceSiegeMutation
-import com.dansplugins.factionsystem.siege.commitSiegeRepository
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.api.FactionId
@@ -14,6 +12,8 @@ import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.failure.ServiceFailureType
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType
+import com.dansplugins.factionsystem.siege.commitSiegeRepository
+import com.dansplugins.factionsystem.siege.fenceSiegeMutation
 import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.map
 import dev.forkhandles.result4k.mapFailure
@@ -111,15 +111,18 @@ class MfEmbassyService(
      * Used by a single claim release. The check and repository delete must share this lock, or an
      * acceptance can land between them and be silently destroyed by the claim's FK cascade.
      */
-    internal fun <T> withClaimRelease(claim: MfClaimedChunk, action: () -> T): T = plugin.fenceSiegeMutation { mutationLock.withLock {
+    internal fun <T> withClaimRelease(claim: MfClaimedChunk, action: () -> T): T = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         require(getAt(claim.worldId, claim.x, claim.z) == null) {
             "Cancel the embassy offer or finish the clearing period before unclaiming this chunk"
         }
         action()
-    } }
+    }
+    }
 
     /** Equivalent fence for /f unclaimall. */
-    internal fun <T> withAllClaimsRelease(host: MfFactionId, action: () -> T): T = plugin.fenceSiegeMutation { mutationLock.withLock {
+    internal fun <T> withAllClaimsRelease(host: MfFactionId, action: () -> T): T = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         require(
             byChunk.values.none { stored ->
             val row = getAt(stored.worldId, stored.chunkX, stored.chunkZ)
@@ -129,13 +132,15 @@ class MfEmbassyService(
             "Cancel all embassy offers and finish clearing periods before unclaiming all land"
         }
         action()
-    } }
+    }
+    }
 
     /**
      * Called as one child-service fence during faction deletion. If an active lease exists, refuse
      * deletion before its parent-row cascade can erase the guest's property recovery window.
      */
-    internal fun blockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    internal fun blockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         require(
             byChunk.values.none { stored ->
             val row = getAt(stored.worldId, stored.chunkX, stored.chunkZ)
@@ -146,11 +151,14 @@ class MfEmbassyService(
             "Cancel embassy offers and finish clearing periods before dissolving this faction"
         }
         check(deletingFactions.add(factionId)) { "Faction ${factionId.value} is already being deleted" }
-    } }
+    }
+    }
 
-    internal fun unblockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    internal fun unblockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         deletingFactions.remove(factionId)
-    } }
+    }
+    }
 
     /**
      * Authoritative parcel decision for territory listeners. Combat and explosions stay with MF's
@@ -271,7 +279,8 @@ class MfEmbassyService(
         guest: MfFactionId,
         worldId: UUID,
         chunks: List<ChunkPos>
-    ): Result4k<List<MfEmbassy>, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<List<MfEmbassy>, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             requireParcelChecksAvailable()
             val now = clock.millis()
@@ -298,7 +307,8 @@ class MfEmbassyService(
             applyChanges(offered, emptyList())
             offered
         }.mapFailure(::failure)
-    } }
+    }
+    }
 
     /** Compatibility entry point; acceptance still signs every cell in the pending offer. */
     fun accept(
@@ -316,7 +326,8 @@ class MfEmbassyService(
         worldId: UUID,
         chunkX: Int,
         chunkZ: Int
-    ): Result4k<List<MfEmbassy>, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<List<MfEmbassy>, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             requireParcelChecksAvailable()
             val now = clock.millis()
@@ -346,7 +357,8 @@ class MfEmbassyService(
                 }
             }
         }.mapFailure(::failure)
-    } }
+    }
+    }
 
     private fun validateNewArea(host: MfFactionId, guest: MfFactionId, worldId: UUID, chunks: List<ChunkPos>) {
         require(chunks.isNotEmpty() && chunks.size == chunks.distinct().size) { "Embassy area must have distinct chunks" }
@@ -432,7 +444,8 @@ class MfEmbassyService(
         worldId: UUID,
         chunkX: Int,
         chunkZ: Int
-    ): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             sweepLocked(clock.millis())
             val row = requireNotNull(byChunk[Key(worldId, chunkX, chunkZ)]) { "No embassy offer at this chunk" }
@@ -443,7 +456,8 @@ class MfEmbassyService(
             applyChanges(emptyList(), offers)
             Unit
         }.mapFailure(::failure)
-    } }
+    }
+    }
 
     /** Guest confirms the ordinary agreement is cleared; conquest passage is finished per cell. */
     fun finish(
@@ -451,7 +465,8 @@ class MfEmbassyService(
         worldId: UUID,
         chunkX: Int,
         chunkZ: Int
-    ): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             sweepLocked(clock.millis())
             val row = requireNotNull(byChunk[Key(worldId, chunkX, chunkZ)]) { "No embassy at this chunk" }
@@ -469,19 +484,23 @@ class MfEmbassyService(
             applyChanges(emptyList(), cleared)
             Unit
         }.mapFailure(::failure)
-    } }
+    }
+    }
 
     /** Reconciles conquest and war state, then retires expired offers and retrieval windows. */
-    fun sweep(): Result4k<Int, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    fun sweep(): Result4k<Int, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom { sweepLocked(clock.millis()) }.mapFailure(::failure)
-    } }
+    }
+    }
 
     /**
      * Called after a claim write commits. A new owner gets a seven-day decision window; old guest
      * build rights stop immediately. Null ownership means the charter has no parcel to protect.
      */
     fun invalidateClaim(worldId: UUID, chunkX: Int, chunkZ: Int): Result4k<Boolean, ServiceFailure> =
-        plugin.fenceSiegeMutation { mutationLock.withLock {
+        plugin.fenceSiegeMutation {
+            mutationLock.withLock {
             resultFrom {
                 val row = byChunk[Key(worldId, chunkX, chunkZ)] ?: return@resultFrom false
                 val owner = plugin.services.claimService.getClaim(worldId, chunkX, chunkZ)?.factionId
@@ -497,7 +516,8 @@ class MfEmbassyService(
                 changeOwner(row, owner, clock.millis())
                 true
             }.mapFailure(::failure)
-        } }
+        }
+        }
 
     /** Conqueror elects immediate seizure or gives the guest fourteen days to retrieve property. */
     fun chooseConquest(
@@ -506,7 +526,8 @@ class MfEmbassyService(
         chunkX: Int,
         chunkZ: Int,
         passage: Boolean
-    ): Result4k<MfEmbassy?, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<MfEmbassy?, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             val now = clock.millis()
             sweepLocked(now)
@@ -530,14 +551,16 @@ class MfEmbassyService(
                     .also(::publish)
             }
         }.mapFailure(::failure)
-    } }
+    }
+    }
 
     /** Persist war start/end for every affected cell together; failure keeps a conservative clock fence. */
     fun onWarStateChanged(
         first: MfFactionId,
         second: MfFactionId,
         atWar: Boolean
-    ): Result4k<Int, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<Int, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             val now = clock.millis()
             val upserts = mutableListOf<MfEmbassy>()
@@ -606,7 +629,8 @@ class MfEmbassyService(
             notices.forEach { (row, passage) -> if (passage) noticeDefaultPassage(row) else noticeExpiry(row) }
             upserts.size + deletes.size
         }.mapFailure(::failure)
-    } }
+    }
+    }
 
     private fun endBy(
         actor: MfFactionId,
@@ -614,7 +638,8 @@ class MfEmbassyService(
         x: Int,
         z: Int,
         hostActs: Boolean
-    ): Result4k<MfEmbassy?, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<MfEmbassy?, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             val now = clock.millis()
             sweepLocked(now)
@@ -641,7 +666,8 @@ class MfEmbassyService(
             val resulting = clearing + agreement.filter { it.status == MfEmbassyStatus.CLEARING }
             resulting.firstOrNull { it.chunkX == x && it.chunkZ == z } ?: resulting.firstOrNull()
         }.mapFailure(::failure)
-    } }
+    }
+    }
 
     private fun effective(row: MfEmbassy?, now: Long): MfEmbassy? {
         if (row == null) return null

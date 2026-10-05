@@ -25,12 +25,19 @@ import org.bukkit.command.TabCompleter
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.entity.Player
 import org.bukkit.plugin.ServicesManager
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Answers
 import org.mockito.ArgumentMatchers.anyString
-import org.mockito.Mockito.*
+import org.mockito.Mockito.doAnswer
+import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.`when`
 import org.mockito.stubbing.Answer
 import java.util.Locale
 
@@ -55,10 +62,16 @@ class NativeCommandHelpHandlersTest {
         `when`(server.servicesManager).thenReturn(services)
         `when`(services.getRegistrations(com.dansplugins.factionsystem.api.FactionSubcommandExtension::class.java)).thenReturn(emptyList())
         `when`(plugin.config).thenReturn(config)
-        val language = mock(Language::class.java, Answer { invocation ->
-            if (invocation.method.returnType == String::class.java) invocation.arguments.firstOrNull()?.toString().orEmpty()
-            else Answers.RETURNS_DEFAULTS.answer(invocation)
-        })
+        val language = mock(
+            Language::class.java,
+            Answer { invocation ->
+            if (invocation.method.returnType == String::class.java) {
+                invocation.arguments.firstOrNull()?.toString().orEmpty()
+            } else {
+                Answers.RETURNS_DEFAULTS.answer(invocation)
+            }
+        }
+        )
         `when`(language.locale).thenReturn(Locale.US)
         `when`(plugin.language).thenReturn(language)
         sender = recording(CommandSender::class.java)
@@ -69,12 +82,16 @@ class NativeCommandHelpHandlersTest {
         `when`(value.hasPermission(anyString())).thenAnswer { it.arguments[0] in permissions }
         doAnswer { text += it.arguments[0].toString(); null }.`when`(value).sendMessage(anyString())
         fun capture(component: BaseComponent) { text += component.toPlainText(); components += component }
-        val spigot = if (type == Player::class.java) object : Player.Spigot() {
+        val spigot = if (type == Player::class.java) {
+            object : Player.Spigot() {
             override fun sendMessage(component: BaseComponent) = capture(component)
             override fun sendMessage(vararg values: BaseComponent) { values.forEach(::capture) }
-        } else object : CommandSender.Spigot() {
+        }
+        } else {
+            object : CommandSender.Spigot() {
             override fun sendMessage(component: BaseComponent) = capture(component)
             override fun sendMessage(vararg values: BaseComponent) { values.forEach(::capture) }
+        }
         }
         doReturn(spigot).`when`(value).spigot()
         return value

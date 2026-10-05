@@ -1,14 +1,13 @@
 package com.dansplugins.factionsystem.duel
 
-import com.dansplugins.factionsystem.siege.fenceSiegeMutation
-import com.dansplugins.factionsystem.siege.commitSiegeRepository
-
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.failure.OptimisticLockingFailureException
 import com.dansplugins.factionsystem.failure.ServiceFailure
 import com.dansplugins.factionsystem.failure.ServiceFailureType
 import com.dansplugins.factionsystem.fixture.guardFixturePlayers
 import com.dansplugins.factionsystem.player.MfPlayerId
+import com.dansplugins.factionsystem.siege.commitSiegeRepository
+import com.dansplugins.factionsystem.siege.fenceSiegeMutation
 import dev.forkhandles.result4k.mapFailure
 import dev.forkhandles.result4k.resultFrom
 import java.util.concurrent.ConcurrentHashMap
@@ -48,22 +47,26 @@ class MfDuelService(
         return duelsById[duelId]
     }
 
-    fun save(duel: MfDuel) = resultFrom { plugin.fenceSiegeMutation {
+    fun save(duel: MfDuel) = resultFrom {
+        plugin.fenceSiegeMutation {
         plugin.guardFixturePlayers(listOf(duel.challengerId.value, duel.challengedId.value)) {
             val result = plugin.commitSiegeRepository { duelRepo.upsert(duel) }
             duelsById[result.id] = result
             result
         }
-    } }.mapFailure { exception ->
+    }
+    }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
     }
 
     @JvmName("deleteDuelByDuelId")
-    fun delete(duelId: MfDuelId) = resultFrom { plugin.fenceSiegeMutation {
+    fun delete(duelId: MfDuelId) = resultFrom {
+        plugin.fenceSiegeMutation {
         val result = plugin.commitSiegeRepository { duelRepo.delete(duelId) }
         duelsById.remove(duelId)
         result
-    } }.mapFailure { exception ->
+    }
+    }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
     }
 

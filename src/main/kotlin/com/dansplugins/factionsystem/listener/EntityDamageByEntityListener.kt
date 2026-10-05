@@ -95,7 +95,8 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
                 return
             }
             if (!com.dansplugins.factionsystem.siege.DefaultNativeSiegeAuthority(plugin)
-                    .playerPolicy(damagerPlayer, damaged)) {
+                    .playerPolicy(damagerPlayer, damaged)
+            ) {
                 event.isCancelled = true
             }
         }

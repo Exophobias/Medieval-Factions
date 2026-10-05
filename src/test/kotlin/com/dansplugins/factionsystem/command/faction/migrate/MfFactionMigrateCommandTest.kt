@@ -4,13 +4,11 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.TestUtils
 import com.dansplugins.factionsystem.lang.Language
 import net.md_5.bungee.api.chat.BaseComponent
-import org.bukkit.command.CommandSender
-import org.bukkit.configuration.file.FileConfiguration
-import org.mockito.Answers
-import org.mockito.stubbing.Answer
 import org.bukkit.ChatColor.RED
 import org.bukkit.ChatColor.YELLOW
 import org.bukkit.Server
+import org.bukkit.command.CommandSender
+import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.plugin.Plugin
 import org.bukkit.plugin.PluginManager
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -20,12 +18,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.mockito.Answers
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.doCallRealMethod
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.mockito.stubbing.Answer
 
 /**
  * Covers the guard rails on `/mf migrate` — the branches that run on the calling thread and never touch
@@ -49,10 +49,16 @@ class MfFactionMigrateCommandTest {
         fixture = testUtils.createCommandTestFixture()
         plugin = mock(MedievalFactions::class.java)
         helpMessages.clear()
-        val language = mock(Language::class.java, Answer { invocation ->
-            if (invocation.method.returnType == String::class.java) invocation.arguments.firstOrNull()?.toString().orEmpty()
-            else Answers.RETURNS_DEFAULTS.answer(invocation)
-        })
+        val language = mock(
+            Language::class.java,
+            Answer { invocation ->
+            if (invocation.method.returnType == String::class.java) {
+                invocation.arguments.firstOrNull()?.toString().orEmpty()
+            } else {
+                Answers.RETURNS_DEFAULTS.answer(invocation)
+            }
+        }
+        )
         `when`(plugin.language).thenReturn(language)
         `when`(plugin.config).thenReturn(mock(FileConfiguration::class.java))
         `when`(fixture.sender.spigot()).thenReturn(object : CommandSender.Spigot() {

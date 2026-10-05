@@ -1,7 +1,5 @@
 package com.dansplugins.factionsystem.relationship
 
-import com.dansplugins.factionsystem.siege.fenceSiegeMutation
-import com.dansplugins.factionsystem.siege.commitSiegeRepository
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.PeaceOutcome
@@ -24,6 +22,8 @@ import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.ALLY
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.AT_WAR
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.LIEGE
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.VASSAL
+import com.dansplugins.factionsystem.siege.commitSiegeRepository
+import com.dansplugins.factionsystem.siege.fenceSiegeMutation
 import dev.forkhandles.result4k.Failure
 import dev.forkhandles.result4k.Result4k
 import dev.forkhandles.result4k.Success
@@ -119,7 +119,8 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
     fun save(
         relationship: MfFactionRelationship,
         initiatingFaction: MfFactionId
-    ): Result4k<MfFactionRelationship, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<MfFactionRelationship, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             require(relationship.factionId !in deletingFactions) {
                 "Faction ${relationship.factionId.value} is being deleted"
@@ -174,7 +175,8 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-    } }
+    }
+    }
 
     /**
      * Establish both directional rows of a war, repairing either half left by an interrupted write.
@@ -188,7 +190,8 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
         first: MfFactionId,
         second: MfFactionId,
         initiatingFaction: MfFactionId = first
-    ): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             if (getRelationships(first, second).none { it.type == AT_WAR }) {
                 save(
@@ -205,7 +208,8 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-    } }
+    }
+    }
 
     /**
      * Break a vassal oath, optionally establishing war first, as one serialised relationship act.
@@ -218,7 +222,8 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
         vassal: MfFactionId,
         liege: MfFactionId,
         establishWar: Boolean
-    ): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         resultFrom {
             val held = getRelationships(vassal, liege)
                 .filter { it.type == LIEGE || it.type == VASSAL }
@@ -238,7 +243,8 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-    } }
+    }
+    }
 
     /**
      * Remove one faction's complete half of a war as one serialised voluntary act.
@@ -250,7 +256,8 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
     fun layDownArms(
         faction: MfFactionId,
         otherFaction: MfFactionId
-    ): Result4k<PeaceOutcome, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ): Result4k<PeaceOutcome, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         val ownRows = getRelationships(faction, otherFaction).filter { it.type == AT_WAR }
         val theirRows = getRelationships(otherFaction, faction).filter { it.type == AT_WAR }
         if (ownRows.isEmpty()) {
@@ -299,12 +306,15 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
             }
         }
         Success(outcome)
-    } }
+    }
+    }
 
     @JvmName("deleteRelationshipByRelationshipId")
-    fun delete(id: MfFactionRelationshipId): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation { mutationLock.withLock {
+    fun delete(id: MfFactionRelationshipId): Result4k<Unit, ServiceFailure> = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         deleteLocked(id, WarEndReason.RELATIONSHIP_REMOVED, null)
-    } }
+    }
+    }
 
     /** Caller must hold [mutationLock]. */
     private fun deleteLocked(
@@ -356,7 +366,8 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
     fun evictForDeletedFaction(
         factionId: MfFactionId,
         warEnds: List<WarEndNotice> = emptyList()
-    ) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    ) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         val removed = relationshipsById.values.filter {
             it.factionId == factionId || it.targetId == factionId
         }
@@ -383,16 +394,21 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
                 )
             )
         }
-    } }
+    }
+    }
 
     /** Fence new relationship writes before a faction's parent row is cascade-deleted. */
-    internal fun blockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    internal fun blockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         check(deletingFactions.add(factionId)) { "Faction ${factionId.value} is already being deleted" }
-    } }
+    }
+    }
 
-    internal fun unblockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
+    internal fun unblockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation {
+        mutationLock.withLock {
         deletingFactions.remove(factionId)
-    } }
+    }
+    }
 
     @JvmName("getVassalTreeByFactionId")
     fun getVassalTree(factionId: MfFactionId): MfVassalNode {

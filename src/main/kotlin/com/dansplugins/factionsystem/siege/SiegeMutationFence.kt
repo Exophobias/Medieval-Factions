@@ -1,11 +1,11 @@
 package com.dansplugins.factionsystem.siege
 
+import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.SiegeEffectLease
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ConcurrentHashMap
-import com.dansplugins.factionsystem.MedievalFactions
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 /** Effects never wait. Native mutations announce intent before waiting for an admitted effect.
@@ -54,8 +54,7 @@ class SiegeMutationFence {
             throw IllegalStateException("A native transition is in progress; mutation refused without blocking the server thread")
         }
         if (!nonblocking) lock.readLock().lock()
-        try { return action() }
-        finally { lock.readLock().unlock(); writers.decrementAndGet() }
+        try { return action() } finally { lock.readLock().unlock(); writers.decrementAndGet() }
     }
 }
 

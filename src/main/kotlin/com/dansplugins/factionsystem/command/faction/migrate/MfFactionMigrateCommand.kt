@@ -1,10 +1,10 @@
 package com.dansplugins.factionsystem.command.faction.migrate
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.chat.JooqMfChatChannelMessageRepository
 import com.dansplugins.factionsystem.claim.JooqMfClaimedChunkRepository
 import com.dansplugins.factionsystem.claim.JooqMfEmbassyRepository
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.db.MfJdbc
 import com.dansplugins.factionsystem.duel.JooqMfDuelInviteRepository
 import com.dansplugins.factionsystem.duel.JooqMfDuelRepository

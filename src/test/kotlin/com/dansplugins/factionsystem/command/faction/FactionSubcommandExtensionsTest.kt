@@ -85,9 +85,14 @@ class FactionSubcommandExtensionsTest {
 
     @Test
     fun rootAndChildPermissionsBothGateHelpAndAliasSuggestions() {
-        register(RecordingExtension(setOf("causes"), listOf(
+        register(
+            RecordingExtension(
+                setOf("causes"),
+                listOf(
             FactionSubcommandHelpLine("/f causes <realm>", "addon.inspect", true, "addon.use")
-        )))
+        )
+            )
+        )
         val sender = mock(CommandSender::class.java)
         `when`(sender.hasPermission("addon.inspect")).thenReturn(true)
         assertTrue(extensions.helpLines(sender, emptySet()).isEmpty())

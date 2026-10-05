@@ -1,7 +1,6 @@
 package com.dansplugins.factionsystem.command.faction
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.command.faction.addmember.MfFactionAddMemberCommand
 import com.dansplugins.factionsystem.command.faction.admin.MfFactionAdminCommand
 import com.dansplugins.factionsystem.command.faction.ally.MfFactionAllyCommand
@@ -55,6 +54,7 @@ import com.dansplugins.factionsystem.command.faction.unclaimall.MfFactionUnclaim
 import com.dansplugins.factionsystem.command.faction.vassalize.MfFactionVassalizeCommand
 import com.dansplugins.factionsystem.command.faction.version.MfFactionVersionCommand
 import com.dansplugins.factionsystem.command.faction.who.MfFactionWhoCommand
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import org.bukkit.ChatColor
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
