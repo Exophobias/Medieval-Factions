@@ -3,6 +3,11 @@ package com.dansplugins.factionsystem.command.faction.dpc
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.TestUtils
 import com.dansplugins.factionsystem.lang.Language
+import net.md_5.bungee.api.chat.BaseComponent
+import org.bukkit.command.CommandSender
+import org.bukkit.configuration.file.FileConfiguration
+import org.mockito.Answers
+import org.mockito.stubbing.Answer
 import com.dansplugins.factionsystem.service.Services
 import net.md_5.bungee.api.ChatColor
 import org.bukkit.Server
@@ -26,11 +31,18 @@ class MfFactionDpcCommandTest {
     private lateinit var plugin: MedievalFactions
     private lateinit var language: Language
     private lateinit var uut: MfFactionDpcCommand
+    private val helpMessages = mutableListOf<String>()
 
     @BeforeEach
     fun setUp() {
         fixture = testUtils.createCommandTestFixture()
         plugin = mock(MedievalFactions::class.java)
+        helpMessages.clear()
+        `when`(plugin.config).thenReturn(mock(FileConfiguration::class.java))
+        `when`(fixture.sender.spigot()).thenReturn(object : CommandSender.Spigot() {
+            override fun sendMessage(component: BaseComponent) { helpMessages += component.toPlainText() }
+            override fun sendMessage(vararg components: BaseComponent) { components.forEach { sendMessage(it) } }
+        })
         mockLanguageSystem()
         mockScheduler()
         mockLogger()
@@ -62,7 +74,9 @@ class MfFactionDpcCommandTest {
         val result = uut.onCommand(sender, command, "label", arrayOf())
 
         assertTrue(result)
-        verify(sender).sendMessage("${ChatColor.RED}Usage message")
+        assertTrue(helpMessages.first().contains("Medieval Factions Staff"))
+        assertTrue(helpMessages.any { it.startsWith("/f dpc optin - ") })
+        assertTrue(helpMessages.last().all { it == '-' })
     }
 
     @Test
@@ -243,7 +257,10 @@ class MfFactionDpcCommandTest {
         val result = uut.onCommand(sender, command, "label", arrayOf("invalid"))
 
         assertTrue(result)
-        verify(sender).sendMessage("${ChatColor.RED}Usage message")
+        verify(sender).sendMessage("§cUnknown subcommand.")
+        assertTrue(helpMessages.first().contains("Medieval Factions Staff"))
+        assertTrue(helpMessages.any { it.startsWith("/f dpc optin - ") })
+        assertTrue(helpMessages.last().all { it == '-' })
     }
 
     // Helper functions
@@ -254,7 +271,10 @@ class MfFactionDpcCommandTest {
     }
 
     private fun mockLanguageSystem() {
-        language = mock(Language::class.java)
+        language = mock(Language::class.java, Answer { invocation ->
+            if (invocation.method.returnType == String::class.java) invocation.arguments.firstOrNull()?.toString().orEmpty()
+            else Answers.RETURNS_DEFAULTS.answer(invocation)
+        })
         `when`(plugin.language).thenReturn(language)
     }
 

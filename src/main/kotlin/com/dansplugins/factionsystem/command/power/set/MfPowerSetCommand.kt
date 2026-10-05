@@ -68,6 +68,7 @@ class MfPowerSetCommand(private val plugin: MedievalFactions) : CommandExecutor,
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.power.set") && !sender.hasPermission("mf.force.power") -> emptyList()
         args.isEmpty() ->
             plugin.server.offlinePlayers
                 .mapNotNull { it.name }

@@ -54,6 +54,7 @@ class MfFactionWhoCommand(private val plugin: MedievalFactions) : CommandExecuto
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.who") -> emptyList()
         args.isEmpty() ->
             plugin.server.offlinePlayers
                 .mapNotNull { it.name }

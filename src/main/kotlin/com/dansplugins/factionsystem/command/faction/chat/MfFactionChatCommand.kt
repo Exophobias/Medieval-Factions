@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.chat
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.chat.MfFactionChatChannel
 import com.dansplugins.factionsystem.chat.MfFactionChatChannel.FACTION
 import com.dansplugins.factionsystem.player.MfPlayer
@@ -22,6 +23,16 @@ class MfFactionChatCommand(private val plugin: MedievalFactions) : CommandExecut
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         if (!sender.hasPermission("mf.chat")) {
             sender.sendMessage("$RED${plugin.language["CommandFactionChatNoPermission"]}")
+            return true
+        }
+        if (args.firstOrNull()?.equals("help", true) == true) {
+            NativeCommandHelp.render(sender, "f chat", args.drop(1).toTypedArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f chat"))
+            return true
+        }
+        if (args.isNotEmpty() && args.first().lowercase() !in historyAliases &&
+            MfFactionChatChannel.values().none { it.name.equals(args.first(), true) }) {
+            NativeCommandHelp.unknown(sender)
+            NativeCommandHelp.render(sender, "f chat", emptyArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f chat"))
             return true
         }
         if (sender !is Player) {
@@ -90,8 +101,11 @@ class MfFactionChatCommand(private val plugin: MedievalFactions) : CommandExecut
         label: String,
         args: Array<out String>
     ) = when {
-        args.isEmpty() -> MfFactionChatChannel.values().map { it.name.lowercase() } + historyAliases
-        args.size == 1 -> (MfFactionChatChannel.values().map { it.name.lowercase() } + historyAliases)
+        args.firstOrNull()?.equals("help", true) == true -> NativeCommandHelp.helpTabs(sender, args.drop(1).toTypedArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f chat"))
+        args.size > 1 && args.first().lowercase() in historyAliases && !sender.hasPermission("mf.chat.history") -> emptyList()
+        !sender.hasPermission("mf.chat") -> emptyList()
+        args.isEmpty() -> listOf("help") + MfFactionChatChannel.values().map { it.name.lowercase() } + if (sender.hasPermission("mf.chat.history")) historyAliases else emptyList()
+        args.size == 1 -> (listOf("help") + MfFactionChatChannel.values().map { it.name.lowercase() } + (if (sender.hasPermission("mf.chat.history")) historyAliases else emptyList()))
             .filter { it.startsWith(args[0].lowercase()) }
         args.size > 1 && args[0].lowercase() in historyAliases -> chatHistoryCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
         else -> emptyList()

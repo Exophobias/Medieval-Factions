@@ -96,8 +96,12 @@ class MfFactionSetDisplayNameCommand(private val plugin: MedievalFactions) : Com
         args: Array<out String>
     ): List<String> {
         val parts = args.unquote()
+        val admin = sender.hasPermission("mf.admin") && sender.hasPermission("mf.admin.displayname")
+        if (parts.firstOrNull() == "--faction" && !admin) return emptyList()
+        if (!sender.hasPermission("mf.displayname") && !admin) return emptyList()
         if (parts.size == 1) {
-            val choices = mutableListOf("reset")
+            val choices = mutableListOf<String>()
+            if (sender.hasPermission("mf.displayname")) choices += "reset"
             if (sender.hasPermission("mf.admin") && sender.hasPermission("mf.admin.displayname")) choices += "--faction"
             return choices.filter { it.startsWith(parts[0], ignoreCase = true) }
         }

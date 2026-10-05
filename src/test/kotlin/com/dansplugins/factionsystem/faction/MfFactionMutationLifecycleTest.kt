@@ -64,6 +64,7 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Logger
 import kotlin.concurrent.thread
 import com.dansplugins.factionsystem.api.event.FactionCreateEvent as ApiFactionCreateEvent
+import com.dansplugins.factionsystem.siege.NativeFenceRegistry
 
 class MfFactionMutationLifecycleTest {
 
@@ -169,6 +170,23 @@ class MfFactionMutationLifecycleTest {
         api = DefaultMedievalFactionsApi(plugin)
         events.clear()
         publicationOrder.clear()
+    }
+
+    @Test
+    fun admittedSiegeEffectRejectsMemberOrFlagSavesAndDisbandBeforeNativeCallbacks() {
+        val owner = player()
+        val faction = createFaction("Frozen authority", listOf(owner))
+        events.clear()
+        val held = NativeFenceRegistry.get(plugin).tryAcquire()!!
+        try {
+            assertTrue(service.save(current(faction).copy(description = "changed")) is Failure)
+            assertTrue(service.delete(faction.id) is Failure)
+            assertEquals(faction, current(faction))
+            assertFalse(service.isDeletionPending(faction.id))
+            assertTrue(events.isEmpty(), "Reentrant mutation must fail before preparation or disband callbacks")
+        } finally { held.close() }
+        assertFalse(service.save(current(faction).copy(description = "changed")) is Failure)
+        assertEquals("changed", current(faction).description)
     }
 
     @Test

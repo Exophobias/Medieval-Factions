@@ -153,6 +153,7 @@ class MfFactionMapCommand(private val plugin: MedievalFactions) : CommandExecuto
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.map") -> emptyList()
         args.isEmpty() -> MapType.values().map { it.name.lowercase() }
         args.size == 1 -> MapType.values().map { it.name.lowercase() }.filter { it.startsWith(args[0].lowercase()) }
         else -> emptyList()

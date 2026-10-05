@@ -127,6 +127,7 @@ class MfFactionHeirCommand(private val plugin: MedievalFactions) : CommandExecut
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.heir")) return emptyList()
         if (sender !is Player) return emptyList()
         val playerService = plugin.services.playerService
         val faction = playerService.getPlayer(sender)?.let { plugin.services.factionService.getFaction(it.id) }

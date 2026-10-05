@@ -141,6 +141,7 @@ class MfFactionTransferCommand(private val plugin: MedievalFactions) : CommandEx
     ): List<String> = memberNames(sender).filter { it.lowercase().startsWith(args.lastOrNull()?.lowercase() ?: "") }
 
     private fun memberNames(sender: CommandSender): List<String> {
+        if (!sender.hasPermission("mf.transfer")) return emptyList()
         if (sender !is Player) return emptyList()
         val playerService = plugin.services.playerService
         val faction = playerService.getPlayer(sender)?.let { plugin.services.factionService.getFaction(it.id) }

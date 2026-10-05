@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.dev
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
@@ -22,6 +23,7 @@ import kotlin.random.Random
 
 class MfFactionDevGenerateCommand(private val plugin: MedievalFactions) : CommandExecutor, TabCompleter {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (!plugin.config.getBoolean("dev.enableDevCommands") || !sender.hasPermission("mf.admin")) { NativeCommandHelp.deny(sender); return true }
         val players = listOf(
             UUID.fromString("0a9fa342-3139-49d7-8acb-fcf4d9c1f0ef"),
             UUID.fromString("3fcad669-b828-4d6d-be88-1c28b067c5d8"),

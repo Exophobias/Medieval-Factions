@@ -114,6 +114,7 @@ class MfDuelChallengeCommand(private val plugin: MedievalFactions) : CommandExec
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.duel") -> emptyList()
         args.isEmpty() -> plugin.server.onlinePlayers.map(Player::getName)
         args.size == 1 ->
             plugin.server.onlinePlayers

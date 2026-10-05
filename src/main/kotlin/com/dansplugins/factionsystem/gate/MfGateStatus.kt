@@ -4,5 +4,6 @@ enum class MfGateStatus {
     OPEN,
     OPENING,
     CLOSED,
-    CLOSING
+    CLOSING,
+    DISRUPTED
 }

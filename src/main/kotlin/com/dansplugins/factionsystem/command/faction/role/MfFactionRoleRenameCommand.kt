@@ -170,6 +170,7 @@ class MfFactionRoleRenameCommand(private val plugin: MedievalFactions) : Command
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.role.rename")) return emptyList()
         if (sender !is Player) return emptyList()
         val playerId = MfPlayerId.fromBukkitPlayer(sender)
         val factionService = plugin.services.factionService

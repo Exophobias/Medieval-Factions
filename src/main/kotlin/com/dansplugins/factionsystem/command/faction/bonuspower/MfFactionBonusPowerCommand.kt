@@ -60,6 +60,7 @@ class MfFactionBonusPowerCommand(private val plugin: MedievalFactions) : Command
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.force.bonuspower")) return emptyList()
         val factionService = plugin.services.factionService
         return when {
             args.isEmpty() -> factionService.factions.map(MfFaction::name)

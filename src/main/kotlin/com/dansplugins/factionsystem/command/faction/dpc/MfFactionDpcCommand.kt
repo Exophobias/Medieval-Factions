@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.dpc
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import org.bukkit.ChatColor.GREEN
 import org.bukkit.ChatColor.RED
 import org.bukkit.command.Command
@@ -15,8 +16,8 @@ class MfFactionDpcCommand(private val plugin: MedievalFactions) : CommandExecuto
             sender.sendMessage("$RED${plugin.language["CommandFactionDpcNoPermission"]}")
             return true
         }
-        if (args.isEmpty()) {
-            sender.sendMessage("$RED${plugin.language["CommandFactionDpcUsage"]}")
+        if (args.isEmpty() || args.first().equals("help", true)) {
+            NativeCommandHelp.render(sender, "f dpc", args.drop(if (args.isEmpty()) 0 else 1).toTypedArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f dpc"))
             return true
         }
         when (args[0].lowercase()) {
@@ -25,7 +26,10 @@ class MfFactionDpcCommand(private val plugin: MedievalFactions) : CommandExecuto
             "reminder" -> handleReminder(sender, args)
             "shareip" -> handleShareIp(sender, args)
             "discord" -> handleDiscord(sender, args)
-            else -> sender.sendMessage("$RED${plugin.language["CommandFactionDpcUsage"]}")
+            else -> {
+                NativeCommandHelp.unknown(sender)
+                NativeCommandHelp.render(sender, "f dpc", emptyArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f dpc"))
+            }
         }
         return true
     }
@@ -109,9 +113,10 @@ class MfFactionDpcCommand(private val plugin: MedievalFactions) : CommandExecuto
         args: Array<out String>
     ): List<String> {
         if (!sender.hasPermission("mf.dpc")) return emptyList()
+        if (args.firstOrNull()?.equals("help", true) == true) return NativeCommandHelp.helpTabs(sender, args.drop(1).toTypedArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f dpc"))
         return when {
             args.size <= 1 -> {
-                val subcommands = listOf("optin", "optout", "reminder", "shareip", "discord")
+                val subcommands = listOf("help", "optin", "optout", "reminder", "shareip", "discord")
                 if (args.isEmpty()) subcommands else subcommands.filter { it.startsWith(args[0].lowercase()) }
             }
             args.size == 2 -> when (args[0].lowercase()) {

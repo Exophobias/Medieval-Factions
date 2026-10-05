@@ -144,6 +144,7 @@ class MfFactionRelationshipAddCommand(private val plugin: MedievalFactions) : Co
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.relationship.add")) return emptyList()
         val factionService = plugin.services.factionService
         return when {
             args.isEmpty() -> factionService.factions.map(MfFaction::name)

@@ -174,6 +174,7 @@ class MfFactionInviteCommand(private val plugin: MedievalFactions) : CommandExec
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.invite") -> emptyList()
         args.isEmpty() ->
             plugin.server.offlinePlayers
                 .mapNotNull { it.name }

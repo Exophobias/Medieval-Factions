@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.lock
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.interaction.MfInteractionStatus.LOCKING
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
@@ -17,6 +18,10 @@ class MfLockCommand(private val plugin: MedievalFactions) : CommandExecutor, Tab
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         if (!sender.hasPermission("mf.lock")) {
             sender.sendMessage("$RED${plugin.language["CommandLockNoPermission"]}")
+            return true
+        }
+        if (args.firstOrNull()?.equals("help", true) == true) {
+            NativeCommandHelp.render(sender, "lock", args.drop(1).toTypedArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "lock"))
             return true
         }
         if (sender !is Player) {
@@ -66,8 +71,10 @@ class MfLockCommand(private val plugin: MedievalFactions) : CommandExecutor, Tab
         label: String,
         args: Array<out String>
     ) = when {
-        args.isEmpty() -> listOf("cancel")
-        args.size == 1 && "cancel".startsWith(args[0].lowercase()) -> listOf("cancel")
+        args.firstOrNull()?.equals("help", true) == true && sender.hasPermission("mf.lock") -> NativeCommandHelp.helpTabs(sender, args.drop(1).toTypedArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "lock"))
+        !sender.hasPermission("mf.lock") -> emptyList()
+        args.isEmpty() -> listOf("help", "cancel")
+        args.size == 1 -> listOf("help", "cancel").filter { it.startsWith(args.first().lowercase()) }
         else -> emptyList()
     }
 }

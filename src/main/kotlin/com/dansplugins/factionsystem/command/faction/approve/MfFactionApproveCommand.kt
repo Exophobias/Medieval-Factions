@@ -150,6 +150,7 @@ class MfFactionApproveCommand(private val plugin: MedievalFactions) : CommandExe
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.approve")) return emptyList()
         return when {
             args.isEmpty() || args.size == 1 -> {
                 val approvalService = plugin.services.approvalRequestService

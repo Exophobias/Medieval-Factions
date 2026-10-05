@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.command.faction.addmember.MfFactionAddMemberCommand
 import com.dansplugins.factionsystem.command.faction.admin.MfFactionAdminCommand
 import com.dansplugins.factionsystem.command.faction.ally.MfFactionAllyCommand
@@ -229,10 +230,71 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
 
     private val builtInAliasSet = subcommands.map(String::lowercase).toSet()
 
-    private fun allSubcommands(): List<String> =
-        (subcommands + extensionCommands.aliases(builtInAliasSet)).distinctBy(String::lowercase)
+    private fun nativePermitted(sender: CommandSender, alias: String): Boolean {
+        val entries = NativeCommandHelp.catalog(plugin)
+        return when (alias.lowercase()) {
+            in helpAliases -> NativeCommandHelp.canUse(sender, "/f help", entries)
+            in createAliases -> NativeCommandHelp.canUse(sender, "/f create", entries)
+            in claimAliases -> NativeCommandHelp.canUse(sender, "/f claim", entries)
+            in lawAliases -> NativeCommandHelp.canUse(sender, "/f law", entries)
+            in allyAliases -> NativeCommandHelp.canUse(sender, "/f ally", entries)
+            in breakAllianceAliases -> NativeCommandHelp.canUse(sender, "/f breakalliance", entries)
+            in inviteAliases -> NativeCommandHelp.canUse(sender, "/f invite", entries)
+            in joinAliases -> NativeCommandHelp.canUse(sender, "/f join", entries)
+            in declareWarAliases -> NativeCommandHelp.canUse(sender, "/f declarewar", entries)
+            in makePeaceAliases -> NativeCommandHelp.canUse(sender, "/f makepeace", entries)
+            in infoAliases -> NativeCommandHelp.canUse(sender, "/f info", entries)
+            in membersAliases -> NativeCommandHelp.canUse(sender, "/f members", entries)
+            in roleAliases -> NativeCommandHelp.canUse(sender, "/f role", entries)
+            in listAliases -> NativeCommandHelp.canUse(sender, "/f list", entries)
+            in unclaimAliases -> NativeCommandHelp.canUse(sender, "/f unclaim", entries)
+            in unclaimAllAliases -> NativeCommandHelp.canUse(sender, "/f unclaimall", entries)
+            in powerAliases -> NativeCommandHelp.canUse(sender, "/f power", entries)
+            in whoAliases -> NativeCommandHelp.canUse(sender, "/f who", entries)
+            in versionAliases -> NativeCommandHelp.canUse(sender, "/f version", entries)
+            in disbandAliases -> NativeCommandHelp.canUse(sender, "/f disband", entries)
+            in embassyAliases -> NativeCommandHelp.canUse(sender, "/f embassy", entries)
+            in invokeAliases -> NativeCommandHelp.canUse(sender, "/f invoke", entries)
+            in leaveAliases -> NativeCommandHelp.canUse(sender, "/f leave", entries)
+            in setAliases -> NativeCommandHelp.canUse(sender, "/f set", entries)
+            in renameAliases -> NativeCommandHelp.canUse(sender, "/f set name", entries)
+            in vassalizeAliases -> NativeCommandHelp.canUse(sender, "/f vassalize", entries)
+            in swearFealtyAliases -> NativeCommandHelp.canUse(sender, "/f swearfealty", entries)
+            in declineVassalizationAliases -> NativeCommandHelp.canUse(sender, "/f declinevassalization", entries)
+            in grantIndependenceAliases -> NativeCommandHelp.canUse(sender, "/f grantindependence", entries)
+            in declareIndependenceAliases -> NativeCommandHelp.canUse(sender, "/f declareindependence", entries)
+            in kickAliases -> NativeCommandHelp.canUse(sender, "/f kick", entries)
+            in mapAliases -> NativeCommandHelp.canUse(sender, "/f map", entries)
+            in setHomeAliases -> NativeCommandHelp.canUse(sender, "/f sethome", entries)
+            in homeAliases -> NativeCommandHelp.canUse(sender, "/f home", entries)
+            in flagAliases -> NativeCommandHelp.canUse(sender, "/f flag", entries)
+            in bypassAliases -> NativeCommandHelp.canUse(sender, "/f bypass", entries)
+            in chatAliases -> NativeCommandHelp.canUse(sender, "/f chat", entries)
+            in bonusPowerAliases -> NativeCommandHelp.canUse(sender, "/f bonuspower", entries)
+            in relationshipAliases -> NativeCommandHelp.canUse(sender, "/f relationship", entries)
+            in addMemberAliases -> NativeCommandHelp.canUse(sender, "/f addmember", entries)
+            in devAliases -> NativeCommandHelp.canUse(sender, "/f dev", entries)
+            in dpcAliases -> NativeCommandHelp.canUse(sender, "/f dpc", entries)
+            in applyAliases -> NativeCommandHelp.canUse(sender, "/f apply", entries)
+            in showAppsAliases -> NativeCommandHelp.canUse(sender, "/f showapps", entries)
+            in approveAppAliases -> NativeCommandHelp.canUse(sender, "/f approveapp", entries)
+            in denyAppAliases -> NativeCommandHelp.canUse(sender, "/f denyapp", entries)
+            in adminAliases -> NativeCommandHelp.canUse(sender, "/f admin", entries)
+            in migrateAliases -> NativeCommandHelp.canUse(sender, "/f migrate", entries)
+            in approveAliases -> NativeCommandHelp.canUse(sender, "/f approve", entries)
+            in denyAliases -> NativeCommandHelp.canUse(sender, "/f deny", entries)
+            in pendingActionsAliases -> NativeCommandHelp.canUse(sender, "/f pendingactions", entries)
+            in transferAliases -> NativeCommandHelp.canUse(sender, "/f transfer", entries)
+            in heirAliases -> NativeCommandHelp.canUse(sender, "/f heir", entries)
+            else -> false
+        }
+    }
+    private fun allSubcommands(sender: CommandSender): List<String> =
+        (subcommands.filter { nativePermitted(sender, it) } + extensionCommands.aliases(sender, builtInAliasSet))
+            .distinctBy(String::lowercase)
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (args.isEmpty()) return factionHelpCommand.onCommand(sender, command, label, emptyArray())
         return when (args.firstOrNull()?.lowercase()) {
             in helpAliases -> factionHelpCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in createAliases -> factionCreateCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
@@ -294,27 +356,8 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
                 if (extensionResult != null) {
                     extensionResult
                 } else {
-                    // Patriam fork: styled "about" screen. Built here rather than from the language
-                    // files because the Language class does not translate '&' codes and has no
-                    // cross-locale key fallback, so keeping the layout in code renders identically in
-                    // every language and in one place.
-                    val version = plugin.description.version
-                    val developers = plugin.description.authors.joinToString()
-                    val currentLanguage = plugin.config.getString("language") ?: "en_US"
-                    val border = "&8&m" + " ".repeat(50)
-                    listOf(
-                        border,
-                        "&b&lMedieval Factions &7v$version",
-                        "&7Modified by &egerber11 &7for Patriam use",
-                        "&7Developers: &f$developers",
-                        "&7Wiki: &fhttps://github.com/dmccoystephenson/Medieval-Factions/wiki",
-                        "&7Language: &f$currentLanguage",
-                        "&7A list of commands: &6/f help",
-                        border
-                    ).forEach { line ->
-                        sender.sendMessage(ChatColor.translateAlternateColorCodes('&', line))
-                    }
-                    true
+                    NativeCommandHelp.unknown(sender)
+                    factionHelpCommand.onCommand(sender, command, label, emptyArray())
                 }
             }
         }
@@ -326,8 +369,10 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
         label: String,
         args: Array<out String>
     ) = when {
-        args.isEmpty() -> allSubcommands()
-        args.size == 1 -> allSubcommands().filter { it.startsWith(args[0].lowercase()) }
+        args.size > 1 && args.first().lowercase() in builtInAliasSet && !nativePermitted(sender, args.first()) -> emptyList()
+        args.size > 1 && args.first().lowercase() !in builtInAliasSet && args.first().lowercase() !in extensionCommands.aliases(sender, builtInAliasSet) -> emptyList()
+        args.isEmpty() -> allSubcommands(sender)
+        args.size == 1 -> allSubcommands(sender).filter { it.startsWith(args[0].lowercase()) }
         else -> when (args.first().lowercase()) {
             in helpAliases -> factionHelpCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in createAliases -> factionCreateCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())

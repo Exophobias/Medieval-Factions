@@ -96,6 +96,7 @@ class MfFactionRoleSetDefaultCommand(private val plugin: MedievalFactions) : Com
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.role.setdefault")) return emptyList()
         if (sender !is Player) return emptyList()
         val playerId = MfPlayerId.fromBukkitPlayer(sender)
         val factionService = plugin.services.factionService

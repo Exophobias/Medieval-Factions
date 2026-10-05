@@ -199,6 +199,7 @@ class MfAccessorsAddCommand(private val plugin: MedievalFactions) : CommandExecu
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.accessors.add") && !sender.hasPermission("mf.grantaccess") -> emptyList()
         args.size <= 3 -> emptyList()
         args.size == 4 ->
             plugin.server.offlinePlayers

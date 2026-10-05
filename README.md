@@ -211,3 +211,5 @@ Usage reporting is on by default: when the plugin is enabled, and each time one 
 - the environment variable `TRACE_USAGE_REPORTING=off` or `DO_NOT_TRACK=1`
 
 Details: https://github.com/Stephenson-Software/trace#usage-reporting
+
+See [Native siege policy, fenced effects and durable gate actuator protocol](docs/PATRIAM-SIEGE-AUTHORITY.md).

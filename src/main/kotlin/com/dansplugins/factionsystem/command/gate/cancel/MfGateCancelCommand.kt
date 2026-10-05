@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.gate.cancel
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
 import net.md_5.bungee.api.ChatColor.GREEN
@@ -14,6 +15,7 @@ import java.util.logging.Level.SEVERE
 
 class MfGateCancelCommand(private val plugin: MedievalFactions) : CommandExecutor, TabCompleter {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (!sender.hasPermission("mf.gate")) { NativeCommandHelp.deny(sender); return true }
         if (sender !is Player) {
             sender.sendMessage("$RED${plugin.language["CommandGateCancelMustBeAPlayer"]}")
             return true

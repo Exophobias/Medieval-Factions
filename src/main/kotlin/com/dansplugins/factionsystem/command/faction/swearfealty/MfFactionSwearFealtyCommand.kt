@@ -122,6 +122,7 @@ class MfFactionSwearFealtyCommand(private val plugin: MedievalFactions) : Comman
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.swearfealty")) return emptyList()
         val factionService = plugin.services.factionService
         return when {
             args.isEmpty() -> factionService.factions.map(MfFaction::name)

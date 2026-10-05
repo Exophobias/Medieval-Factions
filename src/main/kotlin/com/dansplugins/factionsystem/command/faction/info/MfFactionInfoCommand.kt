@@ -211,6 +211,8 @@ class MfFactionInfoCommand(private val plugin: MedievalFactions) : CommandExecut
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.info.other") -> emptyList()
+        !sender.hasPermission("mf.info") -> emptyList()
         args.isEmpty() -> plugin.services.factionService.factions.map(MfFaction::name) +
             plugin.server.offlinePlayers.mapNotNull(OfflinePlayer::getName)
         args.size == 1 -> (

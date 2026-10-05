@@ -1,5 +1,8 @@
 package com.dansplugins.factionsystem.faction
 
+import com.dansplugins.factionsystem.siege.fenceSiegeMutation
+import com.dansplugins.factionsystem.siege.commitSiegeRepository
+
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.FactionId
 import com.dansplugins.factionsystem.api.WarEndNotice
@@ -66,6 +69,10 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
 
     /** Prevents a re-entrant disband listener from publishing the same deletion twice. */
     private val deletingFactions: MutableSet<MfFactionId> = ConcurrentHashMap.newKeySet()
+
+    /** Reads do not wait for lifecycle callbacks; a pending cascade refuses fresh effect admission. */
+    internal fun isDeletionPending(factionId: MfFactionId): Boolean = factionId in deletingFactions
+    internal fun factionExistsForSiege(factionId: MfFactionId): Boolean = factionsById.containsKey(factionId)
 
     /** Per-faction locks protecting commit/cache state and lifecycle reservation counters. */
     private val commitLocks: MutableMap<MfFactionId, ReentrantLock> = ConcurrentHashMap()
@@ -134,6 +141,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
     fun getFaction(factionId: MfFactionId): MfFaction? = factionCacheLock.read { factionsById[factionId] }
 
     fun save(faction: MfFaction): Result4k<MfFaction, ServiceFailure> = resultFrom {
+        com.dansplugins.factionsystem.siege.NativeFenceRegistry.get(plugin).requireMutationAllowed()
         plugin.guardFixtureFaction(faction) { saveWithinFixtureBoundary(faction) }
     }.mapFailure { exception ->
         ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
@@ -451,7 +459,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             val departedLockOwners = plan.flatMap(SaveMutation::removedMembers).toSet()
             plugin.services.lockService.withMutationLock {
                 val persisted = try {
-                    repository.upsertAll(plan.map(SaveMutation::proposed), departedLockOwners)
+                    plugin.commitSiegeRepository { repository.upsertAll(plan.map(SaveMutation::proposed), departedLockOwners) }
                 } catch (conflict: OptimisticLockingFailureException) {
                     throw conflict
                 } catch (failure: Throwable) {
@@ -498,13 +506,16 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         }
     }
 
-    private fun <T> withCommitLocks(
+    private fun <T> withCommitLocks(ids: List<MfFactionId>, action: () -> T): T =
+        plugin.fenceSiegeMutation { withCommitLocksInsideFence(ids, 0, action) }
+
+    private fun <T> withCommitLocksInsideFence(
         ids: List<MfFactionId>,
         index: Int = 0,
         action: () -> T
     ): T {
         if (index == ids.size) return action()
-        return commitLock(ids[index]).withLock { withCommitLocks(ids, index + 1, action) }
+        return commitLock(ids[index]).withLock { withCommitLocksInsideFence(ids, index + 1, action) }
     }
 
     /** Publish only facts known to have committed; every notification failure is contained. */
@@ -624,6 +635,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
         destinationId: MfFactionId,
         expectedSourceMembers: Collection<MfPlayerId>
     ): Result4k<Unit, ServiceFailure> = resultFrom {
+        com.dansplugins.factionsystem.siege.NativeFenceRegistry.get(plugin).requireMutationAllowed()
         plugin.guardFixturePlayers(expectedSourceMembers.map { it.value }) {
             transferAllMembersWithinFixtureBoundary(sourceId, destinationId, expectedSourceMembers)
         }
@@ -755,11 +767,11 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             val departedLockOwners = plan.flatMap(SaveMutation::removedMembers).toSet()
             plugin.services.lockService.withMutationLock {
                 val persisted = try {
-                    repository.upsertAllAndDeleteWithWarEnds(
+                    plugin.commitSiegeRepository { repository.upsertAllAndDeleteWithWarEnds(
                         plan.map(SaveMutation::proposed),
                         listOf(deletedFaction),
                         departedLockOwners
-                    )
+                    ) }
                 } catch (conflict: OptimisticLockingFailureException) {
                     throw conflict
                 } catch (failure: Throwable) {
@@ -801,6 +813,7 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
 
     @JvmName("deleteFactionByFactionId")
     fun delete(factionId: MfFactionId): Result4k<Unit, ServiceFailure> = resultFrom {
+        com.dansplugins.factionsystem.siege.NativeFenceRegistry.get(plugin).requireMutationAllowed()
         beginFactionDeletion(factionId)
         try {
             val faction = requireNotNull(getFaction(factionId)) {
@@ -833,11 +846,11 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
                 // all have ON DELETE CASCADE migrations, so the database commits the entire removal
                 // as one statement. The old order irreversibly deleted children before this final
                 // statement; a repository failure left a live faction stripped of every asset.
-                val warEnds = commitLock(factionId).withLock {
-                    val committedWarEnds = repository.deleteWithWarEnds(factionId)
+                val warEnds = plugin.fenceSiegeMutation { commitLock(factionId).withLock {
+                    val committedWarEnds = plugin.commitSiegeRepository { repository.deleteWithWarEnds(factionId) }
                     factionCacheLock.write { factionsById.remove(factionId) }
                     committedWarEnds
-                }
+                } }
 
                 // Only after that statement commits do the service caches mirror its cascades. A
                 // failed parent delete therefore leaves database and live indexes untouched.

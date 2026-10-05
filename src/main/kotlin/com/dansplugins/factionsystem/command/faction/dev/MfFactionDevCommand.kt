@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.dev
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import org.bukkit.ChatColor.RED
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
@@ -17,12 +18,32 @@ class MfFactionDevCommand(private val plugin: MedievalFactions) : CommandExecuto
 
     private val subcommands = generateAliases + powerCycleAliases
 
+    private fun helpEntries() = NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f dev")
+    private fun permitted(sender: CommandSender, alias: String): Boolean = when (alias.lowercase()) {
+        in generateAliases -> NativeCommandHelp.canUse(sender, "/f dev generate", helpEntries())
+        in powerCycleAliases -> NativeCommandHelp.canUse(sender, "/f dev powercycle", helpEntries())
+        "help" -> helpEntries().any { it.allowed(sender) && !it.container }
+        else -> false
+    }
+    private fun visibleSubcommands(sender: CommandSender) = (listOf("help") + subcommands)
+        .distinct().filter { permitted(sender, it) }
+
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (!plugin.config.getBoolean("dev.enableDevCommands") || !sender.hasPermission("mf.admin")) {
+            NativeCommandHelp.deny(sender); return true
+        }
+
+        if (args.isEmpty() || args.firstOrNull()?.equals("help", true) == true) {
+            NativeCommandHelp.render(sender, "f dev", args.drop(if (args.isEmpty()) 0 else 1).toTypedArray(), helpEntries())
+            return true
+        }
+
         return when (args.firstOrNull()?.lowercase()) {
             in generateAliases -> factionDevGenerateCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in powerCycleAliases -> factionDevPowerCycleCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             else -> {
-                sender.sendMessage("${RED}Usage: /faction dev [generate|powercycle]")
+                NativeCommandHelp.unknown(sender)
+                NativeCommandHelp.render(sender, "f dev", emptyArray(), helpEntries())
                 true
             }
         }
@@ -34,8 +55,10 @@ class MfFactionDevCommand(private val plugin: MedievalFactions) : CommandExecuto
         label: String,
         args: Array<out String>
     ) = when {
-        args.isEmpty() -> subcommands
-        args.size == 1 -> subcommands.filter { it.startsWith(args[0].lowercase()) }
+        args.firstOrNull()?.equals("help", true) == true -> NativeCommandHelp.helpTabs(sender, args.drop(1).toTypedArray(), helpEntries())
+        args.size > 1 && !permitted(sender, args.first()) -> emptyList()
+        args.isEmpty() -> visibleSubcommands(sender)
+        args.size == 1 -> visibleSubcommands(sender).filter { it.startsWith(args[0].lowercase()) }
         else -> when (args.first().lowercase()) {
             in generateAliases -> factionDevGenerateCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in powerCycleAliases -> factionDevPowerCycleCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())

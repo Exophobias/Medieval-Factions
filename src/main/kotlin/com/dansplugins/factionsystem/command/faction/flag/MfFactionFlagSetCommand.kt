@@ -331,26 +331,28 @@ class MfFactionFlagSetCommand(private val plugin: MedievalFactions) : CommandExe
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.flag.set")) return emptyList()
         val hasForcePermission = sender.hasPermission("mf.force.flag")
+        val availableFlags = plugin.flags.filter { hasForcePermission || !it.name.equals("maxEmbassyChunks", true) }
         val factionService = plugin.services.factionService
 
         return when {
             args.isEmpty() -> {
                 // First arg: could be faction name (if force) or flag name
                 if (hasForcePermission) {
-                    factionService.factions.map { it.name } + plugin.flags.map { it.name }
+                    factionService.factions.map { it.name } + availableFlags.map { it.name }
                 } else {
-                    plugin.flags.map { it.name }
+                    availableFlags.map { it.name }
                 }
             }
             args.size == 1 -> {
                 // Filter first argument suggestions
                 if (hasForcePermission) {
                     val factionNames = factionService.factions.filter { it.name.lowercase().startsWith(args[0].lowercase()) }.map { it.name }
-                    val flagNames = plugin.flags.filter { it.name.lowercase().startsWith(args[0].lowercase()) }.map { it.name }
+                    val flagNames = availableFlags.filter { it.name.lowercase().startsWith(args[0].lowercase()) }.map { it.name }
                     factionNames + flagNames
                 } else {
-                    plugin.flags.filter { it.name.lowercase().startsWith(args[0].lowercase()) }.map { it.name }
+                    availableFlags.filter { it.name.lowercase().startsWith(args[0].lowercase()) }.map { it.name }
                 }
             }
             args.size == 2 && hasForcePermission -> {
@@ -359,7 +361,7 @@ class MfFactionFlagSetCommand(private val plugin: MedievalFactions) : CommandExe
                 val potentialFaction = factionService.getFaction(MfFactionId(unquotedArgs[0])) ?: factionService.getFaction(unquotedArgs[0])
                 if (potentialFaction != null) {
                     // First arg is faction, suggest flag names
-                    plugin.flags.filter { it.name.lowercase().startsWith(args[1].lowercase()) }.map { it.name }
+                    availableFlags.filter { it.name.lowercase().startsWith(args[1].lowercase()) }.map { it.name }
                 } else {
                     // First arg is flag, no more suggestions
                     emptyList()

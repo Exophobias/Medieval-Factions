@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.role
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import org.bukkit.ChatColor.RED
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
@@ -36,7 +37,28 @@ class MfFactionRoleCommand(private val plugin: MedievalFactions) : CommandExecut
         renameAliases +
         setDefaultAliases
 
+    private fun helpEntries() = NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f role")
+    private fun permitted(sender: CommandSender, alias: String): Boolean = when (alias.lowercase()) {
+        in viewAliases -> NativeCommandHelp.canUse(sender, "/f role view", helpEntries())
+        in setPermissionAliases -> NativeCommandHelp.canUse(sender, "/f role setpermission", helpEntries())
+        in listAliases -> NativeCommandHelp.canUse(sender, "/f role list", helpEntries())
+        in setAliases -> NativeCommandHelp.canUse(sender, "/f role set", helpEntries())
+        in createAliases -> NativeCommandHelp.canUse(sender, "/f role create", helpEntries())
+        in deleteAliases -> NativeCommandHelp.canUse(sender, "/f role delete", helpEntries())
+        in renameAliases -> NativeCommandHelp.canUse(sender, "/f role rename", helpEntries())
+        in setDefaultAliases -> NativeCommandHelp.canUse(sender, "/f role setdefault", helpEntries())
+        "help" -> helpEntries().any { it.allowed(sender) && !it.container }
+        else -> false
+    }
+    private fun visibleSubcommands(sender: CommandSender) = (listOf("help") + subcommands)
+        .distinct().filter { permitted(sender, it) }
+
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (args.isEmpty() || args.firstOrNull()?.equals("help", true) == true) {
+            NativeCommandHelp.render(sender, "f role", args.drop(if (args.isEmpty()) 0 else 1).toTypedArray(), helpEntries())
+            return true
+        }
+
         return when (args.firstOrNull()?.lowercase()) {
             in viewAliases -> factionRoleViewCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in setPermissionAliases -> factionRoleSetPermissionCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
@@ -47,7 +69,8 @@ class MfFactionRoleCommand(private val plugin: MedievalFactions) : CommandExecut
             in renameAliases -> factionRoleRenameCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in setDefaultAliases -> factionRoleSetDefaultCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             else -> {
-                sender.sendMessage("$RED${plugin.language["CommandFactionRoleUsage"]}")
+                NativeCommandHelp.unknown(sender)
+                NativeCommandHelp.render(sender, "f role", emptyArray(), helpEntries())
                 true
             }
         }
@@ -59,8 +82,10 @@ class MfFactionRoleCommand(private val plugin: MedievalFactions) : CommandExecut
         label: String,
         args: Array<out String>
     ) = when {
-        args.isEmpty() -> subcommands
-        args.size == 1 -> subcommands.filter { it.startsWith(args[0].lowercase()) }
+        args.firstOrNull()?.equals("help", true) == true -> NativeCommandHelp.helpTabs(sender, args.drop(1).toTypedArray(), helpEntries())
+        args.size > 1 && !permitted(sender, args.first()) -> emptyList()
+        args.isEmpty() -> visibleSubcommands(sender)
+        args.size == 1 -> visibleSubcommands(sender).filter { it.startsWith(args[0].lowercase()) }
         else -> when (args.first().lowercase()) {
             in viewAliases -> factionRoleViewCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in setPermissionAliases -> factionRoleSetPermissionCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())

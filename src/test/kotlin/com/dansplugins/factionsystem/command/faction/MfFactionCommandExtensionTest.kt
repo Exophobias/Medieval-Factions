@@ -73,6 +73,7 @@ class MfFactionCommandExtensionTest {
 
     @Test
     fun otherwiseUnknownVerbRoutesAndCompletesThroughTheExtension() {
+        `when`(sender.hasPermission("casus.justify")).thenReturn(true)
         val executed = command.onCommand(
             sender,
             bukkitCommand,
@@ -98,7 +99,7 @@ class MfFactionCommandExtensionTest {
         assertTrue(handled)
         assertFalse(extension.executions.any { it.first == "help" })
         assertEquals(
-            1,
+            0,
             command.onTabComplete(sender, bukkitCommand, "f", arrayOf("help")).orEmpty().count { it == "help" }
         )
     }
@@ -136,7 +137,7 @@ class MfFactionCommandExtensionTest {
         override val aliases = setOf("justifywar", "help")
         override val helpLines = listOf(
             FactionSubcommandHelpLine("/f justifywar <cause> <target>", "casus.justify"),
-            FactionSubcommandHelpLine("/f causes admin", "casus.admin")
+            FactionSubcommandHelpLine("/f causes admin", "casus.admin", true)
         )
         val executions = mutableListOf<Pair<String, List<String>>>()
         val completions = mutableListOf<Pair<String, List<String>>>()

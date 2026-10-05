@@ -1,5 +1,7 @@
 package com.dansplugins.factionsystem.claim
 
+import com.dansplugins.factionsystem.siege.fenceSiegeMutation
+import com.dansplugins.factionsystem.siege.commitSiegeRepository
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.api.ClaimOverrideProvider
@@ -238,7 +240,7 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
     fun save(claim: MfClaimedChunk) = persist(claim, validateNewClaimWorld = true, requireExisting = false)
 
     /** Wait until every claim mutation already holding the lock has finished. */
-    fun mutationBarrier() = mutationLock.withLock { Unit }
+    fun mutationBarrier() = plugin.fenceSiegeMutation { mutationLock.withLock { Unit } }
 
     /** Create wilderness land only while it is still unclaimed, under the claim mutation lock. */
     fun claimIfUnclaimed(claim: MfClaimedChunk) =
@@ -273,7 +275,7 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         requireExisting: Boolean,
         expectedOwner: MfFactionId? = null,
         requireUnclaimed: Boolean = false
-    ) = mutationLock.withLock {
+    ) = plugin.fenceSiegeMutation { mutationLock.withLock {
         resultFrom {
             if (wildernessReservations.isReserved(claim.worldId, claim.x, claim.z)) {
                 throw EventCancelledException("Land is temporarily reserved; retry shortly")
@@ -338,7 +340,7 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             val lockService = plugin.services.lockService
             val changesOwner = prior != null && prior.factionId != event.claim.factionId
             val commit = {
-                val result = repository.upsert(event.claim)
+                val result = plugin.commitSiegeRepository { repository.upsert(event.claim) }
                 // The map write and the secondary index MUST move together, under the map's own per-key
                 // lock, and a plain put() followed by the index calls does not do that.
                 //
@@ -441,9 +443,9 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-    }
+    } }
 
-    fun delete(claim: MfClaimedChunk) = mutationLock.withLock {
+    fun delete(claim: MfClaimedChunk) = plugin.fenceSiegeMutation { mutationLock.withLock {
         resultFrom {
             val live = requireNotNull(claimsByKey[ClaimKey(claim)]) {
                 "No existing claim at ${claim.worldId}:${claim.x},${claim.z}"
@@ -467,7 +469,7 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             ChildMutationCallbackGuard.callEvent(plugin, event)
             if (event.isCancelled) throw EventCancelledException("Event cancelled")
             val (result, removedClaim) = plugin.services.embassyService.withClaimRelease(live) {
-                val deleted = repository.delete(event.claim.worldId, event.claim.x, event.claim.z)
+                val deleted = plugin.commitSiegeRepository { repository.delete(event.claim.worldId, event.claim.x, event.claim.z) }
                 val removed = claimsByKey.remove(ClaimKey(event.claim))
                 if (removed != null) unindexClaim(removed)
                 deleted to removed
@@ -525,13 +527,13 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-    }
+    } }
 
     // One cancellable pre-write event for the whole operation, but no per-chunk notifications.
     // A large faction can put thousands of chunks through /f unclaimall at once; scheduling an
     // event per chunk would stall a tick. Faction deletion uses a separate database cascade.
     @JvmName("deleteAllClaimsByFactionId")
-    fun deleteAllClaims(factionId: MfFactionId) = mutationLock.withLock {
+    fun deleteAllClaims(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
         resultFrom {
             require(factionId !in deletingFactions) { "Faction ${factionId.value} is being deleted" }
             val apiEvent = FactionUnclaimAllAttemptEvent(
@@ -541,7 +543,7 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
             ChildMutationCallbackGuard.callEvent(plugin, apiEvent)
             if (apiEvent.isCancelled) throw EventCancelledException("Bulk unclaim refused by a plugin")
             val result = plugin.services.embassyService.withAllClaimsRelease(factionId) {
-                val deleted = repository.deleteAll(factionId)
+                val deleted = plugin.commitSiegeRepository { repository.deleteAll(factionId) }
                 evictAllClaimsLocked(factionId)
                 deleted
             }
@@ -549,12 +551,12 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
         }.mapFailure { exception ->
             ServiceFailure(exception.toServiceFailureType(), "Service error: ${exception.message}", exception)
         }
-    }
+    } }
 
     /** Mirror a successful database cascade without issuing another delete. */
-    internal fun evictAllClaims(factionId: MfFactionId) = mutationLock.withLock {
+    internal fun evictAllClaims(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
         evictAllClaimsLocked(factionId)
-    }
+    } }
 
     private fun evictAllClaimsLocked(factionId: MfFactionId) {
         val claimsToDelete = claimsByKey.entries
@@ -574,13 +576,13 @@ class MfClaimService(private val plugin: MedievalFactions, private val repositor
     }
 
     /** Fence new claim writes before a faction's parent row is cascade-deleted. */
-    internal fun blockFactionDeletion(factionId: MfFactionId) = mutationLock.withLock {
+    internal fun blockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
         check(deletingFactions.add(factionId)) { "Faction ${factionId.value} is already being deleted" }
-    }
+    } }
 
-    internal fun unblockFactionDeletion(factionId: MfFactionId) = mutationLock.withLock {
+    internal fun unblockFactionDeletion(factionId: MfFactionId) = plugin.fenceSiegeMutation { mutationLock.withLock {
         deletingFactions.remove(factionId)
-    }
+    } }
 
     private fun indexClaim(claim: MfClaimedChunk) {
         claimKeysByFaction.computeIfAbsent(claim.factionId) { ConcurrentHashMap.newKeySet() }.add(ClaimKey(claim))

@@ -224,6 +224,7 @@ class MfFactionFlagListCommand(private val plugin: MedievalFactions) : CommandEx
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.flag.list")) return emptyList()
         val hasForcePermission = sender.hasPermission("mf.force.flag")
         if (!hasForcePermission) {
             return emptyList()

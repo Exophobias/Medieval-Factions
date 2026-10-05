@@ -128,6 +128,9 @@ commands:
     description: Denies a player's application to your faction
     usage: /<command> <player>
 permissions:
+  mf.gate.disruption.review:
+    description: Explicitly acknowledge observed state of an unresolved native siege gate operation.
+    default: op
   mf.version:
     description: See which build of Medieval-Factions this server is running.
     default: true

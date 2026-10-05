@@ -89,6 +89,7 @@ class MfFactionDisbandCommand(private val plugin: MedievalFactions) : CommandExe
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.disband") || !sender.hasPermission("mf.disband.others")) return emptyList()
         val factionService = plugin.services.factionService
         return when {
             args.isEmpty() -> factionService.factions.map(MfFaction::name)

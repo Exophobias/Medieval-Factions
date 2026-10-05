@@ -10,6 +10,8 @@ group = "com.dansplugins"
 // Keep the published API coordinate used by the Patriam consumer graph for this upstream merge.
 // The upstream source base is 6.1.1-SNAPSHOT; a coordinated coordinate bump is a separate release.
 version = "5.9.0-patriam.1-SNAPSHOT"
+// The pinned compile/publication coordinate stays compatible; shipped gameplay has its own release.
+def pluginVersion = "5.9.0-patriam.2-SNAPSHOT"
 
 def minecraftVersion = providers.gradleProperty("minecraftVersion").getOrElse("26.2")
 def spigotVersion = "${minecraftVersion}-R0.1-SNAPSHOT"
@@ -148,7 +150,7 @@ import org.apache.tools.ant.filters.ReplaceTokens
 
 processResources {
     filter ReplaceTokens, tokens: [
-            'version': version
+            'version': pluginVersion
     ]
 }
 
@@ -176,6 +178,7 @@ shadowJar {
     // back to 'all' so the PUBLISHED coordinate stays com.dansplugins:medieval-factions:<v>:all —
     // which is what PatriamMFAddon compiles against, so this rename is cosmetic only.
     archiveBaseName.set('Medieval-Factions')
+    archiveVersion.set(pluginVersion)
     archiveClassifier.set('')
     mergeServiceFiles()
     filesMatching(['META-INF/services/**', 'META-INF/*.kotlin_module']) {

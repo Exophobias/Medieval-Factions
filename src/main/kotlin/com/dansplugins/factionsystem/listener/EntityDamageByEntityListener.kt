@@ -32,7 +32,7 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
         }
         val damaged = event.entity
         val damager = event.damager
-        val damagerPlayer: Player? = when (damager) {
+        val damagerPlayer: Player? = (event.damageSource?.causingEntity as? Player) ?: when (damager) {
             is Player -> damager
             is Projectile -> damager.shooter as? Player
             else -> null
@@ -94,45 +94,9 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
                 event.isCancelled = true
                 return
             }
-            val damagedMfPlayer = playerService.getPlayer(damaged) ?: MfPlayer(plugin, damaged)
-            val damagerDuel = duelService.getDuel(damagerMfPlayer.id)
-            val damagedDuel = duelService.getDuel(damagedMfPlayer.id)
-            if (damagerDuel != null && damagedDuel != null && damagerDuel.id == damagedDuel.id) {
-                return
-            }
-            if (damagerDuel != null || damagedDuel != null) {
+            if (!com.dansplugins.factionsystem.siege.DefaultNativeSiegeAuthority(plugin)
+                    .playerPolicy(damagerPlayer, damaged)) {
                 event.isCancelled = true
-                return
-            }
-            val damagedFaction = factionService.getFaction(damagedMfPlayer.id)
-            if (damagerFaction == null || damagedFaction == null) {
-                if (!plugin.config.getBoolean("pvp.enabledForFactionlessPlayers")) {
-                    event.isCancelled = true
-                }
-                return
-            }
-            if (damagerFaction.id == damagedFaction.id) {
-                if (!plugin.config.getBoolean("pvp.friendlyFire") && !damagerFaction.flags[plugin.flags.allowFriendlyFire]) {
-                    event.isCancelled = true
-                }
-                return
-            }
-            when (MercenaryCombatGate.decide(plugin, damagerPlayer.uniqueId, damaged.uniqueId)) {
-                Decision.ALLOW -> return
-                Decision.DENY -> {
-                    event.isCancelled = true
-                    return
-                }
-                Decision.ABSTAIN -> Unit
-            }
-            val relationshipService = plugin.services.factionRelationshipService
-            val relationships = relationshipService.getRelationships(damagerFaction.id, damagedFaction.id)
-            val reverseRelationships = relationshipService.getRelationships(damagedFaction.id, damagerFaction.id)
-            if ((relationships + reverseRelationships).none { it.type == MfFactionRelationshipType.AT_WAR }) {
-                if (plugin.config.getBoolean("pvp.warRequiredForPlayersOfDifferentFactions")) {
-                    event.isCancelled = true
-                }
-                return
             }
         }
     }

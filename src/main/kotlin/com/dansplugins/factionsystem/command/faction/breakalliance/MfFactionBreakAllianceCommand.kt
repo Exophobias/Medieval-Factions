@@ -92,6 +92,7 @@ class MfFactionBreakAllianceCommand(private val plugin: MedievalFactions) : Comm
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.breakalliance")) return emptyList()
         val factionService = plugin.services.factionService
         return when {
             args.isEmpty() -> factionService.factions.map(MfFaction::name)

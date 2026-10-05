@@ -68,7 +68,7 @@ class MfFactionLawListCommand(private val plugin: MedievalFactions) : CommandExe
                         lawService.save(law.copy(number = i + 1))
                     }
                     val buttonList: MutableList<TextComponent> = mutableListOf()
-                    if ((sender.hasPermission("mf.law.remove") || sender.hasPermission("mf.removelaw")) && role.hasPermission(faction, plugin.factionPermissions.removeLaw)) {
+                    if ((sender.hasPermission("mf.law.remove") && sender.hasPermission("mf.removelaw")) && role.hasPermission(faction, plugin.factionPermissions.removeLaw)) {
                         val deleteButton = TextComponent("✖ ")
                         deleteButton.color = SpigotChatColor.RED
                         deleteButton.clickEvent = ClickEvent(RUN_COMMAND, "/faction law remove ${law.id.value}")

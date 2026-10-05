@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.gate
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.command.gate.cancel.MfGateCancelCommand
 import com.dansplugins.factionsystem.command.gate.create.MfGateCreateCommand
 import com.dansplugins.factionsystem.command.gate.remove.MfGateRemoveCommand
@@ -22,13 +23,30 @@ class MfGateCommand(private val plugin: MedievalFactions) : CommandExecutor, Tab
 
     private val subcommands = createAliases + removeAliases + cancelAliases
 
+    private fun helpEntries() = NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "gate")
+    private fun permitted(sender: CommandSender, alias: String): Boolean = when (alias.lowercase()) {
+        in createAliases -> NativeCommandHelp.canUse(sender, "/gate create", helpEntries())
+        in removeAliases -> NativeCommandHelp.canUse(sender, "/gate remove", helpEntries())
+        in cancelAliases -> NativeCommandHelp.canUse(sender, "/gate cancel", helpEntries())
+        "help" -> helpEntries().any { it.allowed(sender) && !it.container }
+        else -> false
+    }
+    private fun visibleSubcommands(sender: CommandSender) = (listOf("help") + subcommands)
+        .distinct().filter { permitted(sender, it) }
+
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (args.isEmpty() || args.firstOrNull()?.equals("help", true) == true) {
+            NativeCommandHelp.render(sender, "gate", args.drop(if (args.isEmpty()) 0 else 1).toTypedArray(), helpEntries())
+            return true
+        }
+
         return when (args.firstOrNull()?.lowercase()) {
             in createAliases -> gateCreateCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in removeAliases -> gateRemoveCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in cancelAliases -> gateCancelCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             else -> {
-                sender.sendMessage("$RED${plugin.language["CommandGateUsage"]}")
+                NativeCommandHelp.unknown(sender)
+                NativeCommandHelp.render(sender, "gate", emptyArray(), helpEntries())
                 true
             }
         }
@@ -40,8 +58,10 @@ class MfGateCommand(private val plugin: MedievalFactions) : CommandExecutor, Tab
         label: String,
         args: Array<out String>
     ) = when {
-        args.isEmpty() -> subcommands
-        args.size == 1 -> subcommands.filter { it.startsWith(args[0].lowercase()) }
+        args.firstOrNull()?.equals("help", true) == true -> NativeCommandHelp.helpTabs(sender, args.drop(1).toTypedArray(), helpEntries())
+        args.size > 1 && !permitted(sender, args.first()) -> emptyList()
+        args.isEmpty() -> visibleSubcommands(sender)
+        args.size == 1 -> visibleSubcommands(sender).filter { it.startsWith(args[0].lowercase()) }
         else -> when (args.first().lowercase()) {
             in createAliases -> gateCreateCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in removeAliases -> gateRemoveCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())

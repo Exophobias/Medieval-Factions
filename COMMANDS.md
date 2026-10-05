@@ -35,8 +35,19 @@ The main faction command can be accessed using any of the following aliases:
 
 ### `/faction help` or `/f help`
 **Permission:** `mf.help` (default: true)  
-**Description:** Displays a list of helpful commands and usage information.  
-**Usage:** `/f help`
+**Description:** Displays the commands the sender may use, with at most eight entries per page. Player actions appear before separate staff pages. Permissions filter both help and tab completion; an action's own faction, role, player or world requirements still apply when it runs.
+
+**Usage:** `/f help [page]`; `/f help staff [page]`
+
+**Notes:** `/f` with no arguments opens help. Negative and excessive page numbers clamp to the first or last permitted page. Console can read documentation before player or faction context is required. Unknown router verbs show an error followed by help. `/f version` (also `ver` or `about`) retains the plugin version information.
+
+The routers `/accessors`, `/duel`, `/gate`, `/power`, `/f admin`, `/f dev`, `/f law`,
+`/f role`, `/f set`, `/f flag`, `/f relationship`, `/f embassy`, `/f dpc` and
+`/f migrate` open help with no arguments and accept `help [page]` or `help staff [page]`.
+Developer entries appear only when `dev.enableDevCommands` is enabled and the sender has
+`mf.admin`. `/lock` and `/unlock` retain their no-argument selection actions; use their
+explicit `help` forms for documentation. `/f claim` retains current-chunk claiming and
+`/f chat` retains channel switching; use `/f claim help` and `/f chat help` for documentation.
 
 ### `/faction info [player|faction]` or `/f info [player|faction]`
 **Permission:** `mf.info` (default: true)  
@@ -182,7 +193,8 @@ An ended active embassy enters a 14-day clearing period. Guests may break blocks
 - The claimed area is a circle (chunks within the given radius of your current chunk), not a square.
 
 ### `/faction claim auto` or `/f claim auto`
-**Permission:** `mf.claim.auto` or `mf.autoclaim` (default: true)  
+**Permission:** both `mf.claim.auto` and `mf.autoclaim` (default: true)
+
 **Description:** Toggles automatic claiming. When enabled, chunks are automatically claimed as you walk through them.  
 **Usage:** `/f claim auto`
 
@@ -347,17 +359,20 @@ An ended active embassy enters a 14-day clearing period. Guests may break blocks
 ## Laws
 
 ### `/faction law add [law]` or `/f law add [law]`
-**Permission:** `mf.addlaw` (default: true)  
+**Permission:** both `mf.law.add` and `mf.addlaw` (default: true)
+
 **Description:** Adds a new law to your faction.  
 **Usage:** `/f law add "No griefing within faction territory"`
 
 ### `/faction law list` or `/f law list`
-**Permission:** `mf.laws` (default: true)  
+**Permission:** both `mf.law.list` and `mf.laws` (default: true)
+
 **Description:** Lists all laws of your faction.  
 **Usage:** `/f law list`
 
 ### `/faction law remove [id]` or `/f law remove [id]`
-**Permission:** `mf.removelaw` (default: true)  
+**Permission:** both `mf.law.remove` and `mf.removelaw` (default: true)
+
 **Description:** Removes a law from your faction using its ID.  
 **Usage:** `/f law remove 1`
 
@@ -527,26 +542,28 @@ An ended active embassy enters a 14-day clearing period. Guests may break blocks
 **Usage:** `/f bypass`; `/f bypass warnings [on|off]` (omit `on|off` to view the current setting)
 
 ### `/faction admin create [name]` or `/f admin create [name]`
-**Permission:** `mf.admin.create` (default: op)  
+**Permission:** both `mf.admin` and `mf.admin.create` (default: op)
+
 **Description:** Creates a leaderless faction that can exist without members.  
 **Usage:** `/f admin create FactionName`  
 **Notes:** Requires `allowLeaderlessFactions` to be enabled in config.
 
 ### `/faction admin protection <faction> [pvp|playerdamage|mobspawning|explosions|firespread] [on|off|reset]` or `/f admin protection ...`
-**Permission:** `mf.admin.protection` (default: op)
+**Permission:** both `mf.admin` and `mf.admin.protection` (default: op)
 **Description:** Shows or changes protection within an admin-managed faction's claimed chunks.
 **Usage:** `/f admin protection Safe Haven` shows all settings. `/f admin protection Safe Haven pvp off` blocks player attacks; replace `pvp` with `playerdamage` to block all player damage, or `mobspawning` to block all creature spawns. `explosions off` protects blocks and entities from explosions inside the claim; `firespread off` stops natural fire ignition, fire spread, and burning. Use `on` to follow normal server rules and `reset` to remove the override.
 **Notes:** Only factions created with `/f admin create` or designated with `/f admin makeleaderless` qualify. The settings default to `on`, so existing factions retain their behavior. `on` does not override global PvP or spawn rules. Player damage and PvP use the victim's claimed location; mob spawning uses the spawn location. Explosion block filtering uses each affected block's claim, and blast damage uses each entity's location. Fire protection uses the block receiving fire or burn. Existing mobs are not removed.
 
-### `/faction admin setleader [faction] [player]` or `/f admin setleader [faction] [player]`
-**Permission:** `mf.admin.setleader` (default: op)  
-**Description:** Sets a player as the leader of a faction.  
-**Usage:** `/f admin setleader FactionName PlayerName`
+### `/faction admin setleader <player> <faction>` or `/f admin setleader <player> <faction>`
+**Permission:** both `mf.admin` and `mf.admin.setleader` (default: op)
 
-### `/faction addmember [faction] [player]` or `/f addmember [faction] [player]`
+**Description:** Sets a player as the leader of a faction.  
+**Usage:** `/f admin setleader PlayerName FactionName`
+
+### `/faction addmember <player> <faction>` or `/f addmember <player> <faction>`
 **Permission:** `mf.force.addmember` or `mf.force.join` (default: op)  
 **Description:** Forcefully adds a player to a faction (admin command). If the target player is already in another faction, you are prompted to confirm moving them (which removes them from their current faction first). Append the `-f` flag to skip the confirmation and move them immediately.  
-**Usage:** `/f addmember FactionName PlayerName` or `/f addmember FactionName PlayerName -f`
+**Usage:** `/f addmember PlayerName FactionName` or `/f addmember PlayerName FactionName -f`
 
 ---
 

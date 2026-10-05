@@ -29,6 +29,7 @@ import org.bukkit.scheduler.BukkitTask
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -47,6 +48,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.logging.Logger
+import com.dansplugins.factionsystem.siege.NativeFenceRegistry
 
 /**
  * Exercises the per-faction claim index that backs getClaims(factionId)/getClaimCount/hasClaims, and
@@ -149,6 +151,58 @@ class MfClaimServiceTest {
 
     private fun serviceWith(vararg claims: MfClaimedChunk): MfClaimService =
         MfClaimService(plugin, FakeClaimRepository(claims.toList()))
+
+    @Test
+    fun unacknowledgedNativeRepositoryMutationDeniesFurtherSiegeAdmissionUntilFreshRuntime() {
+        val repository = mock(MfClaimedChunkRepository::class.java)
+        `when`(repository.getClaims()).thenReturn(emptyList())
+        val proposed = claim(0, 0, factionA)
+        `when`(repository.upsert(proposed)).thenThrow(IllegalStateException("Lost commit acknowledgement"))
+        val service = MfClaimService(plugin, repository)
+        assertTrue(service.save(proposed) is Failure)
+        assertFalse(NativeFenceRegistry.get(plugin).isReadable())
+        assertNull(NativeFenceRegistry.get(plugin).tryAcquire())
+        assertNull(service.getClaim(world, 0, 0))
+    }
+
+    @Test
+    fun admittedSiegeBatchRefusesReentrantClaimChangesBeforeEventsOrPersistence() {
+        val previous = claim(0, 0, factionA)
+        val service = serviceWith(previous)
+        val held = NativeFenceRegistry.get(plugin).tryAcquire()!!
+        try {
+            assertThrows(IllegalStateException::class.java) { service.save(claim(0, 0, factionB)) }
+            assertThrows(IllegalStateException::class.java) { service.delete(previous) }
+            assertThrows(IllegalStateException::class.java) { service.deleteAllClaims(factionA) }
+            assertEquals(previous, service.getClaim(world, 0, 0))
+            assertTrue(firedEvents.isEmpty())
+        } finally { held.close() }
+        assertTrue(service.save(claim(0, 0, factionB)) !is Failure)
+        assertEquals(factionB, service.getClaim(world, 0, 0)?.factionId)
+    }
+
+    @Test
+    fun pendingNativeClaimCommitDeniesNewEffectsAndWaitsForTheAdmittedBatch() {
+        val service = serviceWith(claim(0, 0, factionA))
+        val fence = NativeFenceRegistry.get(plugin)
+        val held = fence.tryAcquire()!!
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val commit = worker.submit { service.save(claim(0, 0, factionB)) }
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (fence.isReadable()) {
+                assertTrue(System.nanoTime() < deadline, "The actual claim mutation did not announce its fence")
+                Thread.yield()
+            }
+            assertNull(fence.tryAcquire())
+            assertFalse(commit.isDone)
+            assertEquals(factionA, service.getClaim(world, 0, 0)?.factionId)
+            assertTrue(firedEvents.isEmpty())
+            held.close()
+            commit.get(5, TimeUnit.SECONDS)
+            assertEquals(factionB, service.getClaim(world, 0, 0)?.factionId)
+        } finally { held.close(); worker.shutdownNow() }
+    }
 
     @Test
     fun wildernessReservationBlocksEveryClaimWriteUntilReleased() {

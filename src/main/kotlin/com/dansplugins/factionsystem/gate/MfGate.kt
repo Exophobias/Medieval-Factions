@@ -24,6 +24,7 @@ data class MfGate(
 ) {
 
     fun shouldOpen(): Boolean {
+        if (status == MfGateStatus.DISRUPTED) return false
         val world = plugin.server.getWorld(trigger.worldId) ?: return false
         if (!world.isChunkLoaded(trigger.x / 16, trigger.z / 16)) return false
         val triggerBukkitBlock = trigger.toBukkitBlock() ?: return false
@@ -31,6 +32,7 @@ data class MfGate(
     }
 
     fun shouldClose(): Boolean {
+        if (status == MfGateStatus.DISRUPTED) return false
         val world = plugin.server.getWorld(trigger.worldId) ?: return false
         if (!world.isChunkLoaded(trigger.x / 16, trigger.z / 16)) return false
         val triggerBukkitBlock = trigger.toBukkitBlock() ?: return false
@@ -38,6 +40,7 @@ data class MfGate(
     }
 
     fun open() {
+        if (status == MfGateStatus.DISRUPTED) return
         if (status == MfGateStatus.OPENING || status == MfGateStatus.OPEN) return
         val gateService = plugin.services.gateService
         plugin.server.scheduler.runTaskAsynchronously(
@@ -51,7 +54,8 @@ data class MfGate(
         )
     }
 
-    fun continueOpening() {
+    fun continueOpening() = actuate {
+        if (!plugin.services.gateService.actuatorCurrent(this)) return@actuate
         val gateService = plugin.services.gateService
         val centerBukkitBlock = area.centerPosition.toBukkitBlock()
         if (centerBukkitBlock != null) {
@@ -76,6 +80,7 @@ data class MfGate(
     }
 
     fun close() {
+        if (status == MfGateStatus.DISRUPTED) return
         if (status == MfGateStatus.CLOSING || status == CLOSED) return
         val gateService = plugin.services.gateService
         plugin.server.scheduler.runTaskAsynchronously(
@@ -93,7 +98,8 @@ data class MfGate(
         }
     }
 
-    fun continueClosing() {
+    fun continueClosing() = actuate {
+        if (!plugin.services.gateService.actuatorCurrent(this)) return@actuate
         val gateService = plugin.services.gateService
         val centerBukkitBlock = area.centerPosition.toBukkitBlock()
         if (centerBukkitBlock != null) {
@@ -115,5 +121,11 @@ data class MfGate(
                 }
             )
         }
+    }
+    /** The cached revision check and the complete bounded world batch share the disruption fence. */
+    private fun actuate(action: () -> Unit) {
+        if (!plugin.server.isPrimaryThread) return
+        val lease = com.dansplugins.factionsystem.siege.NativeFenceRegistry.get(plugin).tryAcquire() ?: return
+        try { action() } finally { lease.close() }
     }
 }

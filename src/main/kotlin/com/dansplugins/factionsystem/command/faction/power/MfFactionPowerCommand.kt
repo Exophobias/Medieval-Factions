@@ -163,6 +163,8 @@ class MfFactionPowerCommand(private val plugin: MedievalFactions) : CommandExecu
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.power.view.other") -> emptyList()
+        !sender.hasPermission("mf.power") -> emptyList()
         args.isEmpty() -> plugin.services.factionService.factions.map(MfFaction::name) +
             plugin.server.offlinePlayers.mapNotNull(OfflinePlayer::getName)
         args.size == 1 -> (

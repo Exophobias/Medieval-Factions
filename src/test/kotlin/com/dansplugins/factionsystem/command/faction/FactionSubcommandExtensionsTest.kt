@@ -84,6 +84,20 @@ class FactionSubcommandExtensionsTest {
     }
 
     @Test
+    fun rootAndChildPermissionsBothGateHelpAndAliasSuggestions() {
+        register(RecordingExtension(setOf("causes"), listOf(
+            FactionSubcommandHelpLine("/f causes <realm>", "addon.inspect", true, "addon.use")
+        )))
+        val sender = mock(CommandSender::class.java)
+        `when`(sender.hasPermission("addon.inspect")).thenReturn(true)
+        assertTrue(extensions.helpLines(sender, emptySet()).isEmpty())
+        assertTrue(extensions.aliases(sender, emptySet()).isEmpty())
+        `when`(sender.hasPermission("addon.use")).thenReturn(true)
+        assertTrue(extensions.helpLines(sender, emptySet()).single().staff)
+        assertEquals(listOf("causes"), extensions.aliases(sender, emptySet()))
+    }
+
+    @Test
     fun higherServicePriorityWinsAnExtensionAliasCollision() {
         val low = RecordingExtension(setOf("causes"), executeResult = false)
         val high = RecordingExtension(setOf("causes"), executeResult = true)

@@ -47,12 +47,13 @@ class MfGateStatusTest {
         // execute
         val statuses = MfGateStatus.values()
 
-        // verify - ensure all 4 statuses exist
-        assertEquals(4, statuses.size)
+        // verify - ensure all 5 statuses exist
+        assertEquals(5, statuses.size)
         assertTrue(statuses.contains(MfGateStatus.OPEN))
         assertTrue(statuses.contains(MfGateStatus.OPENING))
         assertTrue(statuses.contains(MfGateStatus.CLOSED))
         assertTrue(statuses.contains(MfGateStatus.CLOSING))
+        assertTrue(statuses.contains(MfGateStatus.DISRUPTED))
     }
 
     @Test

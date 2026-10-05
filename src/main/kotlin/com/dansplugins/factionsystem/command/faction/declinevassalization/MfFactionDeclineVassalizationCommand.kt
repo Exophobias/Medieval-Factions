@@ -91,6 +91,7 @@ class MfFactionDeclineVassalizationCommand(private val plugin: MedievalFactions)
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.declinevassalization")) return emptyList()
         if (sender !is Player) return emptyList()
         val playerService = plugin.services.playerService
         val mfPlayer = playerService.getPlayer(sender) ?: return emptyList()

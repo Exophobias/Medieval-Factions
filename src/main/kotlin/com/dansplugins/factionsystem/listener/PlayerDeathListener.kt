@@ -28,13 +28,14 @@ class PlayerDeathListener(private val plugin: MedievalFactions) : Listener {
         val disbandZeroPowerFactions = plugin.config.getBoolean("factions.zeroPowerFactionsGetDisbanded")
         val grantPowerToKillerIfVictimHasZeroPower = plugin.config.getBoolean("pvp.grantPowerToKillerIfVictimHasZeroPower")
 
+        val victim = event.entity
+        val killer = victim.killer
         plugin.server.scheduler.runTaskAsynchronously(
             plugin,
             Runnable {
                 val playerService = plugin.services.playerService
                 val factionService = plugin.services.factionService
 
-                val victim = event.entity
                 val victimMfPlayer = playerService.getPlayer(victim) ?: MfPlayer(plugin, victim)
 
                 if (!grantPowerToKillerIfVictimHasZeroPower && victimMfPlayer.power < powerLostOnDeath) {
@@ -54,7 +55,7 @@ class PlayerDeathListener(private val plugin: MedievalFactions) : Listener {
                     }
                 }
 
-                val killer = victim.killer ?: return@Runnable
+                if (killer == null) return@Runnable
                 val killerMfPlayer = playerService.getPlayer(killer) ?: MfPlayer(plugin, killer)
                 if (abs(powerGainedOnKill) > 0.00001) {
                     addPowerToKiller(

@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.embassy
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.claim.MfEmbassy
 import com.dansplugins.factionsystem.claim.MfEmbassyService.ChunkPos
 import com.dansplugins.factionsystem.claim.MfEmbassyStatus
@@ -40,14 +41,18 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
             sender.sendMessage("${RED}You cannot use embassy commands.")
             return true
         }
-        if (sender !is Player) {
-            sender.sendMessage("${RED}Embassy commands must be used at the plot in game.")
+        if (args.isEmpty() || args.first().equals("help", true)) {
+            NativeCommandHelp.render(sender, "f embassy", args.drop(if (args.isEmpty()) 0 else 1).toTypedArray(),
+                NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f embassy"))
             return true
         }
-        if (args.isEmpty() || args[0].equals("help", ignoreCase = true)) {
-            sender.sendMessage("$AQUA/f embassy offer <realm> [chunks], accept, decline, revoke, release, finish, seize, passage, info, list")
-            sender.sendMessage("${GRAY}Stand in the plot to offer or accept. Revoke/release/seize/passage/info can name <world UUID>:<chunkX>,<chunkZ>.")
-            sender.sendMessage("${GRAY}Use 4 for four connected chunks in your land, starting here; the default is 1. Offers last 7 days; clearing lasts 14 peaceful days.")
+        if (args.first().lowercase() !in verbs) {
+            NativeCommandHelp.unknown(sender)
+            NativeCommandHelp.render(sender, "f embassy", emptyArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f embassy"))
+            return true
+        }
+        if (sender !is Player) {
+            sender.sendMessage("${RED}Embassy commands must be used at the plot in game.")
             return true
         }
         val factionService = plugin.services.factionService
@@ -348,8 +353,9 @@ class MfFactionEmbassyCommand(private val plugin: MedievalFactions) : CommandExe
 
     override fun onTabComplete(sender: CommandSender, command: Command, label: String, args: Array<out String>): List<String> {
         if (!sender.hasPermission("mf.embassy")) return emptyList()
+        if (args.firstOrNull()?.equals("help", true) == true) return NativeCommandHelp.helpTabs(sender, args.drop(1).toTypedArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f embassy"))
         return when {
-            args.size == 1 -> verbs.filter { it.startsWith(args[0].lowercase()) }
+            args.size == 1 -> (listOf("help") + verbs).filter { it.startsWith(args[0].lowercase()) }
             args.size == 2 && args[0].equals("offer", ignoreCase = true) ->
                 plugin.services.factionService.factions.map(MfFaction::name).filter { it.startsWith(args[1], ignoreCase = true) }
             else -> emptyList()

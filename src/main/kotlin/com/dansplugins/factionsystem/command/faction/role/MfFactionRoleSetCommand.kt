@@ -106,6 +106,7 @@ class MfFactionRoleSetCommand(private val plugin: MedievalFactions) : CommandExe
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.role.set")) return emptyList()
         return when {
             args.isEmpty() ->
                 plugin.server.offlinePlayers

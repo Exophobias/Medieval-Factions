@@ -163,6 +163,7 @@ class MfFactionAllyCommand(private val plugin: MedievalFactions) : CommandExecut
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.ally")) return emptyList()
         val factionService = plugin.services.factionService
         return when {
             args.isEmpty() -> factionService.factions.map(MfFaction::name)

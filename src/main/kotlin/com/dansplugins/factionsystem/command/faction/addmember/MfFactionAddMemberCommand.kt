@@ -197,6 +197,7 @@ class MfFactionAddMemberCommand(
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.force.addmember") && !sender.hasPermission("mf.force.join")) return emptyList()
         val factionService = plugin.services.factionService
         return when {
             args.isEmpty() ->

@@ -35,8 +35,10 @@ interface FactionSubcommandExtension {
     fun tabComplete(sender: CommandSender, alias: String, arguments: List<String>): List<String>
 }
 
-/** One plain-text row contributed to `/f help`, optionally visible only with [permission]. */
+/** One plain-text row contributed to `/f help`; both optional permissions must be granted. */
 data class FactionSubcommandHelpLine @JvmOverloads constructor(
     val text: String,
-    val permission: String? = null
+    val permission: String? = null,
+    val staff: Boolean = false,
+    val additionalPermission: String? = null
 )

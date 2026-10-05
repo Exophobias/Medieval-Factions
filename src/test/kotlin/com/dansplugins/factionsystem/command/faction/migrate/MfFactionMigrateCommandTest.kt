@@ -2,6 +2,12 @@ package com.dansplugins.factionsystem.command.faction.migrate
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.TestUtils
+import com.dansplugins.factionsystem.lang.Language
+import net.md_5.bungee.api.chat.BaseComponent
+import org.bukkit.command.CommandSender
+import org.bukkit.configuration.file.FileConfiguration
+import org.mockito.Answers
+import org.mockito.stubbing.Answer
 import org.bukkit.ChatColor.RED
 import org.bukkit.ChatColor.YELLOW
 import org.bukkit.Server
@@ -26,8 +32,8 @@ import org.mockito.Mockito.`when`
  * a data source. The `toJson` and `toDatabase` paths hand off to the scheduler and open a real database
  * connection, so they are out of scope here.
  *
- * These assertions pin the command's current hardcoded English strings. The command does not use
- * `plugin.language[...]` like its sibling subcommands do; that is a known, deliberately deferred gap.
+ * Documentation uses the shared permission-filtered renderer; migration safety errors retain their
+ * existing explicit English messages.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MfFactionMigrateCommandTest {
@@ -36,11 +42,23 @@ class MfFactionMigrateCommandTest {
     private lateinit var fixture: TestUtils.CommandTestFixture
     private lateinit var plugin: MedievalFactions
     private lateinit var uut: MfFactionMigrateCommand
+    private val helpMessages = mutableListOf<String>()
 
     @BeforeEach
     fun setUp() {
         fixture = testUtils.createCommandTestFixture()
         plugin = mock(MedievalFactions::class.java)
+        helpMessages.clear()
+        val language = mock(Language::class.java, Answer { invocation ->
+            if (invocation.method.returnType == String::class.java) invocation.arguments.firstOrNull()?.toString().orEmpty()
+            else Answers.RETURNS_DEFAULTS.answer(invocation)
+        })
+        `when`(plugin.language).thenReturn(language)
+        `when`(plugin.config).thenReturn(mock(FileConfiguration::class.java))
+        `when`(fixture.sender.spigot()).thenReturn(object : CommandSender.Spigot() {
+            override fun sendMessage(component: BaseComponent) { helpMessages += component.toPlainText() }
+            override fun sendMessage(vararg components: BaseComponent) { components.forEach { sendMessage(it) } }
+        })
         uut = MfFactionMigrateCommand(plugin)
     }
 
@@ -58,15 +76,17 @@ class MfFactionMigrateCommandTest {
     }
 
     @Test
-    fun `prints usage and starts nothing when no type is given`() {
+    fun `prints permitted staff help and starts nothing when no type is given`() {
         val sender = fixture.sender
         `when`(sender.hasPermission("mf.migrate")).thenReturn(true)
 
         val result = uut.onCommand(sender, fixture.command, "label", arrayOf())
 
         assertTrue(result)
-        verify(sender).sendMessage("$YELLOW  Usage: /mf migrate <type>")
-        verify(sender).sendMessage("$RED  WARNING: Always backup your data before migrating!")
+        assertTrue(helpMessages.first().contains("Medieval Factions Staff"))
+        assertTrue(helpMessages.any { it.startsWith("/f migrate toJson - ") })
+        assertTrue(helpMessages.any { it.startsWith("/f migrate toDatabase - ") })
+        assertTrue(helpMessages.last().all { it == '-' })
         verify(plugin, never()).server
     }
 
@@ -78,9 +98,9 @@ class MfFactionMigrateCommandTest {
         val result = uut.onCommand(sender, fixture.command, "label", arrayOf("toXml"))
 
         assertTrue(result)
-        // The command echoes the lowercased argument, not what the sender typed.
-        verify(sender).sendMessage("$RED Invalid migration type: toxml")
-        verify(sender).sendMessage("$YELLOW  Valid options: toJson, toDatabase")
+        verify(sender).sendMessage("§cUnknown subcommand.")
+        assertTrue(helpMessages.first().contains("Medieval Factions Staff"))
+        assertTrue(helpMessages.any { it.startsWith("/f migrate toJson - ") })
         verify(plugin, never()).server
     }
 
@@ -117,11 +137,12 @@ class MfFactionMigrateCommandTest {
     }
 
     @Test
-    fun `tab completes both migration types and filters case-insensitively`() {
+    fun `tab completes permitted help and migration types and filters case-insensitively`() {
         val sender = fixture.sender
+        `when`(sender.hasPermission("mf.migrate")).thenReturn(true)
 
         assertEquals(
-            listOf("toJson", "toDatabase"),
+            listOf("help", "toJson", "toDatabase"),
             uut.onTabComplete(sender, fixture.command, "label", arrayOf(""))
         )
         assertEquals(

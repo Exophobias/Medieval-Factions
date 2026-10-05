@@ -78,6 +78,7 @@ class MfDuelCancelCommand(private val plugin: MedievalFactions) : CommandExecuto
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.duel")) return emptyList()
         if (sender !is Player) return emptyList()
         val senderMfPlayerId = MfPlayerId.fromBukkitPlayer(sender)
         val duelService = plugin.services.duelService

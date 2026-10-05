@@ -27,6 +27,8 @@ import org.bukkit.entity.Donkey
 import org.bukkit.entity.Hanging
 import org.bukkit.entity.Player
 import org.bukkit.entity.Projectile
+import org.bukkit.entity.Entity
+import org.bukkit.damage.DamageSource
 import org.bukkit.event.entity.EntityDamageByEntityEvent
 import org.bukkit.event.entity.EntityPlaceEvent
 import org.bukkit.event.hanging.HangingBreakByEntityEvent
@@ -86,6 +88,15 @@ class EntityDamageByEntityListenerTest {
         val damagedId = UUID.randomUUID()
         `when`(damager.uniqueId).thenReturn(damagerId)
         `when`(damaged.uniqueId).thenReturn(damagedId)
+        val world = mock(World::class.java)
+        `when`(world.uid).thenReturn(UUID.randomUUID())
+        val location = Location(world, 0.0, 64.0, 0.0)
+        val chunk = mock(Chunk::class.java)
+        `when`(chunk.world).thenReturn(world)
+        `when`(world.getChunkAt(location)).thenReturn(chunk)
+        `when`(world.getChunkAt(0, 0)).thenReturn(chunk)
+        `when`(damager.location).thenReturn(location)
+        `when`(damaged.location).thenReturn(location)
 
         damagerMfPlayer = mock(MfPlayer::class.java)
         damagedMfPlayer = mock(MfPlayer::class.java)
@@ -100,6 +111,20 @@ class EntityDamageByEntityListenerTest {
         `when`(event.entity).thenReturn(damaged)
 
         uut = EntityDamageByEntityListener(plugin)
+    }
+
+    @Test
+    fun explicitNativeDamageSourceActorReceivesTheSameMercenaryProtectionAsMelee() {
+        crossFactionWithProvider(MercenaryCombatProvider.Decision.DENY)
+        val marker = mock(Entity::class.java)
+        val source = mock(DamageSource::class.java)
+        `when`(event.damager).thenReturn(marker)
+        `when`(event.damageSource).thenReturn(source)
+        `when`(source.causingEntity).thenReturn(damager)
+
+        uut.onEntityDamageByEntity(event)
+
+        verify(event).isCancelled = true
     }
 
     @Test

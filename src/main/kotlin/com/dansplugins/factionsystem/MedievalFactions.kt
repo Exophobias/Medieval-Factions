@@ -316,6 +316,13 @@ class MedievalFactions : JavaPlugin() {
             org.bukkit.plugin.ServicePriority.Normal
         )
 
+        server.servicesManager.register(
+            com.dansplugins.factionsystem.api.NativeSiegeAuthority::class.java,
+            com.dansplugins.factionsystem.siege.DefaultNativeSiegeAuthority(this),
+            this,
+            org.bukkit.plugin.ServicePriority.Normal
+        )
+
         val metrics = Metrics(this, 8929)
         metrics.addCustomChart(
             SimplePie("language_used") {
@@ -515,7 +522,7 @@ class MedievalFactions : JavaPlugin() {
             )
         }, (15 - (LocalTime.now().minute % 15)) * 60 * 20L, 18000L)
         server.scheduler.scheduleSyncRepeatingTask(this, {
-            val gates = gateService.gates
+            val gates = gateService.gates.filter { gateService.disruptionMetadata(it.id) == null }
             gates.filter(MfGate::shouldOpen).forEach(MfGate::open)
             gates.filter(MfGate::shouldClose).forEach(MfGate::close)
         }, 20L, 20L)

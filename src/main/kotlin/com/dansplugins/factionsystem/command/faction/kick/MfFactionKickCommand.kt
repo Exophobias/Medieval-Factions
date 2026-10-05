@@ -120,6 +120,7 @@ class MfFactionKickCommand(private val plugin: MedievalFactions) : CommandExecut
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.kick") -> emptyList()
         args.isEmpty() ->
             plugin.server.offlinePlayers
                 .mapNotNull { it.name }

@@ -212,6 +212,7 @@ class MfAccessorsRemoveCommand(private val plugin: MedievalFactions) : CommandEx
         label: String,
         args: Array<out String>
     ) = when {
+        !sender.hasPermission("mf.accessors.remove") && !sender.hasPermission("mf.revokeaccess") -> emptyList()
         args.size <= 3 -> emptyList()
         args.size == 4 ->
             plugin.server.offlinePlayers

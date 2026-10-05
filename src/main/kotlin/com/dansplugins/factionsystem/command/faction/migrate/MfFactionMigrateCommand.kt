@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.migrate
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.chat.JooqMfChatChannelMessageRepository
 import com.dansplugins.factionsystem.claim.JooqMfClaimedChunkRepository
 import com.dansplugins.factionsystem.claim.JooqMfEmbassyRepository
@@ -53,15 +54,8 @@ class MfFactionMigrateCommand(private val plugin: MedievalFactions) : CommandExe
             return true
         }
 
-        if (args.isEmpty()) {
-            sender.sendMessage("$YELLOW=== Medieval Factions Storage Migration ===")
-            sender.sendMessage("$YELLOW  Usage: /mf migrate <type>")
-            sender.sendMessage("$YELLOW  ")
-            sender.sendMessage("$YELLOW  Types:")
-            sender.sendMessage("$YELLOW    toJson     - Migrate from database to JSON storage")
-            sender.sendMessage("$YELLOW    toDatabase - Migrate from JSON to database storage")
-            sender.sendMessage("$YELLOW  ")
-            sender.sendMessage("$RED  WARNING: Always backup your data before migrating!")
+        if (args.isEmpty() || args.first().equals("help", true)) {
+            NativeCommandHelp.render(sender, "f migrate", args.drop(if (args.isEmpty()) 0 else 1).toTypedArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f migrate"))
             return true
         }
 
@@ -71,8 +65,8 @@ class MfFactionMigrateCommand(private val plugin: MedievalFactions) : CommandExe
             "tojson" -> migrateToJson(sender)
             "todatabase" -> migrateToDatabase(sender)
             else -> {
-                sender.sendMessage("$RED Invalid migration type: $targetType")
-                sender.sendMessage("$YELLOW  Valid options: toJson, toDatabase")
+                NativeCommandHelp.unknown(sender)
+                NativeCommandHelp.render(sender, "f migrate", emptyArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f migrate"))
             }
         }
 
@@ -380,8 +374,10 @@ class MfFactionMigrateCommand(private val plugin: MedievalFactions) : CommandExe
         label: String,
         args: Array<out String>
     ): List<String> {
-        if (args.size == 1) {
-            return listOf("toJson", "toDatabase").filter { it.startsWith(args[0], ignoreCase = true) }
+        if (!sender.hasPermission("mf.migrate")) return emptyList()
+        if (args.firstOrNull()?.equals("help", true) == true) return NativeCommandHelp.helpTabs(sender, args.drop(1).toTypedArray(), NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "f migrate"))
+        if (args.size <= 1) {
+            return listOf("help", "toJson", "toDatabase").filter { it.startsWith(args.firstOrNull().orEmpty(), ignoreCase = true) }
         }
         return emptyList()
     }

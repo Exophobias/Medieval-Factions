@@ -170,6 +170,7 @@ class MfFactionRoleViewCommand(private val plugin: MedievalFactions) : CommandEx
         label: String,
         args: Array<out String>
     ): List<String> {
+        if (!sender.hasPermission("mf.role.view")) return emptyList()
         if (sender !is Player) return emptyList()
         val playerId = MfPlayerId.fromBukkitPlayer(sender)
         val factionService = plugin.services.factionService

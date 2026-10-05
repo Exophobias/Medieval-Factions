@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.duel
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.command.help.NativeCommandHelp
 import com.dansplugins.factionsystem.command.duel.accept.MfDuelAcceptCommand
 import com.dansplugins.factionsystem.command.duel.cancel.MfDuelCancelCommand
 import com.dansplugins.factionsystem.command.duel.challenge.MfDuelChallengeCommand
@@ -21,13 +22,30 @@ class MfDuelCommand(private val plugin: MedievalFactions) : CommandExecutor, Tab
 
     private val subcommands = challengeAliases + acceptAliases + cancelAliases
 
+    private fun helpEntries() = NativeCommandHelp.forRoot(NativeCommandHelp.catalog(plugin), "duel")
+    private fun permitted(sender: CommandSender, alias: String): Boolean = when (alias.lowercase()) {
+        in challengeAliases -> NativeCommandHelp.canUse(sender, "/duel challenge", helpEntries())
+        in acceptAliases -> NativeCommandHelp.canUse(sender, "/duel accept", helpEntries())
+        in cancelAliases -> NativeCommandHelp.canUse(sender, "/duel cancel", helpEntries())
+        "help" -> helpEntries().any { it.allowed(sender) && !it.container }
+        else -> false
+    }
+    private fun visibleSubcommands(sender: CommandSender) = (listOf("help") + subcommands)
+        .distinct().filter { permitted(sender, it) }
+
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (args.isEmpty() || args.firstOrNull()?.equals("help", true) == true) {
+            NativeCommandHelp.render(sender, "duel", args.drop(if (args.isEmpty()) 0 else 1).toTypedArray(), helpEntries())
+            return true
+        }
+
         return when (args.firstOrNull()?.lowercase()) {
             in challengeAliases -> duelChallengeCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in acceptAliases -> duelAcceptCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in cancelAliases -> duelCancelCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             else -> {
-                sender.sendMessage("$RED${plugin.language["CommandDuelUsage"]}")
+                NativeCommandHelp.unknown(sender)
+                NativeCommandHelp.render(sender, "duel", emptyArray(), helpEntries())
                 true
             }
         }
@@ -39,8 +57,10 @@ class MfDuelCommand(private val plugin: MedievalFactions) : CommandExecutor, Tab
         label: String,
         args: Array<out String>
     ) = when {
-        args.isEmpty() -> subcommands
-        args.size == 1 -> subcommands.filter { it.startsWith(args[0].lowercase()) }
+        args.firstOrNull()?.equals("help", true) == true -> NativeCommandHelp.helpTabs(sender, args.drop(1).toTypedArray(), helpEntries())
+        args.size > 1 && !permitted(sender, args.first()) -> emptyList()
+        args.isEmpty() -> visibleSubcommands(sender)
+        args.size == 1 -> visibleSubcommands(sender).filter { it.startsWith(args[0].lowercase()) }
         else -> when (args.first().lowercase()) {
             in challengeAliases -> duelChallengeCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in acceptAliases -> duelAcceptCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
