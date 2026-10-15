@@ -21,8 +21,16 @@ import org.bukkit.event.hanging.HangingBreakByEntityEvent
 import org.bukkit.event.hanging.HangingBreakEvent
 import org.bukkit.event.hanging.HangingPlaceEvent
 import org.bukkit.inventory.InventoryHolder
+import java.util.WeakHashMap
 
-class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Listener {
+class EntityDamageByEntityListener(
+    private val plugin: MedievalFactions,
+    private val nanoClock: () -> Long = System::nanoTime
+) : Listener {
+
+    // A held attack button or a volley of arrows is refused once per hit, so tell each player at most
+    // once per interval. Players are weak keys, so nothing outlives a session.
+    private val lastRefusalMessage = WeakHashMap<Player, Long>()
 
     @EventHandler
     fun onEntityDamageByEntity(event: EntityDamageByEntityEvent) {
@@ -98,6 +106,7 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
                     .playerPolicy(damagerPlayer, damaged)
             ) {
                 event.isCancelled = true
+                tellRefused(damagerPlayer, "CannotAttackPlayerProtected")
             }
         }
     }
@@ -157,5 +166,18 @@ class EntityDamageByEntityListener(private val plugin: MedievalFactions) : Liste
         val location = entity.location
         val world = location.world ?: return false
         return plugin.services.embassyService.isParcelProtectionActive(world.uid, location.blockX shr 4, location.blockZ shr 4)
+    }
+
+    private fun tellRefused(player: Player, key: String, vararg params: String) {
+        val now = nanoClock()
+        val last = lastRefusalMessage[player]
+        if (last != null && now - last < REFUSAL_MESSAGE_INTERVAL_NANOS) return
+        lastRefusalMessage[player] = now
+        val message = plugin.language.get(key, *params)
+        player.sendMessage("${ChatColor.RED}$message")
+    }
+
+    companion object {
+        const val REFUSAL_MESSAGE_INTERVAL_NANOS = 2_000_000_000L
     }
 }

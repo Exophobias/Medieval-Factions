@@ -13,6 +13,7 @@ import com.dansplugins.factionsystem.duel.MfDuelService
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.faction.MfFactionService
+import com.dansplugins.factionsystem.lang.Language
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.dansplugins.factionsystem.player.MfPlayerService
@@ -36,8 +37,11 @@ import org.bukkit.event.hanging.HangingPlaceEvent
 import org.bukkit.plugin.ServicesManager
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.Mockito.RETURNS_DEFAULTS
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.util.UUID
@@ -59,6 +63,7 @@ class EntityDamageByEntityListenerTest {
     private lateinit var damagerMfPlayer: MfPlayer
     private lateinit var damagedMfPlayer: MfPlayer
     private lateinit var event: EntityDamageByEntityEvent
+    private var now = 0L
 
     @BeforeEach
     fun setUp() {
@@ -78,6 +83,11 @@ class EntityDamageByEntityListenerTest {
         `when`(services.claimService).thenReturn(claimService)
         `when`(services.embassyService).thenReturn(embassyService)
         `when`(plugin.config).thenReturn(config)
+        // Each language key comes back unformatted, so the tests can assert which message was sent
+        val language = mock(Language::class.java) { invocation ->
+            if (invocation.method.returnType == String::class.java) invocation.arguments[0] else RETURNS_DEFAULTS.answer(invocation)
+        }
+        `when`(plugin.language).thenReturn(language)
 
         // Default: pvp allowed for factionless
         `when`(config.getBoolean("pvp.enabledForFactionlessPlayers")).thenReturn(true)
@@ -110,7 +120,7 @@ class EntityDamageByEntityListenerTest {
         `when`(event.damager).thenReturn(damager)
         `when`(event.entity).thenReturn(damaged)
 
-        uut = EntityDamageByEntityListener(plugin)
+        uut = EntityDamageByEntityListener(plugin) { now }
     }
 
     @Test

@@ -64,7 +64,7 @@ import java.util.regex.Pattern;
 public final class ConfigLifecycle {
 
     public static final String VERSION_KEY = "config-version";
-    public static final int CURRENT_VERSION = 6;
+    public static final int CURRENT_VERSION = 7;
     private static final String OLD_DPC_URL = "https://dansplugins.com/api/v1/factions";
     private static final String CURRENT_DPC_URL = "https://api.dansplugins.com/api/v1/factions";
     private static final Pattern DECIMAL_INTEGER = Pattern.compile("0|[1-9][0-9]*");
@@ -240,7 +240,8 @@ public final class ConfigLifecycle {
                     case 2 -> migrateTwoToThree(sourceYaml, schemaThreeTemplate(bundledYaml));
                     case 3 -> migrateThreeToFour(sourceYaml, schemaFourTemplate(bundledYaml));
                     case 4 -> migrateFourToFive(sourceYaml, schemaFiveTemplate(bundledYaml));
-                    case 5 -> migrateFiveToSix(sourceYaml, bundledYaml);
+                    case 5 -> migrateFiveToSix(sourceYaml, priorSchemaTemplate(bundledYaml, 6));
+                    case 6 -> migrateSixToSeven(sourceYaml, bundledYaml);
                     default -> null;
                 };
             } catch (RuntimeException failure) {
@@ -441,6 +442,10 @@ public final class ConfigLifecycle {
             throw new IllegalStateException("the bundled configuration must have a mapping root");
         }
         replaceTemplateValue(mapping, VERSION_KEY, version, yaml);
+        if (version < 7) {
+            removeTemplateKey(mapping, "addons");
+            removeTemplateKey(mapping, "update-check");
+        }
         if (version < 6) {
             removeTemplateKey(mapping, "api");
         }
@@ -544,6 +549,11 @@ public final class ConfigLifecycle {
 
     /** Adds the opt-in REST API while retaining explicit operator settings. */
     private static Migration migrateFiveToSix(String installedYaml, String bundledYaml) {
+        return canonicalize(installedYaml, bundledYaml);
+    }
+
+    /** Adds upstream add-on notices and update-check options without replacing explicit choices. */
+    private static Migration migrateSixToSeven(String installedYaml, String bundledYaml) {
         return canonicalize(installedYaml, bundledYaml);
     }
 

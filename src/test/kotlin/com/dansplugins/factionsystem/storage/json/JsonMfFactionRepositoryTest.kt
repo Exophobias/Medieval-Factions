@@ -85,6 +85,7 @@ class JsonMfFactionRepositoryTest {
         home = home,
         bonusPower = 3.5,
         autoclaim = true,
+        autounclaim = true,
         roles = roles,
         defaultPermissionsByName = mapOf("disband" to false, "claim" to true),
         applications = applications
@@ -138,6 +139,7 @@ class JsonMfFactionRepositoryTest {
         assertEquals("[RT]", read.prefix)
         assertEquals(3.5, read.bonusPower)
         assertTrue(read.autoclaim)
+        assertTrue(read.autounclaim)
 
         assertEquals(MfPosition(worldId, 1.5, 64.0, -2.5, 90.0f, 45.0f), read.home)
 

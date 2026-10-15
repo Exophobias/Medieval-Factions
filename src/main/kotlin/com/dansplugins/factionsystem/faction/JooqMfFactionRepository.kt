@@ -3,6 +3,7 @@ package com.dansplugins.factionsystem.faction
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.WarEndNotice
 import com.dansplugins.factionsystem.area.MfPosition
+import com.dansplugins.factionsystem.db.MfVersionedWrite
 import com.dansplugins.factionsystem.faction.flag.MfFlagValues
 import com.dansplugins.factionsystem.faction.role.MfFactionRole
 import com.dansplugins.factionsystem.faction.role.MfFactionRoleId
@@ -106,6 +107,14 @@ class JooqMfFactionRepository(
     }
 
     override fun upsert(faction: MfFaction): MfFaction {
+        // The conflict is signalled with null rather than thrown inside the transaction: jOOQ
+        // wraps a checked exception thrown there in a DataAccessException, which would hide the
+        // OptimisticLockingFailureException from MfFactionService's CONFLICT mapping. Nothing has
+        // been written when null is returned.
+        return upsertIfCurrent(faction) ?: throw OptimisticLockingFailureException("Invalid version: ${faction.version}")
+    }
+
+    private fun upsertIfCurrent(faction: MfFaction): MfFaction? {
         return dsl.transactionResult { config ->
             upsert(config.dsl(), faction)
         }
@@ -210,6 +219,7 @@ class JooqMfFactionRepository(
                 .set(MF_FACTION.HOME_PITCH, faction.home?.pitch)
                 .set(MF_FACTION.BONUS_POWER, faction.bonusPower)
                 .set(MF_FACTION.AUTOCLAIM, faction.autoclaim)
+                .set(MF_FACTION.AUTOUNCLAIM, faction.autounclaim)
                 .set(
                     MF_FACTION.ROLES,
                     JSON.valueOf(gson.toJson(faction.roles.map(MfFactionRole::serialize)))
@@ -240,6 +250,7 @@ class JooqMfFactionRepository(
                 .set(MF_FACTION.HOME_PITCH, faction.home?.pitch)
                 .set(MF_FACTION.BONUS_POWER, faction.bonusPower)
                 .set(MF_FACTION.AUTOCLAIM, faction.autoclaim)
+                .set(MF_FACTION.AUTOUNCLAIM, faction.autounclaim)
                 .set(
                     MF_FACTION.ROLES,
                     JSON.valueOf(gson.toJson(faction.roles.map(MfFactionRole::serialize)))
@@ -401,6 +412,7 @@ class JooqMfFactionRepository(
             },
             bonusPower = bonusPower,
             autoclaim = autoclaim,
+            autounclaim = autounclaim,
             roles = factionRoles,
             defaultPermissionsByName = gson.fromJson(
                 defaultPermissions.data(),

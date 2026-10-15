@@ -2,6 +2,7 @@ package com.dansplugins.factionsystem.command.faction
 
 import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.command.faction.addmember.MfFactionAddMemberCommand
+import com.dansplugins.factionsystem.command.faction.addons.MfFactionAddonsCommand
 import com.dansplugins.factionsystem.command.faction.admin.MfFactionAdminCommand
 import com.dansplugins.factionsystem.command.faction.ally.MfFactionAllyCommand
 import com.dansplugins.factionsystem.command.faction.apply.MfFactionApplyCommand
@@ -114,6 +115,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
     private val factionAddMemberCommand = MfFactionAddMemberCommand(plugin)
     private val factionDevCommand = MfFactionDevCommand(plugin)
     private val factionDpcCommand = MfFactionDpcCommand(plugin)
+    private val factionAddonsCommand = MfFactionAddonsCommand(plugin)
     private val factionApplyCommand = MfFactionApplyCommand(plugin)
     private val factionShowAppsCommand = MfShowAppsCommand(plugin)
     private val factionApproveAppCommand = MfFactionApproveAppCommand(plugin)
@@ -171,6 +173,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
     private val addMemberAliases = listOf("addmember", plugin.language["CmdFactionAddMember"])
     private val devAliases = if (plugin.config.getBoolean("dev.enableDevCommands")) listOf("dev") else emptyList()
     private val dpcAliases = listOf("dpc", plugin.language["CmdFactionDpc"])
+    private val addonsAliases = listOf("addons", plugin.language["CmdFactionAddons"])
     private val applyAliases = listOf("apply", plugin.language["CmdFactionApply"])
     private val showAppsAliases = listOf("showapps", plugin.language["CmdFactionShowApps"])
     private val approveAppAliases = listOf("approveapp", plugin.language["CmdFactionApproveApp"])
@@ -227,6 +230,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
         addMemberAliases +
         devAliases +
         dpcAliases +
+        addonsAliases +
         applyAliases +
         showAppsAliases +
         approveAppAliases +
@@ -300,6 +304,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in denyAliases -> NativeCommandHelp.canUse(sender, "/f deny", entries)
             in pendingActionsAliases -> NativeCommandHelp.canUse(sender, "/f pendingactions", entries)
             in transferAliases -> NativeCommandHelp.canUse(sender, "/f transfer", entries)
+            in addonsAliases -> sender.hasPermission(MfFactionAddonsCommand.PERMISSION)
             in heirAliases -> NativeCommandHelp.canUse(sender, "/f heir", entries)
             else -> false
         }
@@ -355,6 +360,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in relationshipAliases -> factionRelationshipCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in addMemberAliases -> factionAddMemberCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in devAliases -> factionDevCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
+            in addonsAliases -> factionAddonsCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in dpcAliases -> factionDpcCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in applyAliases -> factionApplyCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in showAppsAliases -> factionShowAppsCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
@@ -380,6 +386,10 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             }
         }
     }
+
+    // /mf addons is not suggested to players without its permission (it defaults to op).
+    private fun visibleSubcommands(sender: CommandSender) =
+        if (sender.hasPermission(MfFactionAddonsCommand.PERMISSION)) subcommands else subcommands - addonsAliases.toSet()
 
     override fun onTabComplete(
         sender: CommandSender,
@@ -435,6 +445,7 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
             in relationshipAliases -> factionRelationshipCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in addMemberAliases -> factionAddMemberCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in devAliases -> factionDevCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
+            in addonsAliases -> factionAddonsCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in dpcAliases -> factionDpcCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in applyAliases -> factionApplyCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())
             in approveAppAliases -> factionApproveAppCommand.onTabComplete(sender, command, label, args.drop(1).toTypedArray())

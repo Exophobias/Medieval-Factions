@@ -83,6 +83,11 @@
         "adminLeaderless": {
           "type": "boolean",
           "description": "Staff-designated faction allowed to remain without a leader or members"
+
+        },
+        "autounclaim": {
+          "type": "boolean",
+          "description": "Whether autounclaim is enabled"
         },
         "roles": {
           "$ref": "#/definitions/roles"

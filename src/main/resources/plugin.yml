@@ -48,7 +48,7 @@ commands:
       /f list - Lists factions
       /f claim (radius) - Claims land
       /f unclaim (radius) - Unclaims land
-      /f checkclaim - Checks who has claimed the chunk you are in
+      /f claim check - Checks who has claimed the chunk you are in
       /f unclaimall - Unclaims all claimed land
       /f power - Views power stats
       /f fillpower [player] - Fills a player's power.
@@ -169,6 +169,21 @@ permissions:
   mf.removelaw:
     description: Allows removing laws
     default: true
+  mf.law.add:
+    description: Allows adding laws (checked together with mf.addlaw)
+    default: true
+  mf.law.list:
+    description: Allows listing the laws of your faction (checked together with mf.laws)
+    default: true
+  mf.law.remove:
+    description: Allows removing laws (checked together with mf.removelaw)
+    default: true
+  mf.law.edit:
+    description: Allows editing laws
+    default: true
+  mf.law.move:
+    description: Allows reordering laws
+    default: true
   mf.makepeace:
     description: Allows making peace with other factions
     default: true
@@ -237,6 +252,12 @@ permissions:
     default: true
   mf.unclaim:
     description: Allows unclaiming land
+    default: true
+  mf.unclaim.auto:
+    description: Allows toggling autounclaim for your faction
+    default: true
+  mf.autounclaim:
+    description: Allows toggling autounclaim for your faction
     default: true
   mf.unclaimall:
     description: Allows unclaiming all land
@@ -386,7 +407,7 @@ permissions:
     description: Allows joining a faction without being invited
     default: op
   mf.force.kick:
-    description: Allows kicking a member from another faction
+    description: Allows kicking a member from another faction (/f kick <faction> <player>), bypassing that faction's role permissions
     default: op
   mf.force.bonuspower:
     description: Allows setting faction bonus power
@@ -395,22 +416,25 @@ permissions:
     description: Allows setting player power
     default: op
   mf.force.rename:
-    description: Allows forcing faction renames
+    description: Allows renaming another faction (/f set name <faction> <name>), bypassing that faction's role permissions
     default: op
   mf.force.unlock:
     description: Allows unlocking other players' locked blocks
     default: op
   mf.force.claim:
-    description: Allows claiming land for other factions
+    description: Allows claiming land for other factions (/f claim <faction> [radius]), bypassing their role permissions
     default: op
   mf.force.unclaim:
-    description: Allows unclaiming land for other factions
+    description: Allows unclaiming land of other factions (/f unclaim <faction> [radius], /f unclaimall <faction>), bypassing their role permissions
     default: op
   mf.force.flag:
     description: Allows setting flags for other factions
     default: op
   mf.force.addmember:
     description: Allows forcefully adding a member to a faction.
+    default: op
+  mf.force.role:
+    description: Allows managing another faction's roles (/f role <faction> <view|list|setpermission|create|delete|rename|set|setdefault> ...), bypassing that faction's role permissions
     default: op
   mf.force.*:
     description: Allows all force commands
@@ -426,6 +450,7 @@ permissions:
     - mf.force.unclaim
     - mf.force.flag
     - mf.force.addmember
+    - mf.force.role
   mf.approve:
     description: Allows approving and denying pending faction actions (war declarations, alliances, vassalizations)
     default: op
@@ -447,11 +472,18 @@ permissions:
   mf.migrate:
     description: Allows migrating faction data between the database and JSON storage backends
     default: op
+  mf.addons:
+    description: Allows listing known add-ons and related plugins, and which are installed (/mf addons)
+    default: op
+  mf.updatenotice:
+    description: Tells the player on join when a newer Medieval Factions release is available
+    default: op
   mf.admin:
     description: Admin permission
     default: op
     children:
     - mf.force.*
+    - mf.updatenotice
     - mf.bypass
     - mf.relationship.view
     - mf.relationship.add
@@ -466,3 +498,4 @@ permissions:
     - mf.admin.protection
     - mf.approve
     - mf.migrate
+    - mf.addons

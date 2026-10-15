@@ -55,18 +55,37 @@ Medieval Factions supports two data storage backends:
 
 See [Configuration Guide](CONFIG.md#storage-configuration) for details on choosing and configuring your storage backend.
 
-### Dynmap Integration
-Dynmap has been integrated with this plugin. In order to be able to view claimed land on a dynamic map, download and install the plugin [here](https://www.spigotmc.org/resources/dynmap.274/).
+### Web Maps
+- **Dynmap**: built in. Install [Dynmap](https://www.spigotmc.org/resources/dynmap.274/) and claimed land appears on its map.
+- **BlueMap**: install [BlueMap](https://bluemap.bluecolored.de/) together with the [Bluemap_MedievalFactions](https://github.com/Dans-Plugins/Bluemap_MedievalFactions) add-on, and faction claims are drawn as overlays on the BlueMap web map.
 
 ### Expansions
-1) [Fiefs](https://github.com/Dans-Plugins/Fiefs)
-2) [Currencies](https://github.com/Dans-Plugins/Currencies)
+Each of these add-ons requires Medieval Factions and adds something to it. The current stable release of every one was enabled against Medieval Factions 7.0.0 by the [dependents gate](https://github.com/Dans-Plugins/release-gates/actions/runs/36957984824) before 7.0.0 was published.
+
+| Expansion | What it adds | Verified with MF 7.0.0 |
+|---|---|---|
+| [Currencies](https://github.com/Dans-Plugins/Currencies) ([SpigotMC](https://www.spigotmc.org/resources/96381/)) | Factions mint their own currencies, for local economies | v3.0.0 |
+| [Fiefs](https://github.com/Dans-Plugins/Fiefs) ([SpigotMC](https://www.spigotmc.org/resources/98559/)) | Sub-factions (fiefs) inside a faction | v0.12.1 |
+| [Democracy](https://github.com/Dans-Plugins/Democracy) ([SpigotMC](https://www.spigotmc.org/resources/139167/)) | Elections for faction leadership | v0.3.0 |
+| [Bluemap_MedievalFactions](https://github.com/Dans-Plugins/Bluemap_MedievalFactions) | Faction claims on a [BlueMap](https://bluemap.bluecolored.de/) web map | v1.0 |
+
+Currencies 2.x does not enable on Medieval Factions 5.8 or newer. Use Currencies 3.0.0 or later.
+
+In game, operators can run `/mf addons` to see which of these, and of the plugins below, are installed, and whether each installed version is the verified one. See [COMMANDS.md](COMMANDS.md#faction-addons-or-mf-addons).
+
+### Works Well With
+- [Medieval Roleplay Engine](https://github.com/Dans-Plugins/Medieval-Roleplay-Engine) ([SpigotMC](https://www.spigotmc.org/resources/79993/)): character cards, local chat, emotes and messenger birds. It is a companion plugin for faction roleplay and runs alongside Medieval Factions.
+- [Mailboxes](https://github.com/Dans-Plugins/Mailboxes) ([SpigotMC](https://www.spigotmc.org/resources/96611/)): persistent messages. When it is installed, Medieval Factions delivers faction notifications through it.
+- [Medieval Economy](https://github.com/Dans-Plugins/Medieval-Economy) ([SpigotMC](https://www.spigotmc.org/resources/81836/)): a coinpurse and a physical currency item.
+
+Every plugin is listed on [dansplugins.com](https://dansplugins.com), and [Dan's Plugin Manager](https://github.com/Dans-Plugins/Dans-Plugin-Manager) can install them in game with `/dpm get <plugin>`.
 
 ## Usage
 
 ### Documentation
 - [User Guide](USER_GUIDE.md) - Getting started and common scenarios
 - [FAQ](FAQ.md) - Answers to frequently asked questions
+- [Who can do what](BEHAVIOUR.md) - What each kind of player can do in faction territory, observed by bots on every release
 - [Commands Reference](COMMANDS.md) - Complete list of all commands
 - [Configuration Guide](CONFIG.md) - Detailed config options
 - [Faction Flags](FACTION_FLAGS.md) - Faction flag reference
@@ -108,7 +127,7 @@ If you see BUILD SUCCESSFUL, then the tests have passed.
 ### Looking to create an add-on plugin?
 I recommend using [FactionsBridge](https://www.spigotmc.org/resources/factionsbridge.89716/) by [Retrix_Solutions](https://www.spigotmc.org/resources/authors/retrix_solutions.491191/). It would make your add-on plugin usable across a number of factions implementations.
 
-Alternatively, you can use the External API, the documentation for which can be found [here](https://github.com/Dans-Plugins/Medieval-Factions/wiki/External-API-Documentation).
+To build directly on Medieval Factions, the [expansions above](#expansions) are working examples. Their source shows how each one hooks into Medieval Factions' services, events and permissions. A clearer API for expansion permissions is tracked in [#1683](https://github.com/Dans-Plugins/Medieval-Factions/issues/1683).
 
 ## Development
 ### Test Server with Plugin Hot-Reloading
@@ -204,7 +223,11 @@ You can view the bStats page for the plugin [here](https://bstats.org/plugin/buk
 
 ## Usage reporting
 
-Usage reporting is on by default: when the plugin is enabled, and each time one of its commands is used, it sends its name, version and the command's name (`startup` and `command` events; aliases such as `/mf` report under the command's declared name) to https://trace.danielstephenson.dev so it is known which plugins are actually in use. Nothing about players, worlds, IPs or the server is sent, and nothing typed after a command. The plugin says on every startup whether reporting is on. To turn it off:
+Usage reporting is on by default: when the plugin is enabled, and each time one of its commands is used, it sends its name, version and the command's name (`startup` and `command` events; aliases such as `/mf` report under the command's declared name) to https://trace.danielstephenson.dev so it is known which plugins are actually in use. Nothing about players, worlds or IPs is sent, and nothing typed after a command. The plugin says on every startup whether reporting is on. Each event also carries a random server ID (the `server-id` line in `plugins/trace/config.yml`) so
+servers can be counted rather than events. It identifies no person, account or IP address; delete
+the line to get a new one.
+
+To turn it off:
 
 - `usage-reporting.enabled: false` in this plugin's `config.yml`
 - for every plugin on the server that reports to trace: `enabled: false` in `plugins/trace/config.yml` (written by the first such plugin to start)

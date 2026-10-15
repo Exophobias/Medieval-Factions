@@ -8,6 +8,7 @@ This guide provides step-by-step instructions for common scenarios and getting s
   - [Creating Your First Faction](#creating-your-first-faction)
   - [Joining an Existing Faction](#joining-an-existing-faction)
   - [Claiming Your First Territory](#claiming-your-first-territory)
+  - [Who Can Do What in a Claim](#who-can-do-what-in-a-claim)
   - [Inviting Members](#inviting-members)
   - [Setting Up Faction Roles](#setting-up-faction-roles)
   - [Forming an Alliance](#forming-an-alliance)
@@ -227,6 +228,33 @@ If you need to unclaim:
 - Claim contiguously if server requires it (`contiguousClaims` in config)
 - Remember: you lose claims if faction power drops too low
 
+#### Who Can Claim and Unclaim
+
+- Only a member whose faction role has the `CLAIM` permission can claim land for the faction, and only one whose role has `UNCLAIM` can unclaim it. The faction owner has both; the default Member role has neither, so an ordinary member is refused until the owner grants them (`/f role setpermission Member CLAIM allow`, see [Setting Up Faction Roles](#setting-up-faction-roles)).
+- Players in no faction can neither claim nor unclaim land.
+- Land another faction has claimed cannot be claimed while that faction has the power to hold it. This applies to allies, to factions you are not at war with, and to factions you are at war with alike. Taking enemy land (overclaiming) is possible only during a war, and only when the owner's power is no more than the number of chunks it would still hold afterwards.
+- `/f unclaim` only removes your own faction's land. Standing in another faction's claim, it is refused, whatever your relationship to that faction.
+- A server operator with the `mf.bypass` permission who has turned on `/f bypass` can unclaim any faction's land.
+- The rules above are for players. Administrators have two exceptions: with `mf.force.claim`, `/f claim <faction>` claims land for the named faction, and with `mf.force.unclaim`, `/f unclaim <faction>` removes the named faction's land. Neither needs membership of that faction or a role permission (see [COMMANDS.md](COMMANDS.md)).
+
+---
+
+### Who Can Do What in a Claim
+
+With the default configuration, these rules apply in land a faction has claimed:
+
+- Members of the faction can build, break blocks and use blocks (chests, doors, buttons and the like) in its claims.
+- Everyone else is refused and told why: members of other factions, members of a faction at war with it, and players in no faction cannot build, break or use blocks in its claims.
+- Allies are refused too. An alliance alone gives no access to land; allies can build, break and use blocks only after the owning faction turns on the `alliesCanInteractWithLand` flag, which is off by default (see [FACTION_FLAGS.md](FACTION_FLAGS.md)).
+- Being at war gives no access either, except to ladders (`factions.laddersPlaceableInEnemyFactionTerritory`) and to the blocks the server lists in the `factions.wartime...` options, which are empty by default (see [CONFIG.md](CONFIG.md)).
+- Non-members also cannot set fire, use bone meal, place item frames, armour stands or end crystals, or right-click blocks, even with an empty hand.
+- Throwing an item while looking at a block in another faction's claim still works: snowballs, eggs, bottles o' enchanting, and splash and lingering potions are thrown, but the block itself is not used (a potion thrown at a chest does not open it).
+- Doors, trapdoors and fence gates follow `factions.nonMembersCanInteractWithDoors`, and entities (item frames, armour stands, minecarts and the like) follow `factions.nonMembersCanInteractWithEntities`. Both are off by default, so non-members cannot use them. Trading with villagers is the exception: it follows the owning faction's `protectVillagerTrade` flag instead.
+- A server operator with the `mf.bypass` permission who has turned on `/f bypass` can do all of the above in any claim, and is warned each time.
+- Locked blocks have their own rules on top of these; see [Locking Important Blocks](#locking-important-blocks).
+
+These rules are checked by bots on a real server before each release; the observed results are in [BEHAVIOUR.md](BEHAVIOUR.md).
+
 ---
 
 ### Embassy plots between realms
@@ -300,10 +328,12 @@ Chest boats, storage minecarts and stocked mounts cannot cross a peaceful embass
 **Goal:** Create a hierarchy with different permission levels.
 
 **Default Roles:**
-Most factions start with these roles:
-- **Leader** - Full permissions
-- **Officer** - Most permissions
-- **Member** - Basic permissions
+A new faction has three roles. New members get the Member role.
+- **Member** - only the faction permissions that are on by default for every role: going to the faction home, inviting players, listing the laws, members and roles, viewing the flags, the faction's info and stats, and the faction chat history. Everything else is refused until the role is granted it, including claiming and unclaiming land, setting the home, adding, editing or removing laws, requesting alliances, declaring war, setting flags, renaming the faction, managing roles, vassalizing, kicking members, unclaiming all land and disbanding.
+- **Officer** - the Member role's permissions, plus requesting alliances, declaring war, making peace, setting the faction home, kicking members, creating roles, approving and denying applications, and managing the Member role.
+- **Owner** - every faction permission except bypassing locks (`BYPASS_LOCKS`) and toggling autounclaim (`TOGGLE_AUTOUNCLAIM`), which must be granted explicitly.
+
+Permission names are upper case and must be given exactly, for example `CLAIM`, `INVITE` or `ADD_LAW`; `/f role setpermission Member claim allow` is refused as an invalid permission.
 
 **Creating Custom Roles:**
 
@@ -315,10 +345,10 @@ Most factions start with these roles:
 
 2. **Set permissions for the role**:
    ```
-   /f role setpermission [RoleName] [Permission] [true/false]
-   /f role setpermission Guard claim true
-   /f role setpermission Guard invite false
-   /f role setpermission Guard kick false
+   /f role setpermission [RoleName] [Permission] [allow/deny/default]
+   /f role setpermission Guard CLAIM allow
+   /f role setpermission Guard INVITE deny
+   /f role setpermission Guard KICK deny
    ```
 
 3. **Assign players to the role**:
@@ -566,6 +596,8 @@ If enemy faction is disbanded or surrenders, war ends automatically.
    - Must be at least 3 blocks high (configurable)
    - Maximum 64 blocks (configurable)
    - Cannot use restricted blocks (sand, gravel, torches, etc.)
+   - Cannot use blocks that hold contents or data (chests, barrels, hoppers, furnaces, shulker boxes, signs, banners, etc.): opening the gate would destroy what they hold
+   - Blocks must be in their default orientation (for example bottom stairs facing north, bottom slabs, upright logs), because a gate puts its blocks back that way when it closes; iron bars, fences, panes and walls are fine, since their connections follow their neighbours
    - Can be any shape (wall, door, portcullis, etc.)
 
 2. **Start gate creation**:
@@ -682,6 +714,12 @@ If you make a mistake:
 1. Enable remove mode: `/accessors remove`
 2. Right-click the locked block
 3. Right-click the player to revoke access from
+
+**Who can open and break a locked block:**
+- Only the player who locked the block and the players on its access list can open it. This holds inside a claim too: an accessor from another faction, such as an ally, can open the block even though they cannot use anything else in the claim.
+- Everyone else is refused, including other members of the faction that owns the claim.
+- A server operator with the `mf.bypass` permission who has turned on `/f bypass` can open any locked block, and is warned. So can a player whose faction role has the `BYPASS_LOCKS` permission.
+- Only the player who locked the block can break it, which also removes the lock. Other players are refused, unless they have `mf.force.unlock` and could break blocks at that spot anyway (for example as a member of the owning faction, or with `/f bypass` on).
 
 **Lock Tips:**
 - Lock your personal chests to prevent faction member theft
@@ -886,6 +924,10 @@ Challenge players to honor duels:
 ```
 
 Duels are time-limited and notify nearby players.
+
+While a duel lasts:
+- The two duelists can hurt each other even where faction rules would stop them, for example when they are in the same faction or in factions that are not at war.
+- Nobody else can hit either duelist, in melee or with a projectile such as an arrow, and a duelist cannot hit anyone else; the attacker is told that one of them is in a duel. Splash and lingering potions are the exception: between a duelist and someone outside the duel they follow the normal faction rules, as if there were no duel.
 
 ### Applications System
 

@@ -6,6 +6,7 @@ import com.dansplugins.factionsystem.area.MfBlockPosition
 import com.dansplugins.factionsystem.area.MfCuboidArea
 import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.gate.MfGate
+import com.dansplugins.factionsystem.gate.MfGateBlockSafety
 import com.dansplugins.factionsystem.gate.MfGateCreationContext
 import com.dansplugins.factionsystem.interaction.MfInteractionStatus.ADDING_ACCESSOR
 import com.dansplugins.factionsystem.interaction.MfInteractionStatus.CHECKING_ACCESS
@@ -41,10 +42,14 @@ import org.bukkit.event.block.Action.PHYSICAL
 import org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot.HAND
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Level.SEVERE
 
-class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
+class PlayerInteractListener(
+    private val plugin: MedievalFactions,
+    private val clock: () -> Long = System::currentTimeMillis
+) : Listener {
 
     private val pendingPlayers = ConcurrentHashMap.newKeySet<MfPlayerId>()
     private val interactionPolicy = BlockInteractionPolicy(plugin)
@@ -57,6 +62,10 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         // deliberately absent, because releasing the item half of a protected interaction for those
         // would let a non-member alter a claim. The list is therefore fail-closed: an item missing from
         // it is merely restricted, never a hole in protection.
+        // How long after a world-neutral item use an empty-handed click on the same block is treated as
+        // its follow-up event rather than a separate click. See [isFollowUpOfWorldNeutralUse].
+        private const val FOLLOW_UP_WINDOW_MILLIS = 250L
+
         private val WORLD_NEUTRAL_MATERIALS: Set<Material> = buildSet {
             addAll(
                 listOf(
@@ -83,6 +92,17 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
             Material.getMaterial("GOAT_HORN")?.let { add(it) }
         }
     }
+
+    // Tracks players whose MfPlayer record is currently being created asynchronously, so that
+    // Action.PHYSICAL (which fires once per tick while the player stands on the block) doesn't
+    // queue a duplicate save for every tick until the first one completes.
+    private val playersWithPendingSave: MutableSet<MfPlayerId> = ConcurrentHashMap.newKeySet()
+
+    // The last world-neutral item use per player, so the empty-handed follow-up event it can cause is
+    // recognised - see [isFollowUpOfWorldNeutralUse].
+    private val lastWorldNeutralUse = ConcurrentHashMap<UUID, WorldNeutralUse>()
+
+    private data class WorldNeutralUse(val position: MfBlockPosition, val timeMillis: Long)
 
     @EventHandler
     fun onPlayerInteract(event: PlayerInteractEvent) {
@@ -166,7 +186,7 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
     private fun applyProtections(event: PlayerInteractEvent) {
         val block = event.clickedBlock ?: return
         val decision = interactionPolicy.evaluate(event.player, block, event.action, if (event.hasItem()) event.item?.type else null)
-        val notify = event.action != PHYSICAL
+        val notify = event.action != PHYSICAL && !isFollowUpOfWorldNeutralUse(event, block)
         if (decision.denial == BlockInteractionPolicy.Denial.UNKNOWN_PLAYER) {
             event.isCancelled = true
             registerMissingPlayer(event.player)
@@ -218,6 +238,34 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         if (event.action != RIGHT_CLICK_BLOCK) return false
         val item = event.item ?: return false
         return item.type.isEdible || item.type in WORLD_NEUTRAL_MATERIALS
+    }
+
+    /**
+     * True when this event is the second half of a world-neutral item use that emptied the player's hand.
+     *
+     * A vanilla right-click on a block sends two packets: use-item-on-block, then use-item. CraftBukkit
+     * raises a [PlayerInteractEvent] for each while the player is looking at the block. When the first
+     * event throws the last item in the hand - always the case for a splash or lingering potion, which
+     * do not stack, and for the last snowball or egg of a stack - the second event arrives with no item
+     * at all. As a bare-hand click it is refused in full, which is right for the block, but the refusal
+     * message would contradict the throw the player just watched succeed. Measured on Spigot 1.21.1,
+     * the two events arrive 1-50 ms apart, so [FOLLOW_UP_WINDOW_MILLIS] leaves a wide margin.
+     *
+     * Every world-neutral use on a block is recorded here, and an empty-handed right-click on the same
+     * block within the window consumes the record. The event is still refused; only the message is
+     * suppressed.
+     */
+    private fun isFollowUpOfWorldNeutralUse(event: PlayerInteractEvent, clickedBlock: Block): Boolean {
+        val playerId = event.player.uniqueId
+        val position = MfBlockPosition.fromBukkitBlock(clickedBlock)
+        val now = clock()
+        if (isWorldNeutralItemUse(event)) {
+            lastWorldNeutralUse[playerId] = WorldNeutralUse(position, now)
+            return false
+        }
+        if (event.action != RIGHT_CLICK_BLOCK || event.item != null) return false
+        val previous = lastWorldNeutralUse.remove(playerId) ?: return false
+        return previous.position == position && now - previous.timeMillis <= FOLLOW_UP_WINDOW_MILLIS
     }
 
     /**
@@ -552,10 +600,8 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
         plugin.server.scheduler.runTaskAsynchronously(
             plugin,
             Runnable {
-                if (block.type in plugin.services.gateService.restrictedBlockMaterials) {
-                    player.sendMessage("$RED${plugin.language["GateCreateRestrictedBlock"]}")
-                    return@Runnable
-                }
+                // gates.restrictedBlocks applies to the blocks a gate is made of, not to its trigger: the default list
+                // includes buttons, signs and tripwire hooks, which are ordinary triggers and are never moved (#2071).
                 val playerService = plugin.services.playerService
                 val mfPlayer = playerService.getPlayer(player) ?: playerService.save(MfPlayer(plugin, player)).onFailure {
                     player.sendMessage("$RED${plugin.language["GateCreateSelectTriggerFailedToSavePlayer"]}")
@@ -649,6 +695,32 @@ class PlayerInteractListener(private val plugin: MedievalFactions) : Listener {
                             }
                         ]}"
                     )
+                    restartGateCreation(player, ctx)
+                    return@syncValidations
+                }
+
+                // Gates only store a material and restore blocks with their default block data, so refuse blocks
+                // whose contents or player-chosen state would be destroyed by opening/closing the gate (#1255).
+                val blockSafety = plugin.services.gateService.blockSafety
+                val blockProblem = blocks.firstNotNullOfOrNull { position ->
+                    position.toBukkitBlock()?.let { blockSafety.check(it) }
+                }
+                if (blockProblem != null) {
+                    when (blockProblem) {
+                        is MfGateBlockSafety.Problem.DataHoldingBlock -> player.sendMessage(
+                            "$RED${plugin.language[
+                                "GateCreateDataHoldingBlock",
+                                blockProblem.material.toString().lowercase().replace('_', ' ')
+                            ]}"
+                        )
+                        is MfGateBlockSafety.Problem.NonDefaultState -> player.sendMessage(
+                            "$RED${plugin.language[
+                                "GateCreateNonDefaultBlockState",
+                                blockProblem.material.toString().lowercase().replace('_', ' '),
+                                blockProblem.properties.entries.joinToString { (key, value) -> "$key=$value" }
+                            ]}"
+                        )
+                    }
                     restartGateCreation(player, ctx)
                     return@syncValidations
                 }

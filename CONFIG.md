@@ -22,11 +22,13 @@ This document provides detailed information about all configuration options avai
 - [REST API](#rest-api)
 - [DPC Community API](#dpc-community-api)
 - [Usage Reporting](#usage-reporting)
+- [Add-ons](#add-ons)
+- [Update Check](#update-check)
 
 ## Configuration Schema and Upgrades
 
 `config-version` is the operator-configuration schema, independent of the plugin/JAR `version` and
-the Flyway database schema. The supported schema is currently `6`. A valid MF5-era `config.yml`
+the Flyway database schema. The supported schema is currently `7`. A valid MF5-era `config.yml`
 without the marker is schema 0 and is upgraded automatically: Medieval Factions rebuilds it in the
 latest bundled order, overlays explicit operator values and credentials, and retains unknown
 extension keys after the known keys in their nearest section. The schema is intentionally open so
@@ -54,14 +56,14 @@ partial in-place reload of database, language, listener, and scheduler settings.
 **Description:** Configuration schema used for safe automatic upgrades. Do not set it to the plugin version.
 
 ### `version`
-**Type:** String  
-**Default:** `@version@` (auto-generated)  
+**Type:** String
+**Default:** `@version@` (auto-generated)
 **Description:** Informational plugin version placed in newly generated files. It is not the configuration schema.
 
 ### `language`
-**Type:** String  
-**Default:** `en-US`  
-**Description:** Sets the default language for the plugin. This build ships English only.  
+**Type:** String
+**Default:** `en-US`
+**Description:** Sets the default language for the plugin. This build ships English only.
 **Available Values:** `en-US`
 
 ## Storage Configuration
@@ -69,9 +71,9 @@ partial in-place reload of database, language, listener, and scheduler settings.
 Medieval Factions supports two storage backends: **Database** (default) and **JSON**. You can choose which one to use based on your server's needs.
 
 ### `storage.type`
-**Type:** String  
-**Default:** `database`  
-**Description:** Determines which storage backend to use for persisting faction data.  
+**Type:** String
+**Default:** `database`
+**Description:** Determines which storage backend to use for persisting faction data.
 **Available Values:**
 - `database` - Uses a SQL database (embedded H2 by default, or a MariaDB/MySQL server)
 - `json` - Uses JSON files stored on disk
@@ -93,9 +95,9 @@ Medieval Factions supports two storage backends: **Database** (default) and **JS
 When `storage.type` is set to `database`, the following options apply:
 
 ### `database.url`
-**Type:** String  
-**Default:** `jdbc:h2:./medieval_factions_db;AUTO_SERVER=true;MODE=MYSQL;DATABASE_TO_UPPER=false`  
-**Description:** JDBC connection URL for the database.  
+**Type:** String
+**Default:** `jdbc:h2:./medieval_factions_db;AUTO_SERVER=true;MODE=MYSQL;DATABASE_TO_UPPER=false`
+**Description:** JDBC connection URL for the database.
 **Examples:**
 - H2 (default): `jdbc:h2:./medieval_factions_db;AUTO_SERVER=true;MODE=MYSQL;DATABASE_TO_UPPER=false`
 - MariaDB or MySQL server: `jdbc:mariadb://localhost:3306/medievalfactions`
@@ -111,21 +113,32 @@ already present), so H2 registers no shutdown hook of its own — such a hook wo
 the server has unloaded the plugin, and fail. H2 does not allow that setting together with
 `AUTO_SERVER=true`, so the default URL is left as it is.
 
+`AUTO_SERVER=true` makes H2 start a small TCP server so that anything else can open the database
+file while the server runs: add-on plugins that bundle their own H2 and share
+`medieval_factions_db` (such as Currencies), and outside tools such as the H2 console (see
+[DATABASE_QUERYING.md](DATABASE_QUERYING.md)). To do that, H2 resolves the host's own name. If that
+name does not resolve (as on some containers and hosting panels, where it fails with H2 error
+90028), the plugin opens the same database file without `AUTO_SERVER`, logs a warning, and
+carries on. In that mode nothing else can open the file while the server runs, so an add-on that
+shares it fails to connect. To restore sharing, make the host name resolve (for example by adding
+it to `/etc/hosts`). If nothing else needs the file, removing `AUTO_SERVER=true` from the URL also
+silences the warning.
+
 ### `database.dialect`
-**Type:** String  
-**Default:** `H2`  
-**Description:** SQL dialect to use. Must match your database type.  
+**Type:** String
+**Default:** `H2`
+**Description:** SQL dialect to use. Must match your database type.
 **Available Values:** `H2`, `MYSQL`, `MARIADB` (case-insensitive; `MySQL` and `MariaDB` are accepted spellings)
 
 ### `database.username`
-**Type:** String  
-**Default:** `sa`  
+**Type:** String
+**Default:** `sa`
 **Description:** Database username for authentication.
 
 ### `database.password`
-**Type:** String  
-**Default:** `` (empty)  
-**Description:** Database password for authentication.  
+**Type:** String
+**Default:** `` (empty)
+**Description:** Database password for authentication.
 **Security Note:** Consider using environment variables or secure storage for production passwords.
 
 ### JSON Storage
@@ -133,9 +146,9 @@ the server has unloaded the plugin, and fail. H2 does not allow that setting tog
 When `storage.type` is set to `json`, the following options apply:
 
 ### `storage.json.path`
-**Type:** String  
-**Default:** `./medieval_factions_data`  
-**Description:** Directory path where JSON files will be stored. Can be relative or absolute.  
+**Type:** String
+**Default:** `./medieval_factions_data`
+**Description:** Directory path where JSON files will be stored. Can be relative or absolute.
 **Examples:**
 - Relative path: `./medieval_factions_data`
 - Absolute path: `/var/minecraft/data/medieval_factions`
@@ -170,45 +183,45 @@ The migration command initializes both storage backends, copies all data, and re
 The power system determines how much land a faction can claim and player impact in the world.
 
 ### `players.initialPower`
-**Type:** Integer  
-**Default:** `5`  
-**Description:** The amount of power a player starts with when joining the server.  
+**Type:** Integer
+**Default:** `5`
+**Description:** The amount of power a player starts with when joining the server.
 **Range:** Any positive integer
 
 ### `players.maxPower`
-**Type:** Integer  
-**Default:** `20`  
-**Description:** The maximum power a player can accumulate.  
+**Type:** Integer
+**Default:** `20`
+**Description:** The maximum power a player can accumulate.
 **Range:** Any positive integer
 
 ### `players.minPower`
-**Type:** Integer  
-**Default:** `-5`  
-**Description:** The minimum power a player can have.  
+**Type:** Integer
+**Default:** `-5`
+**Description:** The minimum power a player can have.
 **Range:** Any negative integer or 0
 
 ### `players.hoursToReachMaxPower`
-**Type:** Integer  
-**Default:** `12`  
-**Description:** Number of hours of playtime required to reach maximum power from initial power.  
+**Type:** Integer
+**Default:** `12`
+**Description:** Number of hours of playtime required to reach maximum power from initial power.
 **Range:** Any positive integer
 
 ### `players.hoursToReachMinPower`
-**Type:** Integer  
-**Default:** `72`  
-**Description:** Number of hours required to reach minimum power from initial power through deaths.  
+**Type:** Integer
+**Default:** `72`
+**Description:** Number of hours required to reach minimum power from initial power through deaths.
 **Range:** Any positive integer
 
 ### `players.powerLostOnDeath`
-**Type:** Integer  
-**Default:** `1`  
-**Description:** Amount of power a player loses when they die.  
+**Type:** Integer
+**Default:** `1`
+**Description:** Amount of power a player loses when they die.
 **Range:** Any positive integer or 0
 
 ### `players.powerGainedOnKill`
-**Type:** Integer  
-**Default:** `1`  
-**Description:** Amount of power a player gains when they kill another player.  
+**Type:** Integer
+**Default:** `1`
+**Description:** Amount of power a player gains when they kill another player.
 **Range:** Any positive integer or 0
 
 ## Wilderness Settings
@@ -216,39 +229,39 @@ The power system determines how much land a faction can claim and player impact 
 Controls behavior and alerts in unclaimed wilderness areas.
 
 ### `wilderness.color`
-**Type:** String (hex color)  
-**Default:** `#3e8e39`  
-**Description:** The color used to represent wilderness on maps and in displays.  
+**Type:** String (hex color)
+**Default:** `#3e8e39`
+**Description:** The color used to represent wilderness on maps and in displays.
 **Format:** Hex color code (e.g., `#3e8e39`)
 
 ### `wilderness.interaction.prevent`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, prevents block interactions (buttons, levers, etc.) in wilderness. Only the block half of the interaction is refused when the held item cannot act on a block: eating, drinking, drawing a bow or a crossbow, throwing a snowball, an egg, an ender pearl, a trident or a potion, casting a fishing rod, raising a shield and using a spyglass or a goat horn all still work while looking at a block. Items that do act on the clicked block — a bucket, flint and steel, a hoe, an axe, a shovel, bone meal, an eye of ender, a firework rocket, a wind charge, or anything placeable — are refused outright, as are left-clicks and physical interactions.
 
 ### `wilderness.interaction.alert`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, sends an alert message when players interact with blocks in wilderness. No alert is sent for physical interactions (stepping on a pressure plate or tripwire, trampling farmland), which repeat every tick and would flood chat, nor when only the block half of the interaction was refused (see `wilderness.interaction.prevent`), because the player was using the held item rather than the block; the interaction is still prevented in both cases.
 
 ### `wilderness.place.prevent`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, prevents players from placing blocks in wilderness.
 
 ### `wilderness.place.alert`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** When `true`, sends an alert when players place blocks in wilderness.
 
 ### `wilderness.break.prevent`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, prevents players from breaking blocks in wilderness.
 
 ### `wilderness.break.alert`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** When `true`, sends an alert when players break blocks in wilderness.
 
 ## PVP Settings
@@ -256,41 +269,41 @@ Controls behavior and alerts in unclaimed wilderness areas.
 Controls player vs player combat mechanics.
 
 ### `pvp.enabledForFactionlessPlayers`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** When `true`, players without a faction can engage in PVP.
 
 ### `pvp.warRequiredForPlayersOfDifferentFactions`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** When `true`, factions must be at war before their members can damage each other.
 
 ### `pvp.friendlyFire`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, faction members can damage each other (unless overridden by faction flag).
 
 ### `pvp.grantPowerToKillerIfVictimHasZeroPower`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, killing a player with zero or negative power still grants power to the killer.
 
 ### `pvp.enableWartimeBlockDestruction`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, allows players to destroy blocks in enemy faction territory during war.
 
 ## Faction Settings
 
 ### `factions.mobsSpawnInFactionTerritory`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `false`, prevents hostile mob spawning in faction territory (except for spawn reasons in allowedMobSpawnReasons).
 
 ### `factions.allowedMobSpawnReasons`
-**Type:** List of Strings  
-**Default:** See config.yml for full list  
-**Description:** List of spawn reasons that are allowed even when `mobsSpawnInFactionTerritory` is false.  
+**Type:** List of Strings
+**Default:** See config.yml for full list
+**Description:** List of spawn reasons that are allowed even when `mobsSpawnInFactionTerritory` is false.
 **Common Values:**
 - `BREEDING` - Allow breeding
 - `SPAWNER` - Allow spawners
@@ -299,14 +312,14 @@ Controls player vs player combat mechanics.
 - `NATURAL` - Allow natural spawns (not in default list)
 
 ### `factions.laddersPlaceableInEnemyFactionTerritory`
-**Type:** Boolean  
-**Default:** `true`  
-**Description:** When `true`, allows placing ladders in enemy faction territory (useful for sieges).
+**Type:** Boolean
+**Default:** `true`
+**Description:** When `true`, players whose faction is at war with a territory's owner can place ladders in that territory (useful for sieges). It does not apply without a war: a faction that is not at war with the owner cannot place ladders there.
 
 ### `factions.wartimePlaceableBlocks`
-**Type:** List of Strings  
-**Default:** `[]` (empty)  
-**Description:** List of block types (by Material name) that become placeable in enemy faction territory during war. Blocks listed here can be placed by an attacker whose faction is at war with the territory owner.  
+**Type:** List of Strings
+**Default:** `[]` (empty)
+**Description:** List of block types (by Material name) that become placeable in enemy faction territory during war. Blocks listed here can be placed by an attacker whose faction is at war with the territory owner. The list also accepts the items behind the world-changing actions that are not block placements: `FLINT_AND_STEEL` and `FIRE_CHARGE` (setting fire), `BONE_MEAL`, boats, minecarts, `ARMOR_STAND`, `END_CRYSTAL`, `ITEM_FRAME`, `GLOW_ITEM_FRAME` and `PAINTING`. An attacker at war may use a listed item on enemy territory, with one exception: setting fire also places a `FIRE` block, which is checked as a block placement, so fire at war needs `FIRE` in the list as well as `FLINT_AND_STEEL`. With only `FLINT_AND_STEEL` listed, the attacker is told they cannot place blocks there. This was checked in game on Spigot 1.21.1 with the plugin-fixtures behaviour table (`wartimeFire` and `wartime` groups), on 7.0.0 and on the current development build; a fire charge is expected to need `FIRE` the same way, but that was not checked.
 **Example:**
 ```yaml
 factions:
@@ -316,9 +329,9 @@ factions:
 ```
 
 ### `factions.wartimeBreakableBlocks`
-**Type:** List of Strings  
-**Default:** `[]` (empty)  
-**Description:** List of block types (by Material name) that become breakable in enemy faction territory during war. Blocks listed here can be broken by an attacker whose faction is at war with the territory owner.  
+**Type:** List of Strings
+**Default:** `[]` (empty)
+**Description:** List of block types (by Material name) that become breakable in enemy faction territory during war. Blocks listed here can be broken by an attacker whose faction is at war with the territory owner.
 **Example:**
 ```yaml
 factions:
@@ -327,9 +340,9 @@ factions:
 ```
 
 ### `factions.wartimeInteractableBlocks`
-**Type:** List of Strings  
-**Default:** `[]` (empty)  
-**Description:** List of block types (by Material name) that become interactable in enemy faction territory during war. Blocks listed here can be interacted with (e.g., opened, pressed) by an attacker whose faction is at war with the territory owner.  
+**Type:** List of Strings
+**Default:** `[]` (empty)
+**Description:** List of block types (by Material name) that become interactable in enemy faction territory during war. Blocks listed here can be interacted with (e.g., opened, pressed) by an attacker whose faction is at war with the territory owner.
 **Example:**
 ```yaml
 factions:
@@ -341,112 +354,112 @@ factions:
 ```
 
 ### `factions.maxNameLength`
-**Type:** Integer  
-**Default:** `20`  
-**Description:** Maximum length for faction names.  
+**Type:** Integer
+**Default:** `20`
+**Description:** Maximum length for faction names.
 **Range:** 1-255
 
 ### `factions.zeroPowerFactionsGetDisbanded`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, factions with zero or negative total power are automatically disbanded.
 
 ### `factions.vassalPowerContributionMultiplier`
-**Type:** Float  
-**Default:** `0.75`  
-**Description:** Multiplier for how much power vassals contribute to their liege.  
-**Example:** With 0.75, a vassal with 100 power contributes 75 power to their liege.  
+**Type:** Float
+**Default:** `0.75`
+**Description:** Multiplier for how much power vassals contribute to their liege.
+**Example:** With 0.75, a vassal with 100 power contributes 75 power to their liege.
 **Range:** 0.0 to 1.0
 
 ### `factions.nonMembersCanInteractWithDoors`
-**Type:** Boolean  
-**Default:** `false`  
-**Description:** When `true`, non-faction members can open/close doors (including trapdoors and fence gates) in faction territory.
+**Type:** Boolean
+**Default:** `false`
+**Description:** When `true`, non-faction members can open/close doors (including trapdoors and fence gates) in faction territory. It covers opening and closing only: using an item on a door, such as flint and steel while sneaking, is still refused.
 
 ### `factions.nonMembersCanInteractWithEntities`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, non-faction members can right-click entities in faction territory — minecarts (including chest and hopper minecarts), boats, item frames, armour stands, animals and the like. When `false`, those interactions are blocked for anyone without interaction rights in the claim, and the player is told why. Villager trading is not covered by this option: it is governed by the `protectVillagerTrade` faction flag instead. Wilderness is not covered either; see `wilderness.interaction.prevent`. Note that `true` is more permissive than releases before this option existed: armour stands were protected then, and setting this to `true` leaves them editable by non-members.
 
 ### `factions.maxClaimRadius`
-**Type:** Integer  
-**Default:** `3`  
-**Description:** Maximum radius (in chunks) that can be claimed at once using `/f claim [radius]`.  
+**Type:** Integer
+**Default:** `3`
+**Description:** Maximum radius (in chunks) that can be claimed at once using `/f claim [radius]`.
 **Example:** A radius of 3 allows claiming a 7x7 chunk area (49 chunks total).
 
 ### `factions.limitLand`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** When `true`, limits the amount of land a faction can claim based on their total power.
 
 ### `factions.contiguousClaims`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, requires all faction claims to be connected (adjacent) to existing claims.
 
 ### `factions.blockedClaimWorlds`
-**Type:** List of Strings  
-**Default:** `[]` (empty list)  
-**Description:** List of world names where claiming is not allowed.  
+**Type:** List of Strings
+**Default:** `[]` (empty list)
+**Description:** List of world names where claiming is not allowed.
 **Example:** `["world_nether", "world_the_end"]`
 
 ### `factions.actionBarTerritoryIndicator`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** When `true`, shows territory information in the action bar when entering new chunks.
 
 ### `factions.titleTerritoryIndicator`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** When `true`, shows territory information as a title when entering new chunks.
 
 ### `factions.titleTerritoryFadeInLength`
-**Type:** Integer  
-**Default:** `5`  
-**Description:** Duration (in ticks) for title fade-in animation.  
+**Type:** Integer
+**Default:** `5`
+**Description:** Duration (in ticks) for title fade-in animation.
 **Note:** 20 ticks = 1 second
 
 ### `factions.titleTerritoryDuration`
-**Type:** Integer  
-**Default:** `20`  
-**Description:** Duration (in ticks) that the title remains on screen.  
+**Type:** Integer
+**Default:** `20`
+**Description:** Duration (in ticks) that the title remains on screen.
 **Note:** 20 ticks = 1 second
 
 ### `factions.titleTerritoryFadeOutLength`
-**Type:** Integer  
-**Default:** `5`  
-**Description:** Duration (in ticks) for title fade-out animation.  
+**Type:** Integer
+**Default:** `5`
+**Description:** Duration (in ticks) for title fade-out animation.
 **Note:** 20 ticks = 1 second
 
 ### `factions.allowNeutrality`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, allows factions to declare themselves as neutral, preventing them from participating in wars.
 
 ### `factions.warDeclarationRequiresApproval`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, war declarations require moderator approval before taking effect. Players with the `mf.approve` permission can approve or deny pending war declarations using `/faction approve` and `/faction deny`. Players can optionally include a reason by appending `-- <reason>` after the faction name.
 
 ### `factions.allyDeclarationRequiresApproval`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, alliance requests require moderator approval before taking effect. Players with the `mf.approve` permission can approve or deny pending alliance requests using `/faction approve` and `/faction deny`. Players can optionally include a reason by appending `-- <reason>` after the faction name.
 
 ### `factions.vassalizeDeclarationRequiresApproval`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, vassalization requests require moderator approval before taking effect. Players with the `mf.approve` permission can approve or deny pending vassalization requests using `/faction approve` and `/faction deny`. Players can optionally include a reason by appending `-- <reason>` after the faction name.
 
 ### `factions.factionlessFactionName`
-**Type:** String  
-**Default:** `Factionless`  
+**Type:** String
+**Default:** `Factionless`
 **Description:** Display name for players who are not in any faction.
 
 ### `factions.factionHomeTeleportDelay`
-**Type:** Integer  
-**Default:** `5`  
-**Description:** Delay (in seconds) before teleporting to faction home.  
+**Type:** Integer
+**Default:** `5`
+**Description:** Delay (in seconds) before teleporting to faction home.
 **Note:** Movement cancels the teleport.
 
 ### `factions.factionHomeCooldownMinutes`
@@ -456,24 +469,24 @@ factions:
 **Range:** `0` (disabled) to `2147483647` minutes
 
 ### `factions.maxMembers`
-**Type:** Integer  
-**Default:** `-1`  
-**Description:** Maximum number of members a faction can have.  
+**Type:** Integer
+**Default:** `-1`
+**Description:** Maximum number of members a faction can have.
 **Special Values:** `-1` = unlimited
 
 ### `factions.claimFillMaxChunks`
-**Type:** Integer  
-**Default:** `100`  
+**Type:** Integer
+**Default:** `100`
 **Description:** Maximum number of chunks that can be filled with a single `/f claim fill` command.
 
 ### `factions.claimFillMaxDepth`
-**Type:** Integer  
-**Default:** `50`  
+**Type:** Integer
+**Default:** `50`
 **Description:** Maximum recursion depth for the claim fill algorithm (prevents infinite loops).
 
 ### `factions.allowLeaderlessFactions`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, factions can exist without any members. When the last member leaves, the faction and its claims remain intact. Operators can create leaderless factions using `/faction admin create`.
 
 ## Faction Default Flags
@@ -481,53 +494,53 @@ factions:
 These settings define the default values for faction flags when a new faction is created. Individual factions can override these with `/f flag set`.
 
 ### `factions.defaults.flags.alliesCanInteractWithLand`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Default setting for whether allied factions can interact with (build/break) in faction territory.
 
 ### `factions.defaults.flags.vassalageTreeCanInteractWithLand`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Default setting for whether vassals can interact with their liege's land.
 
 ### `factions.defaults.flags.liegeChainCanInteractWithLand`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Default setting for whether lieges can interact with their vassal's land.
 
 ### `factions.defaults.flags.neutral`
-**Type:** Boolean  
-**Default:** `false`  
-**Description:** Default neutrality status for new factions.  
+**Type:** Boolean
+**Default:** `false`
+**Description:** Default neutrality status for new factions.
 **Note:** Requires `factions.allowNeutrality` to be `true`.
 
 ### `factions.defaults.flags.color`
-**Type:** String  
-**Default:** `random`  
-**Description:** Default color for new factions.  
-**Values:** 
+**Type:** String
+**Default:** `random`
+**Description:** Default color for new factions.
+**Values:**
 - `random` - Assigns a random color
 - Hex color code (e.g., `#FF0000`)
 
 ### `factions.defaults.flags.allowFriendlyFire`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Default setting for whether faction members can damage each other.
 
 ### `factions.defaults.flags.acceptBonusPower`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** Default setting for whether the faction accepts bonus power from admins.
 
 ### `factions.defaults.flags.protectVillagerTrade`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** Default setting for whether villager trading is protected in faction territory (non-members cannot trade).
 
 ### `factions.defaults.flags.enableMobProtection`
-**Type:** Boolean  
-**Default:** Not currently set in config.yml (uses hardcoded default of `false`)  
-**Description:** Default setting for whether hostile mobs are protected from damage by non-members in faction territory. While the flag is available for factions to set, this config option is not currently implemented in the default config file.  
+**Type:** Boolean
+**Default:** Not currently set in config.yml (uses hardcoded default of `false`)
+**Description:** Default setting for whether hostile mobs are protected from damage by non-members in faction territory. While the flag is available for factions to set, this config option is not currently implemented in the default config file.
 **Note:** Factions can still set this flag individually using `/f flag set enableMobProtection [true/false]`.
 
 ### `factions.defaults.flags.maxEmbassyChunks`
@@ -540,22 +553,22 @@ These settings define the default values for faction flags when a new faction is
 **Note:** Zero blocks new offers. Lowering capacity preserves existing plots and already reserved offers; it prevents new offers and expansion. Schema 4→5 adds this default without replacing explicit administrator values.
 
 ### `factions.defaults.flags.coatofarms`
-**Type:** String  
-**Default:** `''` (empty)  
-**Description:** The arms a new faction starts with, as the code issued by whichever plugin owns heraldry on the server. Empty means the faction bears no arms. Medieval Factions stores this value and reads nothing from it; see [FACTION_FLAGS.md](FACTION_FLAGS.md#coatofarms).  
+**Type:** String
+**Default:** `''` (empty)
+**Description:** The arms a new faction starts with, as the code issued by whichever plugin owns heraldry on the server. Empty means the faction bears no arms. Medieval Factions stores this value and reads nothing from it; see [FACTION_FLAGS.md](FACTION_FLAGS.md#coatofarms).
 **Note:** Leaving the key out of the file has the same effect as setting it empty, so an existing install needs no edit unless every new faction is meant to share one coat of arms.
 
 ## Chat Settings
 
 ### `chat.enableDefaultChatFormatting`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** When `true`, enables Medieval Factions custom chat formatting.
 
 ### `chat.faction.format`
-**Type:** String  
-**Default:** `&7[faction] [${factionColor}${faction}&7] [${role}] &f${displayName}: ${message}`  
-**Description:** Format for faction-only chat messages.  
+**Type:** String
+**Default:** `&7[faction] [${factionColor}${faction}&7] [${role}] &f${displayName}: ${message}`
+**Description:** Format for faction-only chat messages.
 **Available Variables:**
 - `${factionColor}` - Faction's color
 - `${faction}` - Faction display name (falls back to its canonical name)
@@ -564,13 +577,13 @@ These settings define the default values for faction flags when a new faction is
 - `${message}` - The chat message
 
 ### `chat.vassals.format`
-**Type:** String  
-**Default:** `&7[vassals] [${factionColor}${faction}&7] [${role}] &f${displayName}: ${message}`  
+**Type:** String
+**Default:** `&7[vassals] [${factionColor}${faction}&7] [${role}] &f${displayName}: ${message}`
 **Description:** Format for vassal chat messages (chat between liege and vassals).
 
 ### `chat.allies.format`
-**Type:** String  
-**Default:** `&7[allies] [${factionColor}${faction}&7] [${role}] &f${displayName}: ${message}`  
+**Type:** String
+**Default:** `&7[allies] [${factionColor}${faction}&7] [${role}] &f${displayName}: ${message}`
 **Description:** Format for ally chat messages (chat between allied factions).
 
 ### PlaceholderAPI placeholders in chat formats
@@ -579,17 +592,17 @@ When PlaceholderAPI is installed, placeholders provided by any registered expans
 ## Duels
 
 ### `duels.duration`
-**Type:** Duration (ISO-8601)  
-**Default:** `PT2M`  
-**Description:** Duration of duels before they are automatically concluded.  
+**Type:** Duration (ISO-8601)
+**Default:** `PT2M`
+**Description:** Duration of duels before they are automatically concluded.
 **Format:** ISO-8601 duration format
 - `PT2M` = 2 minutes
 - `PT5M` = 5 minutes
 - `PT1H` = 1 hour
 
 ### `duels.notificationDistance`
-**Type:** Integer  
-**Default:** `64`  
+**Type:** Integer
+**Default:** `64`
 **Description:** Distance (in blocks) within which players are notified of nearby duels.
 
 ## Dynmap Integration
@@ -597,78 +610,78 @@ When PlaceholderAPI is installed, placeholders provided by any registered expans
 Dynmap integration allows faction claims to be displayed on a dynamic web map.
 
 ### `dynmap.enableDynmapIntegration`
-**Type:** Boolean  
-**Default:** `true`  
-**Description:** Enables or disables Dynmap integration.  
+**Type:** Boolean
+**Default:** `true`
+**Description:** Enables or disables Dynmap integration.
 **Note:** Requires Dynmap plugin to be installed.
 
 ### `dynmap.showRealms`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Shows realm information on the map.
 
 ### `dynmap.showDescription`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** Shows faction descriptions in map popups.
 
 ### `dynmap.showMembers`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Shows faction member count in map popups.
 
 ### `dynmap.showLiege`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Shows faction's liege in map popups.
 
 ### `dynmap.showVassals`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Shows faction's vassals in map popups.
 
 ### `dynmap.showAllies`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Shows faction's allies in map popups.
 
 ### `dynmap.showAtWarWith`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Shows factions that this faction is at war with in map popups.
 
 ### `dynmap.showPower`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Shows faction power in map popups.
 
 ### `dynmap.showDemesne`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Shows demesne information in map popups.
 
 ### `dynmap.onlyRenderTerritoriesUponStartup`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** When `true`, only renders territories once at startup instead of updating dynamically.
 
 ### `dynmap.debug`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Enables debug logging for Dynmap integration.
 
 ### `dynmap.fillClaims`
-**Type:** Boolean  
-**Default:** `true`  
-**Description:** Whether to fill faction territories with color.  
+**Type:** Boolean
+**Default:** `true`
+**Description:** Whether to fill faction territories with color.
 **Values:**
 - `true` - Fill entire territory with color (more visible)
 - `false` - Only show border lines (better performance)
 
 ### `dynmap.fillOpacity`
-**Type:** Float  
-**Default:** `0.35`  
-**Description:** Controls transparency of territory fill color.  
+**Type:** Float
+**Default:** `0.35`
+**Description:** Controls transparency of territory fill color.
 **Range:** 0.0 (invisible) to 1.0 (solid)
 
 ## Gates
@@ -676,37 +689,37 @@ Dynmap integration allows faction claims to be displayed on a dynamic web map.
 Gates are structures that can be toggled open and closed by faction members.
 
 ### `gates.minHeight`
-**Type:** Integer  
-**Default:** `3`  
+**Type:** Integer
+**Default:** `3`
 **Description:** Minimum height (in blocks) for a valid gate.
 
 ### `gates.maxBlocks`
-**Type:** Integer  
-**Default:** `64`  
+**Type:** Integer
+**Default:** `64`
 **Description:** Maximum number of blocks that can make up a single gate.
 
 ### `gates.maxPerFaction`
-**Type:** Integer  
-**Default:** `5`  
+**Type:** Integer
+**Default:** `5`
 **Description:** Maximum number of gates a single faction can create.
 
 ### `gates.maxRemoveDistance`
-**Type:** Integer  
-**Default:** `12`  
+**Type:** Integer
+**Default:** `12`
 **Description:** Maximum distance (in blocks) from which a gate can be removed.
 
 ### `gates.restrictedBlocks`
-**Type:** List of Strings  
-**Default:** See config.yml for full list  
-**Description:** List of block types that cannot be used in gates (typically gravity-affected or fragile blocks).  
+**Type:** List of Strings (entries may be grouped into nested lists, which are flattened)
+**Default:** See config.yml for full list
+**Description:** List of block types that new gates cannot be made of (typically gravity-affected or fragile blocks). The list is checked only when a gate is created, for the gate's corner selections and every block in its area; the trigger block is not checked, so buttons, signs and tripwire hooks can still be triggers. Gates that already exist and are made of a listed block are loaded and kept as they are; one warning per gate (gate ID, faction ID, material) is logged at startup so that they can be rebuilt. No gate is changed or deleted because of this list.
 **Examples:** `SAND`, `GRAVEL`, `TORCH`, `LADDER`, etc.
 
 ## Developer Options
 
 ### `dev.enableDevCommands`
-**Type:** Boolean  
-**Default:** `false`  
-**Description:** Enables developer commands for testing and debugging.  
+**Type:** Boolean
+**Default:** `false`
+**Description:** Enables developer commands for testing and debugging.
 **Note:** Should only be enabled in development environments.
 
 ---
@@ -717,18 +730,18 @@ Settings for the plugin's embedded, read-only HTTP API, which exposes faction, p
 This API is **opt-in** and carries **no authentication**: access control is expected to come from the bind address and the host's firewall.
 
 ### `api.enabled`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Whether the plugin starts its HTTP server on enable. When `false`, no socket is opened and the other `api.*` settings are ignored. A server upgraded from a version without this section behaves as if it were `false` until the key is set.
 
 ### `api.host`
-**Type:** String  
-**Default:** `127.0.0.1`  
+**Type:** String
+**Default:** `127.0.0.1`
 **Description:** The address the HTTP server binds to. The default accepts connections from the same machine only, which is the right setting for a local plugin, script or reverse proxy. Set `0.0.0.0` to listen on every interface — only do this behind a firewall or proxy, since the API itself does not authenticate callers.
 
 ### `api.port`
-**Type:** Integer  
-**Default:** `8080`  
+**Type:** Integer
+**Default:** `8080`
 **Description:** The TCP port the HTTP server listens on (`1`–`65535`). A value outside that range is logged as an error and the API is not started. Pick a port that nothing else on the host uses — `8080` is a common default for other services.
 
 ---
@@ -740,48 +753,48 @@ When enabled, the plugin periodically shares faction data with the DPC community
 This integration is **strictly opt-in**.
 
 ### `dpc-api.enabled`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Whether this server is opted in to sharing faction data with the DPC community. When `true`, the plugin will periodically push faction data to the DPC API.
 
 ### `dpc-api.url`
-**Type:** String  
-**Default:** `"https://api.dansplugins.com/api/v1/factions"`  
+**Type:** String
+**Default:** `"https://api.dansplugins.com/api/v1/factions"`
 **Description:** The full endpoint URL of the DPC API. Note that the API is served from `api.dansplugins.com`, a different host from the `dansplugins.com` website — pointing this at the website returns the site's HTML 404 page rather than an API response. Include a port if the API runs on a non-standard port (e.g. `"https://api.dansplugins.com:8080/api/v1/factions"`).
 
 ### `dpc-api.key`
-**Type:** String  
-**Default:** `""`  
+**Type:** String
+**Default:** `""`
 **Description:** The API key used to authenticate with the DPC API. To obtain a key, visit [dansplugins.com](https://dansplugins.com), create an account or sign in, then generate a key from your account page. Required for faction data to be submitted successfully.
 
 ### `dpc-api.server-id`
-**Type:** String  
-**Default:** `""`  
+**Type:** String
+**Default:** `""`
 **Description:** A unique identifier for this server (e.g. `"my-survival-server"`). Used to identify your server in the DPC registry. Must be set before faction data can be synced. Allowed characters are letters, digits, dot, underscore, colon, and hyphen (`[A-Za-z0-9._:-]`); whitespace and other punctuation are rejected to prevent accidental near-duplicate registry partitions. Once you have started syncing under a given `server-id`, treat it as permanent — changing it strands all factions previously registered under the old id (they remain visible until manually removed).
 
 ### `dpc-api.login-reminder`
-**Type:** Boolean  
-**Default:** `true`  
+**Type:** Boolean
+**Default:** `true`
 **Description:** Whether to show a chat reminder to operators on login when the DPC API is not yet enabled. Set to `false` to suppress the reminder.
 
 ### `dpc-api.share-server-ip`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Whether to include the server IP address in the faction data sent to DPC. Enabling this allows your server to be advertised on the DPC website alongside your factions.
 
 ### `dpc-api.server-address`
-**Type:** String  
-**Default:** `""`  
+**Type:** String
+**Default:** `""`
 **Description:** An explicit server address to include in the DPC API payload when `share-server-ip` is `true` (e.g. `"play.myserver.com:25565"`). If blank, the plugin auto-detects from the server binding (ip:port). Set this when your server is behind a proxy or when the bound IP doesn't match your public address.
 
 ### `dpc-api.discord-link`
-**Type:** String  
-**Default:** `""`  
+**Type:** String
+**Default:** `""`
 **Description:** An optional Discord invite link to display on the DPC website alongside your faction data. Leave empty to omit. The link must start with `https://discord.gg/` or `https://discord.com/`; other formats are rejected at command time (and silently omitted from the sync payload if set directly in config.yml). Use `/mf dpc discord <link>` or `/mf dpc discord clear` to manage this value at runtime.
 
 ### `dpc-api.sync-interval-minutes`
-**Type:** Integer  
-**Default:** `10`  
+**Type:** Integer
+**Default:** `10`
 **Description:** How often (in minutes) the plugin syncs faction data to the DPC API. Minimum value is 1 minute. Lower values mean more frequent updates but increase network traffic.
 
 ### DPC API troubleshooting
@@ -818,21 +831,43 @@ When usage reporting is enabled, startup and each command use send a small event
 This reporting is **off by default** in the Patriam fork. It is separate from the [DPC Community API](#dpc-community-api) integration, which shares faction data and is opt-in. The plugin says on every startup whether reporting is on, and why it is off. Two switches outside this file win over `usage-reporting.enabled`: `enabled: false` in `plugins/trace/config.yml` turns reporting off for every plugin on the server that reports to trace, and the environment variables `TRACE_USAGE_REPORTING=off` and `DO_NOT_TRACK=1` turn it off for the whole process. Details: https://github.com/Stephenson-Software/trace#usage-reporting.
 
 ### `usage-reporting.enabled`
-**Type:** Boolean  
-**Default:** `false`  
+**Type:** Boolean
+**Default:** `false`
 **Description:** Whether usage events are sent. Set to `false` to turn reporting off entirely.
 
 ### `usage-reporting.endpoint`
-**Type:** String  
-**Default:** `https://trace.danielstephenson.dev`  
+**Type:** String
+**Default:** `https://trace.danielstephenson.dev`
 **Description:** The trace server events are sent to. There is no reason to change this unless you run your own trace server.
 
 ### `usage-reporting.key`
-**Type:** String  
-**Default:** The plugin's own key, as shipped in `config.yml`  
+**Type:** String
+**Default:** The plugin's own key, as shipped in `config.yml`
 **Description:** Identifies this plugin to the trace server, so reports are attributed to MedievalFactions and can be revoked as a group if they are ever abused. It is not a secret -- it ships in the bundled `config.yml` on every server that runs the plugin -- and it cannot do anything except report as this plugin. An empty key turns reporting off regardless of `usage-reporting.enabled`.
 
 **Note:** Schema 1 to 2 migration adds this block with reporting disabled unless an operator explicitly enabled it.
+
+---
+
+## Add-ons
+
+At startup, once every plugin has been enabled, Medieval Factions logs one console line naming the known add-ons and related plugins that are installed, for example `Add-ons detected: Currencies v3.0.0, Fiefs v0.12.1`, or `Add-ons detected: none; see /mf addons`. Operators can list all of them with [`/mf addons`](COMMANDS.md#faction-addons-or-mf-addons). The list ships inside the jar; nothing is downloaded.
+
+### `addons.suggestions`
+**Type:** Boolean
+**Default:** `true`
+**Description:** Set to `false` to turn off the startup line, and to make `/mf addons` list only the add-ons that are installed, without suggesting others. This setting does not affect the `installed_addons` bStats chart, which follows the usual bStats opt-out (`plugins/bStats/config.yml`).
+
+---
+
+## Update Check
+
+Once per startup, off the main thread, the plugin makes one unauthenticated request to `https://api.github.com/repos/Dans-Plugins/Medieval-Factions/releases/latest`. If the latest published release is newer than the running version, one line goes to the console and to players with the `mf.updatenotice` permission (default: op) when they join, naming the new version, the release link and a short reason. Nothing about the server or its players is sent, and nothing is downloaded or installed. Failures (offline, timeout, rate limit) are silent and never delay startup. The environment variables `TRACE_USAGE_REPORTING=off` and `DO_NOT_TRACK=1` also turn the check off, and win over the setting below.
+
+### `update-check.enabled`
+**Type:** Boolean
+**Default:** `true`
+**Description:** Whether the plugin checks for a newer release on startup. Set to `false` to turn the check off. A server whose `config.yml` predates this key still checks: the plugin reads the bundled default and writes it into the file on the next start.
 
 ---
 

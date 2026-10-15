@@ -36,6 +36,24 @@ class ConfigLifecycleTest {
     Path temporaryDirectory;
 
     @Test
+    void schemaSixAddsNoticesPreservingExplicitChoicesAndUnknownValues() throws Exception {
+        Path config = temporaryDirectory.resolve("config.yml");
+        Files.writeString(config, "config-version: 6\naddons:\n  suggestions: false\nupdate-check:\n  enabled: false\nextension:\n  keep: true\ndatabase:\n  password: retained-secret\n");
+        ConfigLifecycle.Result upgraded = ConfigLifecycle.prepare(config, bundledTemplate());
+        assertTrue(upgraded.compatible());
+        assertEquals(6, upgraded.sourceVersion());
+        assertEquals(7, upgraded.installedVersion());
+        assertFalse(upgraded.snapshot().configuration().getBoolean("addons.suggestions"));
+        assertFalse(upgraded.snapshot().configuration().getBoolean("update-check.enabled"));
+        assertTrue(upgraded.snapshot().configuration().getBoolean("extension.keep"));
+        assertEquals("retained-secret", upgraded.snapshot().configuration().getString("database.password"));
+        byte[] installed = Files.readAllBytes(config);
+        assertTrue(ConfigLifecycle.prepare(config, bundledTemplate()).compatible());
+        assertArrayEquals(installed, Files.readAllBytes(config));
+        try (var entries = Files.list(temporaryDirectory)) { assertEquals(1, entries.count()); }
+    }
+
+    @Test
     void freshConfigIsInstalledOwnerOnlyAndCurrentLoadIsByteIdempotent() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         String template = bundledTemplate();
@@ -46,7 +64,7 @@ class ConfigLifecycleTest {
         assertTrue(created.compatible());
         assertArrayEquals(template.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(config));
         assertArrayEquals(Files.readAllBytes(config), created.snapshot().fileBytes());
-        assertEquals(6, created.snapshot().configuration().getInt("config-version"));
+        assertEquals(7, created.snapshot().configuration().getInt("config-version"));
         assertFalse(created.snapshot().configuration().getBoolean(
                 "factions.allowLeaderlessFactions"));
         assertTrue(created.snapshot().configuration().getBoolean(
@@ -83,7 +101,7 @@ class ConfigLifecycleTest {
         assertEquals(0, result.sourceVersion());
         assertNull(result.backup());
         assertOwnerOnly(config);
-        assertEquals(6, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(7, result.snapshot().configuration().getInt("config-version"));
         assertEquals(7, result.snapshot().configuration().getInt("players.initialPower"));
         assertEquals(42, result.snapshot().configuration().getInt("factions.maxMembers"));
         assertEquals("historical-database-secret",
@@ -161,7 +179,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(1, result.sourceVersion());
-        assertEquals(6, result.installedVersion());
+        assertEquals(7, result.installedVersion());
         assertNull(result.backup());
         var values = result.snapshot().configuration();
         assertEquals("operator-database-secret", values.getString("database.password"));
@@ -230,7 +248,7 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(2, result.sourceVersion());
-            assertEquals(6, result.installedVersion());
+            assertEquals(7, result.installedVersion());
             assertEquals(previouslyAllowed,
                     result.snapshot().configuration().getBoolean(
                             "factions.allowLeaderlessFactions"));
@@ -284,7 +302,7 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(3, result.sourceVersion());
-            assertEquals(6, result.installedVersion());
+            assertEquals(7, result.installedVersion());
             assertEquals(configuredCooldown.isEmpty() ? 30 : Integer.parseInt(configuredCooldown),
                     result.snapshot().configuration().getInt(
                             "factions.factionHomeCooldownMinutes"));
@@ -344,7 +362,7 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(4, result.sourceVersion());
-            assertEquals(6, result.installedVersion());
+            assertEquals(7, result.installedVersion());
             var values = result.snapshot().configuration();
             assertEquals(configuredMaximum.isEmpty() ? 4 : Integer.parseInt(configuredMaximum),
                     values.getInt("factions.defaults.flags.maxEmbassyChunks"));
@@ -389,7 +407,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(4, result.sourceVersion());
-        assertEquals(6, result.installedVersion());
+        assertEquals(7, result.installedVersion());
         assertEquals("operator-database-secret",
                 result.snapshot().configuration().getString("database.password"));
         assertEquals("operator-extension",
@@ -432,7 +450,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(5, result.sourceVersion());
-        assertEquals(6, result.installedVersion());
+        assertEquals(7, result.installedVersion());
         var values = result.snapshot().configuration();
         assertFalse(values.getBoolean("api.enabled"));
         assertEquals("127.0.0.1", values.getString("api.host"));
@@ -482,7 +500,7 @@ class ConfigLifecycleTest {
 
             assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
             assertEquals(5, result.sourceVersion());
-            assertEquals(6, result.installedVersion());
+            assertEquals(7, result.installedVersion());
             var values = result.snapshot().configuration();
             assertTrue(values.getBoolean("api.enabled"));
             assertEquals("0.0.0.0", values.getString("api.host"));
@@ -598,7 +616,7 @@ class ConfigLifecycleTest {
     @Test
     void invalidEmbassyAllowanceIsRejectedAcrossEverySchemaWithoutWrites()
             throws Exception {
-        for (int schema : List.of(0, 1, 2, 3, 4, 5, 6)) {
+        for (int schema : List.of(0, 1, 2, 3, 4, 5, 6, 7)) {
             List<String> invalid = List.of("-1", "4097", "2147483648", "'4'", "4.0", "true");
             for (int index = 0; index < invalid.size(); index++) {
                 Path directory = temporaryDirectory.resolve("invalid-embassy-" + schema + "-" + index);
@@ -643,7 +661,7 @@ class ConfigLifecycleTest {
     @Test
     void invalidFactionHomeCooldownIsRejectedWithoutChangingInstalledBytes()
             throws Exception {
-        for (int schema : List.of(3, 4, 5, 6)) {
+        for (int schema : List.of(3, 4, 5, 6, 7)) {
             for (String value : List.of("-1", "'30'", "2147483648")) {
                 Path directory = temporaryDirectory.resolve("invalid-home-cooldown-"
                         + schema + "-" + value.replaceAll("[^0-9]", "x"));
@@ -682,7 +700,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(6, result.installedVersion());
+        assertEquals(7, result.installedVersion());
         assertTrue(result.snapshot().configuration().getBoolean(
                 "factions.allowLeaderlessFactions"));
         assertFalse(result.snapshot().configuration().getBoolean(
@@ -742,7 +760,7 @@ class ConfigLifecycleTest {
         String template = bundledTemplate();
         String unversioned = template.replaceFirst(
                 "(?s)\\A# Independent operator-configuration schema\\.[^\\r\\n]*\\R"
-                        + "config-version: 6\\R",
+                        + "config-version: 7\\R",
                 ""
         );
         Files.writeString(config, unversioned, StandardCharsets.UTF_8);
@@ -781,7 +799,7 @@ class ConfigLifecycleTest {
                 "config-version: 01\n",
                 "config-version: 1.0\n",
                 "config-version: nope\n",
-                "config-version: 7\n",
+                "config-version: 8\n",
                 "config-version: 1\ndpc-api:\n  key:\n",
                 "config-version: 1\nitems: [one, null]\n",
                 "config-version: 1\n1: credential-shaped-value\n",
@@ -849,7 +867,7 @@ class ConfigLifecycleTest {
 
         assertEquals(ConfigLifecycle.State.UPGRADED, result.state(), result.detail());
         assertEquals(0, result.sourceVersion());
-        assertEquals(6, result.snapshot().configuration().getInt("config-version"));
+        assertEquals(7, result.snapshot().configuration().getInt("config-version"));
         assertNull(result.backup());
     }
 

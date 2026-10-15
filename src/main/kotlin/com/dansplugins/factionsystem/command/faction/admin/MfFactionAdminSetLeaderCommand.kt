@@ -4,6 +4,8 @@ import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.command.dropFirst
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.faction.MfFactionMember
+import com.dansplugins.factionsystem.faction.role.MfFactionRoles
+import com.dansplugins.factionsystem.faction.role.MfFactionRoles.Companion.OWNER_ROLE_NAME
 import com.dansplugins.factionsystem.player.MfPlayer
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor.GREEN
@@ -82,11 +84,11 @@ class MfFactionAdminSetLeaderCommand(private val plugin: MedievalFactions) : Com
                 // which the faction itself can rename: a faction that renamed its top role used to
                 // land here and be told it had none, and one that renamed a junior role to "Owner"
                 // could have had the appointed leader handed that junior role instead.
-                val ownerRole = targetFaction.roles.leaderRole
-                if (ownerRole == null) {
-                    sender.sendMessage("$RED${plugin.language["CommandFactionAdminSetLeaderNoOwnerRole"]}")
-                    return@Runnable
-                }
+                val existingOwnerRole = targetFaction.roles.leaderRole
+                val ownerRole = existingOwnerRole ?: MfFactionRoles.recreateOwner(plugin, targetFaction.id, targetFaction.roles.roles)
+                val roles = if (existingOwnerRole == null)
+                    MfFactionRoles(targetFaction.roles.defaultRoleId, targetFaction.roles.roles + ownerRole)
+                else targetFaction.roles
 
                 // Add player as the owner. This is the one command that reassigns the recorded head
                 // of a faction; nothing a faction can do to itself moves it.
@@ -102,6 +104,7 @@ class MfFactionAdminSetLeaderCommand(private val plugin: MedievalFactions) : Com
                 }
                 val updatedFaction = factionService.save(
                     targetFaction.copy(
+                        roles = roles,
                         members = members,
                         invites = targetFaction.invites.filter { it.playerId != targetMfPlayer.id },
                         primaryOwnerId = targetMfPlayer.id
@@ -113,6 +116,14 @@ class MfFactionAdminSetLeaderCommand(private val plugin: MedievalFactions) : Com
                 }
 
                 val targetName = targetMfPlayer.name ?: plugin.language["CommandFactionAdminSetLeaderUnknownPlayer"]
+                if (existingOwnerRole == null) {
+                    plugin.logger.info(
+                        "Faction ${targetFaction.name} (${targetFaction.id.value}) had no $OWNER_ROLE_NAME role; " +
+                            "recreated it from the default template as role ${ownerRole.id.value} while ${sender.name} " +
+                            "set $targetName as its leader"
+                    )
+                    sender.sendMessage("$GREEN${plugin.language["CommandFactionAdminSetLeaderRecreatedOwnerRole", targetFaction.name]}")
+                }
                 updatedFaction.sendMessage(
                     plugin.language["FactionNewLeaderNotificationTitle", targetName],
                     plugin.language["FactionNewLeaderNotificationBody", targetName]

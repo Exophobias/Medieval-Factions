@@ -1,6 +1,8 @@
 package com.dansplugins.factionsystem
 
 import com.dansplugins.factionsystem.api.ApiResult
+import com.dansplugins.factionsystem.addon.MfAddonDetector
+import com.dansplugins.factionsystem.addon.startupAddonsLine
 import com.dansplugins.factionsystem.api.MfApiServer
 import com.dansplugins.factionsystem.approval.MfApprovalRequestService
 import com.dansplugins.factionsystem.chat.JooqMfChatChannelMessageRepository
@@ -55,6 +57,8 @@ import com.dansplugins.factionsystem.listener.AsyncPlayerPreLoginListener
 import com.dansplugins.factionsystem.listener.BlockBreakListener
 import com.dansplugins.factionsystem.listener.BlockBurnListener
 import com.dansplugins.factionsystem.listener.BlockExplodeListener
+import com.dansplugins.factionsystem.listener.BlockFertilizeListener
+import com.dansplugins.factionsystem.listener.BlockIgniteListener
 import com.dansplugins.factionsystem.listener.BlockPistonExtendListener
 import com.dansplugins.factionsystem.listener.BlockPistonRetractListener
 import com.dansplugins.factionsystem.listener.BlockPlaceListener
@@ -65,6 +69,9 @@ import com.dansplugins.factionsystem.listener.EntityDamageByEntityListener
 import com.dansplugins.factionsystem.listener.EntityDamageListener
 import com.dansplugins.factionsystem.listener.EntityExplodeListener
 import com.dansplugins.factionsystem.listener.EntityInteractionProtection
+import com.dansplugins.factionsystem.listener.EntityPlaceListener
+import com.dansplugins.factionsystem.listener.GrowthBorderTrimmer
+import com.dansplugins.factionsystem.listener.HangingPlaceListener
 import com.dansplugins.factionsystem.listener.InventoryClickListener
 import com.dansplugins.factionsystem.listener.InventoryMoveItemListener
 import com.dansplugins.factionsystem.listener.LingeringPotionSplashListener
@@ -78,6 +85,8 @@ import com.dansplugins.factionsystem.listener.PlayerMoveListener
 import com.dansplugins.factionsystem.listener.PlayerQuitListener
 import com.dansplugins.factionsystem.listener.PlayerTeleportListener
 import com.dansplugins.factionsystem.listener.PotionSplashListener
+import com.dansplugins.factionsystem.listener.StructureGrowListener
+import com.dansplugins.factionsystem.listener.WorldActionProtection
 import com.dansplugins.factionsystem.locks.JooqMfLockRepository
 import com.dansplugins.factionsystem.locks.MfLockRepository
 import com.dansplugins.factionsystem.locks.MfLockService
@@ -105,8 +114,8 @@ import com.dansplugins.factionsystem.teleport.MfTeleportService
 import com.dansplugins.factionsystem.trace.TraceClient
 import com.dansplugins.factionsystem.warend.JooqWarEndOutboxRepository
 import com.dansplugins.factionsystem.warend.WarEndOutboxRepository
+import com.dansplugins.factionsystem.update.MfUpdateNotifier
 import com.google.gson.Gson
-import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import dev.forkhandles.result4k.onFailure
 import net.md_5.bungee.api.ChatColor
@@ -114,6 +123,7 @@ import net.md_5.bungee.api.ChatColor.GREEN
 import net.md_5.bungee.api.ChatMessageType.ACTION_BAR
 import net.md_5.bungee.api.chat.TextComponent
 import org.bstats.bukkit.Metrics
+import org.bstats.charts.AdvancedPie
 import org.bstats.charts.SimplePie
 import org.bukkit.NamespacedKey
 import org.bukkit.boss.KeyedBossBar
@@ -343,7 +353,9 @@ class MedievalFactions : JavaPlugin() {
             .logger(logger)
             .build()
         logUsageReportingState()
-        trace.report("startup", null, mapOf("version" to description.version))
+        trace.report("startup")
+        // newer-release notice for operators: one async check; see update-check in config.yml
+        MfUpdateNotifier(this).start()
         metrics.addCustomChart(
             SimplePie("average_claims") {
                 factionService.factions
@@ -410,6 +422,22 @@ class MedievalFactions : JavaPlugin() {
                 (config.getString("dpc-api.discord-link")?.isNotEmpty() == true).toString()
             }
         )
+        val addonDetector = MfAddonDetector.forPluginManager(server.pluginManager)
+        metrics.addCustomChart(
+            AdvancedPie("installed_addons") {
+                addonDetector.installedAddonsChartData()
+            }
+        )
+        // Runs on the first tick, after every plugin is enabled, so add-ons that load after MF
+        // are seen. One-argument getter so the jar default applies if the key is missing.
+        server.scheduler.runTask(
+            this,
+            Runnable {
+                if (config.getBoolean("addons.suggestions")) {
+                    logger.info(startupAddonsLine(addonDetector.detect(), language))
+                }
+            }
+        )
 
         if (server.pluginManager.getPlugin("PlaceholderAPI") != null) {
             MedievalFactionsPlaceholderExpansion(this).register()
@@ -429,6 +457,9 @@ class MedievalFactions : JavaPlugin() {
         // only produces a single message.
         val entityInteractionProtection = EntityInteractionProtection(this)
         val playerMoveListener = PlayerMoveListener(this)
+        val worldActionProtection = WorldActionProtection(this)
+        val growthBorderTrimmer = GrowthBorderTrimmer(this)
+
         listOf(
             com.dansplugins.factionsystem.api.impl.ApiFactionLifecycleListener(this),
             com.dansplugins.factionsystem.api.impl.ApiRelationshipListener(this),
@@ -439,6 +470,8 @@ class MedievalFactions : JavaPlugin() {
             BlockBurnListener(this),
             AdminFactionFireListener(this),
             BlockExplodeListener(this),
+            BlockFertilizeListener(worldActionProtection, growthBorderTrimmer),
+            BlockIgniteListener(worldActionProtection),
             BlockPistonExtendListener(this),
             BlockPistonRetractListener(this),
             BlockPlaceListener(this),
@@ -448,6 +481,8 @@ class MedievalFactions : JavaPlugin() {
             EmbassyBoundaryListener(this),
             EmbassyWarListener(this),
             EntityExplodeListener(this),
+            EntityPlaceListener(worldActionProtection),
+            HangingPlaceListener(worldActionProtection),
             InventoryClickListener(this),
             InventoryMoveItemListener(this),
             LingeringPotionSplashListener(this),
@@ -461,7 +496,8 @@ class MedievalFactions : JavaPlugin() {
             playerMoveListener,
             PlayerQuitListener(this, entityInteractionProtection),
             PlayerTeleportListener(this),
-            PotionSplashListener(this)
+            PotionSplashListener(this),
+            StructureGrowListener(growthBorderTrimmer)
         ).forEach { server.pluginManager.registerEvents(it, this) }
 
         try {
@@ -784,19 +820,12 @@ class MedievalFactions : JavaPlugin() {
     )
 
     private fun initializeDatabaseRepositories(gson: Gson): Repositories {
-        val jdbcUrl = MfJdbc.hardenUrl(config.getString("database.url") ?: "")
-        MfJdbc.preloadDriver(jdbcUrl)
-        val hikariConfig = HikariConfig()
-        hikariConfig.jdbcUrl = jdbcUrl
-        val databaseUsername = config.getString("database.username")
-        if (databaseUsername != null) {
-            hikariConfig.username = databaseUsername
-        }
-        val databasePassword = config.getString("database.password")
-        if (databasePassword != null) {
-            hikariConfig.password = databasePassword
-        }
-        dataSource = HikariDataSource(hikariConfig)
+        dataSource = MfJdbc.openDataSource(
+            config.getString("database.url") ?: "",
+            config.getString("database.username"),
+            config.getString("database.password"),
+            logger
+        )
         val oldClassLoader = Thread.currentThread().contextClassLoader
         Thread.currentThread().contextClassLoader = classLoader
         val flyway = Flyway.configure()
@@ -942,9 +971,9 @@ class MedievalFactions : JavaPlugin() {
             val endpoint = config.getString("usage-reporting.endpoint") ?: "https://trace.danielstephenson.dev"
             logger.info(
                 "Usage reporting is on: $name sends its name, version and command names to $endpoint" +
-                    " - nothing about players or the server. Turn it off with usage-reporting.enabled: false" +
+                    ", plus a random server ID (server-id in plugins/trace/config.yml) - nothing about players. Turn it off with usage-reporting.enabled: false" +
                     " in this plugin's config.yml, or for every plugin with enabled: false in" +
-                    " plugins/trace/config.yml. Details: https://github.com/Stephenson-Software/trace#usage-reporting"
+                    " plugins/trace/config.yml. Details: https://danielstephenson.dev/usage-reporting"
             )
         } else {
             logger.info("Usage reporting is off (${trace.disabledReason()}).")
