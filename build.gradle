@@ -8,7 +8,7 @@ plugins {
 
 group = "com.dansplugins"
 // Keep the published API coordinate used by the Patriam consumer graph for this upstream merge.
-// The upstream source base is 6.1.1-SNAPSHOT; a coordinated coordinate bump is a separate release.
+// The upstream source base is 7.0.1-SNAPSHOT; a coordinated coordinate bump is a separate release.
 version = "5.9.0-patriam.1-SNAPSHOT"
 // The pinned compile/publication coordinate stays compatible; shipped gameplay has its own release.
 def pluginVersion = "5.9.0-patriam.3-SNAPSHOT"
@@ -153,7 +153,8 @@ import org.apache.tools.ant.filters.ReplaceTokens
 
 processResources {
     filter ReplaceTokens, tokens: [
-            'version': pluginVersion
+            'version': pluginVersion,
+            'upstreamVersion': '7.0.1-SNAPSHOT'
     ]
 }
 

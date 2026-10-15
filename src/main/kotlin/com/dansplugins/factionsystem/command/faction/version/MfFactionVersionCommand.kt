@@ -54,7 +54,7 @@ class MfFactionVersionCommand(private val plugin: MedievalFactions) : CommandExe
         sender.sendMessage("$GREEN${plugin.language["CommandFactionVersionVersion", value(version)]}")
         sender.sendMessage("$GREEN${plugin.language["CommandFactionVersionConfig", value(plugin.configSchemaStatus())]}")
         if (marked) {
-            sender.sendMessage("$GREEN${plugin.language["CommandFactionVersionUpstream", value(version.substringBefore(FORK_MARKER))]}")
+            sender.sendMessage("$GREEN${plugin.language["CommandFactionVersionUpstream", value(com.dansplugins.factionsystem.update.MfUpstreamSourceVersion.current())]}")
             sender.sendMessage("$YELLOW${plugin.language["CommandFactionVersionForkNotice"]}")
         } else {
             // Red, because this one is a fault rather than information: the version string above

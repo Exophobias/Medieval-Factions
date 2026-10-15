@@ -12,6 +12,12 @@ class MfUpdateCheckTest {
     private val latest = MfLatestRelease("v7.0.0", url)
 
     @Test
+    fun integratedForkUsesUpstreamSourceVersionForNotices() {
+        assertEquals("7.0.1-SNAPSHOT", MfUpstreamSourceVersion.current())
+        assertNull(MfUpdateCheck.noticeFor(MfUpstreamSourceVersion.current(), latest))
+    }
+
+    @Test
     fun testDisabledReasonCombinations() {
         assertNull(MfUpdateCheck.disabledReason(configEnabled = true, environmentOptsOut = false))
         assertEquals(MfUpdateCheck.REASON_CONFIG, MfUpdateCheck.disabledReason(configEnabled = false, environmentOptsOut = false))

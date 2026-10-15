@@ -46,7 +46,7 @@ class MfUpdateNotifier(
 
     private fun check() {
         val found = try {
-            MfUpdateCheck.noticeFor(plugin.description.version, fetchLatestRelease())
+            MfUpdateCheck.noticeFor(MfUpstreamSourceVersion.current(), fetchLatestRelease())
         } catch (exception: Exception) {
             plugin.logger.log(Level.FINE, "Update check failed: ${exception.message}", exception)
             null
