@@ -1,5 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
+import com.dansplugins.factionsystem.api.ClaimAction
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
 import com.dansplugins.factionsystem.MedievalFactions
 import org.bukkit.ChatColor.RED
 import org.bukkit.Material
@@ -46,6 +48,17 @@ class WorldActionProtection(private val plugin: MedievalFactions) {
         }
 
         val claimFaction = plugin.services.factionService.getFaction(claim.factionId) ?: return false
+        // Embassy possession precedes the host's ordinary claim and wartime rights.
+        when (plugin.services.embassyService.access(mfPlayer.id, claim, ClaimAction.BUILD)) {
+            EmbassyAccessDecision.GRANT -> return false
+            EmbassyAccessDecision.DENY -> {
+                if (mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass")) return false
+                event.isCancelled = true
+                player.sendMessage("$RED${plugin.language["CannotInteractWithBlockInFactionTerritory", claimFaction.name]}")
+                return true
+            }
+            EmbassyAccessDecision.NONE -> Unit
+        }
         if (claimService.isInteractionAllowed(mfPlayer.id, claim)) return false
         if (mfPlayer.isBypassEnabled && player.hasPermission("mf.bypass")) return false
         if (item != null && claimService.isWartimePlaceableBlock(mfPlayer.id, claim, item)) return false

@@ -31,7 +31,7 @@ import com.dansplugins.factionsystem.law.MfLawId
 import com.dansplugins.factionsystem.locks.JooqMfLockRepository
 import com.dansplugins.factionsystem.locks.MfLockedBlock
 import com.dansplugins.factionsystem.player.JooqMfPlayerRepository
-import com.dansplugins.factionsystem.player.JooqMfPlayerRepositoryTest
+import com.dansplugins.factionsystem.player.UpstreamJooqMfPlayerRepositoryTest
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
 import com.google.gson.Gson
@@ -126,7 +126,7 @@ abstract class VersionedRepositoryContract {
 
     @BeforeEach
     fun createRepositories() {
-        plugin = JooqMfPlayerRepositoryTest.powerConfiguredPlugin()
+        plugin = UpstreamJooqMfPlayerRepositoryTest.powerConfiguredPlugin()
         // Faction roles are deserialized through the static Bukkit plugin manager.
         val pluginManager = mock(PluginManager::class.java)
         `when`(pluginManager.getPlugin("MedievalFactions")).thenReturn(plugin)

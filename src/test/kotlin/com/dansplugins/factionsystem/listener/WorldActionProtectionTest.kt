@@ -1,6 +1,9 @@
 package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.api.ClaimAction
+import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFaction
@@ -30,6 +33,7 @@ import org.mockito.Mockito.`when`
 
 class WorldActionProtectionTest {
     private lateinit var plugin: MedievalFactions
+    private lateinit var embassyService: MfEmbassyService
     private lateinit var claimService: MfClaimService
     private lateinit var factionService: MfFactionService
     private lateinit var playerService: MfPlayerService
@@ -46,11 +50,13 @@ class WorldActionProtectionTest {
     @BeforeEach
     fun setUp() {
         plugin = mock(MedievalFactions::class.java)
+        embassyService = mock(MfEmbassyService::class.java)
         claimService = mock(MfClaimService::class.java)
         factionService = mock(MfFactionService::class.java)
         playerService = mock(MfPlayerService::class.java)
         val services = mock(Services::class.java)
         `when`(plugin.services).thenReturn(services)
+        `when`(services.embassyService).thenReturn(embassyService)
         `when`(services.claimService).thenReturn(claimService)
         `when`(services.factionService).thenReturn(factionService)
         `when`(services.playerService).thenReturn(playerService)
@@ -78,12 +84,31 @@ class WorldActionProtectionTest {
         `when`(claimFaction.name).thenReturn("Enemy")
         `when`(factionService.getFaction(claimFactionId)).thenReturn(claimFaction)
 
+        `when`(embassyService.access(mfPlayerId, claim, ClaimAction.BUILD)).thenReturn(EmbassyAccessDecision.NONE)
         uut = WorldActionProtection(plugin)
     }
 
     private fun inEnemyClaim() {
         `when`(claimService.getClaim(chunk)).thenReturn(claim)
         `when`(claimService.isInteractionAllowed(mfPlayerId, claim)).thenReturn(false)
+    }
+
+    @Test
+    fun protectedEmbassyRefusesHostAndWartimeRights() {
+        inEnemyClaim()
+        `when`(claimService.isInteractionAllowed(mfPlayerId, claim)).thenReturn(true)
+        `when`(claimService.isWartimePlaceableBlock(mfPlayerId, claim, Material.BONE_MEAL)).thenReturn(true)
+        `when`(embassyService.access(mfPlayerId, claim, ClaimAction.BUILD)).thenReturn(EmbassyAccessDecision.DENY)
+        assertTrue(uut.protect(event, player, block, Material.BONE_MEAL))
+        verify(event).isCancelled = true
+    }
+
+    @Test
+    fun embassyGuestMayBuildUnderItsLiveCharter() {
+        inEnemyClaim()
+        `when`(embassyService.access(mfPlayerId, claim, ClaimAction.BUILD)).thenReturn(EmbassyAccessDecision.GRANT)
+        assertFalse(uut.protect(event, player, block, Material.BONE_MEAL))
+        verify(event, never()).isCancelled = true
     }
 
     @Test
