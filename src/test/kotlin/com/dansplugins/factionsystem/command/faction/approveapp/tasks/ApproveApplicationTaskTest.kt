@@ -97,7 +97,7 @@ class ApproveApplicationTaskTest {
             approval.members.map { it.playerId }
         )
         assertEquals(listOf(officerRole, memberRole), approval.members.map { it.role })
-        assertEquals(faction.members.first().joinedAt, approval.members.first().joinedAt)
+        assertEquals(storedAfterRemoval.members.first(), approval.members.first())
         assertEquals(emptyList<MfFactionApplication>(), approval.applications)
     }
 
