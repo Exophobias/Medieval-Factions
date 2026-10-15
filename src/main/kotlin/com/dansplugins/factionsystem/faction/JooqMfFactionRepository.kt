@@ -117,6 +117,9 @@ class JooqMfFactionRepository(
             val stale = generateSequence(failure as Throwable?) { it.cause }
                 .filterIsInstance<OptimisticLockingFailureException>().firstOrNull()
             if (stale != null) throw stale
+            // Raw INSERT keeps MariaDB found-rows mode from treating a duplicate create as success.
+            if (faction.version == 0 && getFaction(faction.id) != null)
+                throw OptimisticLockingFailureException("An entity with this ID already exists")
             throw failure
         }
     }
@@ -241,7 +244,6 @@ class JooqMfFactionRepository(
                 .set(MF_FACTION.PRIMARY_OWNER_TERM, faction.primaryOwnerTerm.toString())
                 .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
                 .set(MF_FACTION.ADMIN_LEADERLESS, faction.adminLeaderless)
-                .onConflict(MF_FACTION.ID).doNothing()
                 .execute()
         } else {
             dsl.update(MF_FACTION)

@@ -66,6 +66,9 @@ class JooqMfLockRepository(private val dsl: DSLContext) : MfLockRepository {
             val stale = generateSequence(failure as Throwable?) { it.cause }
                 .filterIsInstance<OptimisticLockingFailureException>().firstOrNull()
             if (stale != null) throw stale
+            // Raw INSERT keeps MariaDB found-rows mode from treating a duplicate create as success.
+            if (lockedBlock.version == 0 && getLockedBlock(lockedBlock.id) != null)
+                throw OptimisticLockingFailureException("An entity with this ID already exists")
             throw failure
         }
     }
@@ -82,7 +85,6 @@ class JooqMfLockRepository(private val dsl: DSLContext) : MfLockRepository {
                 .set(MF_LOCKED_BLOCK.CHUNK_Z, lockedBlock.chunkZ)
                 .set(MF_LOCKED_BLOCK.PLAYER_ID, lockedBlock.playerId.value)
                 .set(MF_LOCKED_BLOCK.VERSION, 1)
-                .onConflict(MF_LOCKED_BLOCK.ID).doNothing()
                 .execute()
         } else {
             // A versioned value is an update of one exact durable lock, never permission to

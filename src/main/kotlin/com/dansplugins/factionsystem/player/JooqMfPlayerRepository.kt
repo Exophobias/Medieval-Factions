@@ -27,7 +27,13 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
         // The conflict is signalled with null rather than thrown inside the transaction: jOOQ
         // wraps a checked exception thrown there in a DataAccessException, which would hide the
         // OptimisticLockingFailureException from MfPlayerService's CONFLICT mapping.
-        return upsertIfCurrent(player) ?: throw OptimisticLockingFailureException("Invalid version: ${player.version}")
+        try {
+            return upsertIfCurrent(player) ?: throw OptimisticLockingFailureException("Invalid version: ${player.version}")
+        } catch (failure: org.jooq.exception.DataAccessException) {
+            if (player.version == 0 && getPlayer(player.id) != null)
+                throw OptimisticLockingFailureException("A player with this ID already exists")
+            throw failure
+        }
     }
 
     private fun upsertIfCurrent(player: MfPlayer): MfPlayer? = dsl.transactionResult { config ->
@@ -43,7 +49,6 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
                 .set(MF_PLAYER.BYPASS_ENABLED, player.isBypassEnabled)
                 .set(MF_PLAYER.BYPASS_WARNING_MUTED, player.isBypassWarningMuted)
                 .set(MF_PLAYER.CHAT_CHANNEL, player.chatChannel?.name)
-                .onConflict(MF_PLAYER.ID).doNothing()
                 .execute()
         } else {
             transactionalDsl.update(MF_PLAYER)
