@@ -1,9 +1,9 @@
 package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.faction.MfFactionId
 import com.dansplugins.factionsystem.service.Services
 import org.bukkit.block.BlockState

@@ -1,8 +1,8 @@
 package com.dansplugins.factionsystem.listener
 
+import com.dansplugins.factionsystem.MedievalFactions
 import com.dansplugins.factionsystem.api.ClaimAction
 import com.dansplugins.factionsystem.claim.EmbassyAccessDecision
-import com.dansplugins.factionsystem.MedievalFactions
 import org.bukkit.ChatColor.RED
 import org.bukkit.Material
 import org.bukkit.block.Block

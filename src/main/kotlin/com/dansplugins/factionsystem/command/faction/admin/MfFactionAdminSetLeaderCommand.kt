@@ -86,9 +86,11 @@ class MfFactionAdminSetLeaderCommand(private val plugin: MedievalFactions) : Com
                 // could have had the appointed leader handed that junior role instead.
                 val existingOwnerRole = targetFaction.roles.leaderRole
                 val ownerRole = existingOwnerRole ?: MfFactionRoles.recreateOwner(plugin, targetFaction.id, targetFaction.roles.roles)
-                val roles = if (existingOwnerRole == null)
+                val roles = if (existingOwnerRole == null) {
                     MfFactionRoles(targetFaction.roles.defaultRoleId, targetFaction.roles.roles + ownerRole)
-                else targetFaction.roles
+                } else {
+                    targetFaction.roles
+                }
 
                 // Add player as the owner. This is the one command that reassigns the recorded head
                 // of a faction; nothing a faction can do to itself moves it.

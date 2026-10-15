@@ -118,8 +118,9 @@ class JooqMfFactionRepository(
                 .filterIsInstance<OptimisticLockingFailureException>().firstOrNull()
             if (stale != null) throw stale
             // Raw INSERT keeps MariaDB found-rows mode from treating a duplicate create as success.
-            if (faction.version == 0 && getFaction(faction.id) != null)
+            if (faction.version == 0 && getFaction(faction.id) != null) {
                 throw OptimisticLockingFailureException("An entity with this ID already exists")
+            }
             throw failure
         }
     }

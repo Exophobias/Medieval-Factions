@@ -30,8 +30,9 @@ class JooqMfPlayerRepository(private val plugin: MedievalFactions, private val d
         try {
             return upsertIfCurrent(player) ?: throw OptimisticLockingFailureException("Invalid version: ${player.version}")
         } catch (failure: org.jooq.exception.DataAccessException) {
-            if (player.version == 0 && getPlayer(player.id) != null)
+            if (player.version == 0 && getPlayer(player.id) != null) {
                 throw OptimisticLockingFailureException("A player with this ID already exists")
+            }
             throw failure
         }
     }

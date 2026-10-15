@@ -61,14 +61,14 @@ class JooqMfLockRepository(private val dsl: DSLContext) : MfLockRepository {
                 accessors = newAccessors
             )
         }
-
         } catch (failure: org.jooq.exception.DataAccessException) {
             val stale = generateSequence(failure as Throwable?) { it.cause }
                 .filterIsInstance<OptimisticLockingFailureException>().firstOrNull()
             if (stale != null) throw stale
             // Raw INSERT keeps MariaDB found-rows mode from treating a duplicate create as success.
-            if (lockedBlock.version == 0 && getLockedBlock(lockedBlock.id) != null)
+            if (lockedBlock.version == 0 && getLockedBlock(lockedBlock.id) != null) {
                 throw OptimisticLockingFailureException("An entity with this ID already exists")
+            }
             throw failure
         }
     }

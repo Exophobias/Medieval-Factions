@@ -31,9 +31,9 @@ import com.dansplugins.factionsystem.law.MfLawId
 import com.dansplugins.factionsystem.locks.JooqMfLockRepository
 import com.dansplugins.factionsystem.locks.MfLockedBlock
 import com.dansplugins.factionsystem.player.JooqMfPlayerRepository
-import com.dansplugins.factionsystem.player.UpstreamJooqMfPlayerRepositoryTest
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.player.MfPlayerId
+import com.dansplugins.factionsystem.player.UpstreamJooqMfPlayerRepositoryTest
 import com.google.gson.Gson
 import org.bukkit.Bukkit
 import org.bukkit.Material

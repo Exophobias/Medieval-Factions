@@ -1,8 +1,8 @@
 package com.dansplugins.factionsystem
 
-import com.dansplugins.factionsystem.api.ApiResult
 import com.dansplugins.factionsystem.addon.MfAddonDetector
 import com.dansplugins.factionsystem.addon.startupAddonsLine
+import com.dansplugins.factionsystem.api.ApiResult
 import com.dansplugins.factionsystem.api.MfApiServer
 import com.dansplugins.factionsystem.approval.MfApprovalRequestService
 import com.dansplugins.factionsystem.chat.JooqMfChatChannelMessageRepository
@@ -112,9 +112,9 @@ import com.dansplugins.factionsystem.safety.NomadAddonFenceListener
 import com.dansplugins.factionsystem.service.Services
 import com.dansplugins.factionsystem.teleport.MfTeleportService
 import com.dansplugins.factionsystem.trace.TraceClient
+import com.dansplugins.factionsystem.update.MfUpdateNotifier
 import com.dansplugins.factionsystem.warend.JooqWarEndOutboxRepository
 import com.dansplugins.factionsystem.warend.WarEndOutboxRepository
-import com.dansplugins.factionsystem.update.MfUpdateNotifier
 import com.google.gson.Gson
 import com.zaxxer.hikari.HikariDataSource
 import dev.forkhandles.result4k.onFailure
