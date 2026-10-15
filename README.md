@@ -1,3 +1,9 @@
+> Patriam integration through upstream `13fcc710` (source `7.0.1-SNAPSHOT`). The retained
+> `5.9.0-patriam.1-SNAPSHOT` Maven/API coordinate is a compatibility identity, not the upstream
+> source release. Shipping plugin is `.3`; `/f version` and update notices use separate source metadata.
+> Existing strict migrations and disabled-default trace 0.2 remain authoritative: upstream shared
+> trace tags/install IDs are excluded. Configuration advances to 7 and database auto-unclaim to V910.
+
 # Medieval Factions
 
 > ### This is the Patriam fork

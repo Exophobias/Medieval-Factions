@@ -113,6 +113,7 @@ class MfFactionKickCommand(private val plugin: MedievalFactions) : CommandExecut
                     plugin.logger.log(SEVERE, "Failed to save faction: ${it.reason.message}", it.reason.cause)
                     return@Runnable
                 }
+                target.player?.sendMessage("$RED${plugin.language["CommandFactionKickKickedNotification", faction.displayName]}")
                 sender.sendMessage("$GREEN${plugin.language["CommandFactionKickSuccess", target.name ?: plugin.language["UnknownPlayer"], faction.displayName]}")
             }
         )
