@@ -111,7 +111,14 @@ class JooqMfFactionRepository(
         // wraps a checked exception thrown there in a DataAccessException, which would hide the
         // OptimisticLockingFailureException from MfFactionService's CONFLICT mapping. Nothing has
         // been written when null is returned.
-        return upsertIfCurrent(faction) ?: throw OptimisticLockingFailureException("Invalid version: ${faction.version}")
+        try {
+            return upsertIfCurrent(faction) ?: throw OptimisticLockingFailureException("Invalid version: ${faction.version}")
+        } catch (failure: org.jooq.exception.DataAccessException) {
+            val stale = generateSequence(failure as Throwable?) { it.cause }
+                .filterIsInstance<OptimisticLockingFailureException>().firstOrNull()
+            if (stale != null) throw stale
+            throw failure
+        }
     }
 
     private fun upsertIfCurrent(faction: MfFaction): MfFaction? {
@@ -234,6 +241,7 @@ class JooqMfFactionRepository(
                 .set(MF_FACTION.PRIMARY_OWNER_TERM, faction.primaryOwnerTerm.toString())
                 .set(MF_FACTION.HEIR_ID, faction.heirId?.value)
                 .set(MF_FACTION.ADMIN_LEADERLESS, faction.adminLeaderless)
+                .onConflict(MF_FACTION.ID).doNothing()
                 .execute()
         } else {
             dsl.update(MF_FACTION)

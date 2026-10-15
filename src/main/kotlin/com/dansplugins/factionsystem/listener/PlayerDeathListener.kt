@@ -103,7 +103,7 @@ class PlayerDeathListener(private val plugin: MedievalFactions) : Listener {
             current.copy(
                 power = (current.power - powerLostOnDeath)
                     .coerceAtLeast(0.0)
-                    .coerceAtMost(plugin.config.getDouble("players.maxPower"))
+                    .coerceAtMost(maxOf(current.power, current.effectiveMaxPower(plugin)))
             )
         }.onFailure {
             plugin.logger.log(SEVERE, "Failed to save player: ${it.reason.message}", it.reason.cause)
@@ -129,7 +129,7 @@ class PlayerDeathListener(private val plugin: MedievalFactions) : Listener {
             current.copy(
                 power = (current.power + powerGainedOnKill)
                     .coerceAtLeast(0.0)
-                    .coerceAtMost(plugin.config.getDouble("players.maxPower"))
+                    .coerceAtMost(maxOf(current.power, current.effectiveMaxPower(plugin)))
             )
         }.onFailure {
             plugin.logger.log(SEVERE, "Failed to save player: ${it.reason.message}", it.reason.cause)

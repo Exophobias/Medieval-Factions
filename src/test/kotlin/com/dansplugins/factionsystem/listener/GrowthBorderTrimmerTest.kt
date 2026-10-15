@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.listener
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.claim.MfEmbassyService
 import com.dansplugins.factionsystem.claim.MfClaimService
 import com.dansplugins.factionsystem.claim.MfClaimedChunk
 import com.dansplugins.factionsystem.faction.MfFactionId
@@ -17,6 +18,7 @@ class GrowthBorderTrimmerTest {
     private val worldId = UUID.randomUUID()
     private val alpha = MfFactionId("alpha")
     private val bravo = MfFactionId("bravo")
+    private lateinit var embassyService: MfEmbassyService
     private lateinit var claimService: MfClaimService
     private lateinit var uut: GrowthBorderTrimmer
 
@@ -24,8 +26,10 @@ class GrowthBorderTrimmerTest {
     fun setUp() {
         val plugin = mock(MedievalFactions::class.java)
         val services = mock(Services::class.java)
+        embassyService = mock(MfEmbassyService::class.java)
         claimService = mock(MfClaimService::class.java)
         `when`(plugin.services).thenReturn(services)
+        `when`(services.embassyService).thenReturn(embassyService)
         `when`(services.claimService).thenReturn(claimService)
         uut = GrowthBorderTrimmer(plugin)
     }
@@ -41,6 +45,21 @@ class GrowthBorderTrimmerTest {
         `when`(s.x).thenReturn(x)
         `when`(s.z).thenReturn(z)
         return s
+    }
+
+    @Test
+    fun growthCannotCrossEitherSideOfAnExclusiveEmbassyParcel() {
+        claim(0, 0, alpha)
+        claim(1, 0, alpha)
+        val own = state(8, 8)
+        val guest = state(16, 8)
+        `when`(embassyService.isParcelProtectionActive(worldId, 1, 0)).thenReturn(true)
+        val inbound = mutableListOf(own, guest)
+        assertEquals(1, uut.trim(worldId, 8, 8, inbound))
+        assertEquals(listOf(own), inbound)
+        val outbound = mutableListOf(own, guest)
+        assertEquals(1, uut.trim(worldId, 16, 8, outbound))
+        assertEquals(listOf(guest), outbound)
     }
 
     @Test

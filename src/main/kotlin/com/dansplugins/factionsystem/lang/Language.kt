@@ -58,7 +58,7 @@ class Language(plugin: MedievalFactions, private val language: String) {
             null
         }
         val internalResourceBundle = try {
-            ResourceBundle.getBundle("lang", locale)
+            ResourceBundle.getBundle("lang.lang", locale, javaClass.classLoader)
         } catch (e: MissingResourceException) {
             null
         }

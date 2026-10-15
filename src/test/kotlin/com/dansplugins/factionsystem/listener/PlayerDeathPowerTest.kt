@@ -66,6 +66,13 @@ class PlayerDeathPowerTest {
             saved += player
             Success(player)
         }
+        `when`(players.update(anyArg(), anyArg())).thenAnswer {
+            val current = it.getArgument<MfPlayer>(0)
+            val transform = it.getArgument<(MfPlayer) -> MfPlayer>(1)
+            val changed = transform(current)
+            saved += changed
+            Success(changed)
+        }
         victim = mock(Player::class.java)
         `when`(victim.uniqueId).thenReturn(UUID.randomUUID())
         event = mock(PlayerDeathEvent::class.java)

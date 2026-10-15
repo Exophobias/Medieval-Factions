@@ -236,6 +236,7 @@ class MfFactionKickCommandTest {
         rivals = mock(MfFaction::class.java)
         `when`(rivals.id).thenReturn(rivalsId)
         `when`(rivals.name).thenReturn("Rivals")
+        `when`(rivals.displayName).thenReturn("Rivals")
         `when`(factionService.getFaction("Rivals")).thenReturn(rivals)
 
         val targetRole = mock(MfFactionRole::class.java)

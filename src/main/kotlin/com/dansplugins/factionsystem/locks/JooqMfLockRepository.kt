@@ -49,6 +49,7 @@ class JooqMfLockRepository(private val dsl: DSLContext) : MfLockRepository {
     }
 
     override fun upsert(lockedBlock: DomainMfLockedBlock): DomainMfLockedBlock {
+        try {
         return dsl.transactionResult { config ->
             val transactionalDsl = config.dsl()
             val newState = upsertLockedBlock(transactionalDsl, lockedBlock)
@@ -59,6 +60,13 @@ class JooqMfLockRepository(private val dsl: DSLContext) : MfLockRepository {
             return@transactionResult newState.copy(
                 accessors = newAccessors
             )
+        }
+
+        } catch (failure: org.jooq.exception.DataAccessException) {
+            val stale = generateSequence(failure as Throwable?) { it.cause }
+                .filterIsInstance<OptimisticLockingFailureException>().firstOrNull()
+            if (stale != null) throw stale
+            throw failure
         }
     }
 
@@ -74,6 +82,7 @@ class JooqMfLockRepository(private val dsl: DSLContext) : MfLockRepository {
                 .set(MF_LOCKED_BLOCK.CHUNK_Z, lockedBlock.chunkZ)
                 .set(MF_LOCKED_BLOCK.PLAYER_ID, lockedBlock.playerId.value)
                 .set(MF_LOCKED_BLOCK.VERSION, 1)
+                .onConflict(MF_LOCKED_BLOCK.ID).doNothing()
                 .execute()
         } else {
             // A versioned value is an update of one exact durable lock, never permission to

@@ -226,6 +226,12 @@ public final class ConfigLifecycle {
         }
 
         int sourceVersion = configured.value();
+        // Reject malformed operator values before canonicalization can discard a typed list item.
+        try {
+            validateKnownValues(installed, bundled);
+        } catch (ValidationException invalid) {
+            return blocked(State.INVALID, sourceVersion, "invalid configuration at " + invalid.path());
+        }
         YamlConfiguration candidate = installed;
         String migratedSerialization = null;
         int workingVersion = sourceVersion;

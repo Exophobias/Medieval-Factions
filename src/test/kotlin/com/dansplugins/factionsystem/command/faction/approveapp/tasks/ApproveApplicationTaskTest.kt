@@ -93,9 +93,11 @@ class ApproveApplicationTaskTest {
         val approval = saved[1]
         assertEquals(8, approval.version, "the approval must be saved from the faction as stored after the removal")
         assertEquals(
-            listOf(MfFactionMember(approver.id, officerRole), MfFactionMember(applicant.id, memberRole)),
-            approval.members
+            listOf(approver.id, applicant.id),
+            approval.members.map { it.playerId }
         )
+        assertEquals(listOf(officerRole, memberRole), approval.members.map { it.role })
+        assertEquals(faction.members.first().joinedAt, approval.members.first().joinedAt)
         assertEquals(emptyList<MfFactionApplication>(), approval.applications)
     }
 

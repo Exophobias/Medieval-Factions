@@ -644,7 +644,7 @@ class ConfigLifecycleTest {
     @Test
     void sparseCurrentConfigReadsEmbassyDefaultWithoutWritingMissingKeys() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] original = "config-version: 6\n".getBytes(StandardCharsets.UTF_8);
+        byte[] original = "config-version: 7\n".getBytes(StandardCharsets.UTF_8);
         Files.write(config, original);
 
         ConfigLifecycle.Result result = ConfigLifecycle.prepare(config, bundledTemplate());
@@ -828,7 +828,7 @@ class ConfigLifecycleTest {
     @Test
     void flowRootPlainMarkerIsAcceptedWithoutRewriting() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] flow = "{config-version: 6, database: {password: flow-secret}, extension: {x: 3}}\n"
+        byte[] flow = "{config-version: 7, database: {password: flow-secret}, extension: {x: 3}}\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, flow);
 
@@ -890,7 +890,7 @@ class ConfigLifecycleTest {
     void currentKnownLeafWithWrongPhysicalTypeIsValueSafeAndUnchanged() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 6\n" +
+                "config-version: 7\n" +
                     "database:\n" +
                     "  password:\n" +
                     "    leaked-child: credential-shaped-value\n"
@@ -925,7 +925,7 @@ class ConfigLifecycleTest {
     void knownStringListCannotSilentlyDropMappingEntries() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] invalid = (
-                "config-version: 6\n" +
+                "config-version: 7\n" +
                     "factions:\n" +
                     "  blockedClaimWorlds:\n" +
                     "  - valid-world\n" +
@@ -971,7 +971,7 @@ class ConfigLifecycleTest {
     @Test
     void freshInstallRaceNeverOverwritesAnArrivingOperatorFile() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
-        byte[] arriving = "config-version: 6\nsecret: arriving-secret\n"
+        byte[] arriving = "config-version: 7\nsecret: arriving-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
 
         ConfigLifecycle.Result result = ConfigLifecycle.prepare(
@@ -993,7 +993,7 @@ class ConfigLifecycleTest {
     void postWriteRaceIsRereadExactlyAndNeverActivated() throws Exception {
         Path config = temporaryDirectory.resolve("config.yml");
         byte[] legacy = "players:\n  initialPower: 9\n".getBytes(StandardCharsets.UTF_8);
-        byte[] raced = "config-version: 6\ndatabase:\n  password: raced-secret\n"
+        byte[] raced = "config-version: 7\ndatabase:\n  password: raced-secret\n"
                 .getBytes(StandardCharsets.UTF_8);
         Files.write(config, legacy);
 
@@ -1044,7 +1044,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         Files.writeString(
                 config,
-                "config-version: 6\nthird-party-extension:\n  retained: true\n",
+                "config-version: 7\nthird-party-extension:\n  retained: true\n",
                 StandardCharsets.UTF_8
         );
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
@@ -1068,7 +1068,7 @@ class ConfigLifecycleTest {
         Path config = temporaryDirectory.resolve("config.yml");
         ConfigLifecycle.Result prepared = ConfigLifecycle.prepare(config, bundledTemplate());
         byte[] operatorEdit = (
-                "config-version: 6\n" +
+                "config-version: 7\n" +
                     "dpc-api:\n" +
                     "  enabled: false\n" +
                     "  key: operator-new-secret\n"
@@ -1160,7 +1160,7 @@ class ConfigLifecycleTest {
 
     private static String anchoredSequenceTemplate() {
         return """
-                config-version: 6
+                config-version: 7
                 database:
                   password: default-password
                 gates:

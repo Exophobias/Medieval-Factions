@@ -19,8 +19,7 @@ class ConfigStartupOrderTest {
 
         assertTrue(gate >= 0, "onEnable must contain the canonical config gate");
         assertTrue(gate < source.indexOf("initializeDatabaseRepositories(gson)"));
-        assertTrue(gate < source.indexOf("MfJdbc.preloadDriver(jdbcUrl)"));
-        assertTrue(gate < source.indexOf("HikariDataSource(hikariConfig)"));
+        assertTrue(gate < source.indexOf("MfJdbc.openDataSource("));
         assertTrue(gate < source.indexOf("Flyway.configure()"));
         assertTrue(gate < source.indexOf("services = Services("));
         assertTrue(gate < source.indexOf("registerEvents(it, this)"));

@@ -19,11 +19,17 @@ class GrowthBorderTrimmer(private val plugin: MedievalFactions) {
     /** Removes the blocks that would cross into foreign territory from [blocks]; returns how many were removed. */
     fun trim(worldId: UUID, originX: Int, originZ: Int, blocks: MutableList<BlockState>): Int {
         val claimService = plugin.services.claimService
-        val originFactionId = claimService.getClaim(worldId, originX shr 4, originZ shr 4)?.factionId
+        val embassyService = plugin.services.embassyService
+        val originChunkX = originX shr 4
+        val originChunkZ = originZ shr 4
+        val originIsParcel = embassyService.isParcelProtectionActive(worldId, originChunkX, originChunkZ)
+        val originFactionId = claimService.getClaim(worldId, originChunkX, originChunkZ)?.factionId
         val before = blocks.size
         blocks.removeIf { state ->
             val claim = claimService.getClaim(worldId, state.x shr 4, state.z shr 4)
-            claim != null && claim.factionId != originFactionId
+            val crossesChunk = (state.x shr 4) != originChunkX || (state.z shr 4) != originChunkZ
+            (claim != null && claim.factionId != originFactionId) ||
+                (crossesChunk && (originIsParcel || embassyService.isParcelProtectionActive(worldId, state.x shr 4, state.z shr 4)))
         }
         return before - blocks.size
     }
