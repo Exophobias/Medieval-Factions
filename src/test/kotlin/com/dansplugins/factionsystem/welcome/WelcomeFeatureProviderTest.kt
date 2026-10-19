@@ -14,6 +14,7 @@ import com.dansplugins.factionsystem.player.MfPlayerService
 import com.dansplugins.factionsystem.service.Services
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.entity.Player
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -58,10 +59,13 @@ class WelcomeFeatureProviderTest {
         `when`(faction.displayName).thenReturn("Realm")
         `when`(faction.description).thenReturn("Your realm description")
         `when`(faction.members).thenReturn(emptyList())
+        `when`(faction.power).thenReturn(18.0)
+        `when`(faction.maxPower).thenReturn(32.0)
         `when`(claims.getClaimCount(factionId)).thenReturn(7)
         val provider = WelcomeFeatureProvider(owner)
+        val powerRows = mapOf("Claimed chunks" to "7", "Realm power" to "18.0", "Maximum power" to "32.0")
         val current = provider.project(player)
-        assertTrue(current.rows().any { it.label() == "Claimed chunks" && it.value() == "7" })
+        assertEquals(powerRows, current.rows().filter { it.label() in powerRows }.associate { it.label() to it.value() })
         assertTrue(current.help().none { it.staff() })
         grants -= "mf.power"
         assertTrue(provider.project(player).rows().none { it.label().contains("power", ignoreCase = true) || it.label() == "Claimed chunks" })
@@ -71,9 +75,16 @@ class WelcomeFeatureProviderTest {
         assertFalse(revoked.rows().any { it.value() == "Realm" })
         assertTrue(revoked.sections().isEmpty())
         assertTrue(revoked.actions().none { it.command() == "f info" })
+        assertEquals(powerRows, revoked.rows().filter { it.label() in powerRows }.associate { it.label() to it.value() })
         grants += "mf.info.other"
         assertTrue(provider.project(player).rows().any { it.value() == "Realm" })
         grants -= "mf.info"
-        assertTrue(provider.project(player).sections().isEmpty())
+        val infoDenied = provider.project(player)
+        assertTrue(infoDenied.sections().isEmpty())
+        assertTrue(infoDenied.rows().none { it.label() in setOf("Realm", "Canonical name", "Your role", "Members") })
+        assertTrue(infoDenied.actions().none { it.command() == "f info" })
+        assertEquals(powerRows, infoDenied.rows().filter { it.label() in powerRows }.associate { it.label() to it.value() })
+        grants -= "mf.power"
+        assertTrue(provider.project(player).rows().none { it.label().contains("power", ignoreCase = true) || it.label() == "Claimed chunks" })
     }
 }

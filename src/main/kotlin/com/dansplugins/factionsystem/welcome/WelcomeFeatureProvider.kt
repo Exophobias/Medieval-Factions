@@ -54,16 +54,16 @@ class WelcomeFeatureProvider(private val owner: MedievalFactions) : HubFeaturePr
             if (faction.name != faction.displayName) rows += HubFeature.Row("Canonical name", faction.name)
             rows += HubFeature.Row("Your role", role.name)
             rows += HubFeature.Row("Members", faction.members.size.toString())
-            // These statistics belong to /f power, independently of /f info's role gate.
-            if (player.hasPermission("mf.power")) {
-                rows += HubFeature.Row("Claimed chunks", services.claimService.getClaimCount(faction.id).toString())
-                rows += HubFeature.Row("Realm power", faction.power.toString())
-                rows += HubFeature.Row("Maximum power", faction.maxPower.toString())
-            }
             if (faction.description.isNotBlank()) sections += HubFeature.Section("Description", listOf(faction.description))
             actions += HubFeature.Action("Realm details", "Inspect your current realm", "f info", "mf.info")
         } else {
             rows += HubFeature.Row("Current realm", if (faction == null) "No current realm membership" else "Realm details are not permitted")
+        }
+        // These statistics belong to /f power, independently of /f info's role gate.
+        if (faction != null && player.hasPermission("mf.power")) {
+            rows += HubFeature.Row("Claimed chunks", services.claimService.getClaimCount(faction.id).toString())
+            rows += HubFeature.Row("Realm power", faction.power.toString())
+            rows += HubFeature.Row("Maximum power", faction.maxPower.toString())
         }
         if (player.hasPermission("mf.power")) {
             services.playerService.getPlayer(playerId)?.let { rows += HubFeature.Row("Your power", it.power.toString()) }
