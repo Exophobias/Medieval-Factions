@@ -45,8 +45,10 @@ class WelcomeFeatureProvider(private val owner: MedievalFactions) : HubFeaturePr
         val playerId = MfPlayerId(player.uniqueId.toString())
         val faction = services.factionService.getFaction(playerId)
         val role = faction?.getRole(playerId)
-        val readable = player.hasPermission("mf.info") && (player.hasPermission("mf.info.other") ||
-            (faction != null && role?.hasPermission(faction, owner.factionPermissions.viewInfo) == true))
+        val readable = player.hasPermission("mf.info") && (
+            player.hasPermission("mf.info.other") ||
+                (faction != null && role?.hasPermission(faction, owner.factionPermissions.viewInfo) == true)
+        )
         if (faction != null && role != null && readable) {
             rows += HubFeature.Row("Realm", faction.displayName)
             if (faction.name != faction.displayName) rows += HubFeature.Row("Canonical name", faction.name)
