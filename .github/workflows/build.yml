@@ -98,6 +98,11 @@ jobs:
         if: needs.changes.outputs.docs_only != 'true'
         run: chmod +x gradlew
 
+      - name: Verify the thin optional Welcome API
+        if: needs.changes.outputs.docs_only != 'true'
+        working-directory: libs
+        run: sha256sum -c CHECKSUMS
+
       - name: Build with Gradle
         if: needs.changes.outputs.docs_only != 'true'
         run: ./gradlew clean build

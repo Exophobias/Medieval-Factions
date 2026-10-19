@@ -206,6 +206,8 @@ class MedievalFactions : JavaPlugin() {
     // onEnable() finishes has something safe to report to.
     private var trace: TraceClient = TraceClient.disabled()
 
+    private var welcomeFeature: AutoCloseable = AutoCloseable { }
+
     override fun onEnable() {
         if (!checkNomadAddon(requireEnabled = false)) return
         server.pluginManager.registerEvents(NomadAddonFenceListener(this), this)
@@ -684,6 +686,7 @@ class MedievalFactions : JavaPlugin() {
             this,
             org.bukkit.plugin.ServicePriority.Normal
         )
+        welcomeFeature = com.dansplugins.factionsystem.welcome.WelcomeFeatureIntegration.start(this)
     }
 
     /**
@@ -946,6 +949,7 @@ class MedievalFactions : JavaPlugin() {
     }
 
     override fun onDisable() {
+        com.dansplugins.factionsystem.welcome.WelcomeFeatureIntegration.close(this, welcomeFeature)
         apiServer?.stop()
         apiServer = null
         servicesOrNull?.claimService?.wildernessReservations?.close()

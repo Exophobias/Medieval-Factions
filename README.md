@@ -1,6 +1,6 @@
 > Patriam integration through upstream `13fcc710` (source `7.0.1-SNAPSHOT`). The retained
 > `5.9.0-patriam.1-SNAPSHOT` Maven/API coordinate is a compatibility identity, not the upstream
-> source release. Shipping plugin is `.3`; `/f version` and update notices use separate source metadata.
+> source release. Shipping plugin is `.4`; `/f version` and update notices use separate source metadata.
 > Existing strict migrations and disabled-default trace 0.2 remain authoritative: upstream shared
 > trace tags/install IDs are excluded. Configuration advances to 7 and database auto-unclaim to V910.
 
@@ -242,3 +242,10 @@ To turn it off:
 Details: https://github.com/Stephenson-Software/trace#usage-reporting
 
 See [Native siege policy, fenced effects and durable gate actuator protocol](docs/PATRIAM-SIEGE-AUTHORITY.md).
+
+
+### Optional Patriam feature page
+
+With PatriamWelcome 2.1.0, **Realms** shows current owner status and the same permission-filtered command help used in chat, with separate staff pages. Only your current realm is projected; role view-info and Bukkit info permissions still apply. Power and land statistics additionally require the native power permission. No member names or online presence are published.
+
+Welcome remains optional: only the guarded adapter links its API, and its service is withdrawn before owner shutdown. Each navigation and action requests current authority again. Parameterized help is documentation; fixed actions retain the owner command’s execution checks. No configuration or gameplay storage schema changes.

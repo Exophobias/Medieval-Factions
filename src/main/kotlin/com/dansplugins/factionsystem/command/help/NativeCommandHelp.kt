@@ -194,7 +194,7 @@ internal object NativeCommandHelp {
         !it.container && (it.command == prefix || it.command.startsWith("$prefix ")) && it.allowed(sender)
     }
 
-    private fun visible(sender: CommandSender, entries: List<Entry>): List<Entry> = entries.filter { entry ->
+    fun visible(sender: CommandSender, entries: List<Entry>): List<Entry> = entries.filter { entry ->
         entry.allowed(sender) && (
             !entry.container || entries.any { child ->
             !child.container && child.staff == entry.staff && child.command.startsWith("${entry.command} ") && child.allowed(sender)

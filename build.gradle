@@ -11,7 +11,16 @@ group = "com.dansplugins"
 // The upstream source base is 7.0.1-SNAPSHOT; a coordinated coordinate bump is a separate release.
 version = "5.9.0-patriam.1-SNAPSHOT"
 // The pinned compile/publication coordinate stays compatible; shipped gameplay has its own release.
-def pluginVersion = "5.9.0-patriam.3-SNAPSHOT"
+def pluginVersion = "5.9.0-patriam.4-SNAPSHOT"
+
+// Reject missing/changed thin contracts before any repository resolution (including Docker builds).
+["patriamwelcome-2.1.0.jar": "2a1bd17ec7a0a017fa0821dc583fc98173faaed88f97f6b49547673cd31a34d0",
+ "patriamwelcome-2.1.0.pom": "72901157214f655e2a7b1dcc8d3a7d58a786e7b3aab54ee7f43f7a68cc1c98bc"].each { name, expected ->
+    def input = file("libs/welcome-api/com/github/exophobias/patriamwelcome/2.1.0/$name")
+    if (!input.isFile() || java.security.MessageDigest.getInstance("SHA-256").digest(input.bytes).encodeHex().toString() != expected) {
+        throw new GradleException("Pinned thin Welcome API contract changed: $name")
+    }
+}
 
 def minecraftVersion = providers.gradleProperty("minecraftVersion").getOrElse("26.2")
 def spigotVersion = "${minecraftVersion}-R0.1-SNAPSHOT"
@@ -27,6 +36,10 @@ if (propertiesFile.exists()) {
 }
 
 repositories {
+    exclusiveContent {
+        forRepository { maven { url = uri("$rootDir/libs/welcome-api") } }
+        filter { includeModule("com.github.exophobias", "patriamwelcome") }
+    }
     mavenLocal()
     mavenCentral()
     maven { url 'https://hub.spigotmc.org/nexus/content/repositories/public/' }
@@ -49,6 +62,8 @@ configurations {
 }
 
 dependencies {
+    compileOnly("com.github.exophobias:patriamwelcome:2.1.0") { transitive = false }
+    testImplementation("com.github.exophobias:patriamwelcome:2.1.0") { transitive = false }
     implementation 'me.clip:placeholderapi:2.11.6'
     implementation "org.spigotmc:spigot-api:${spigotVersion}"
     implementation 'us.dynmap:dynmap-api:2.2'

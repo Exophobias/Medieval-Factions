@@ -16,6 +16,7 @@ version: @version@
 main: com.dansplugins.factionsystem.MedievalFactions
 api-version: '26.2'
 softdepend:
+- PatriamWelcome
 - dynmap
 - PlaceholderAPI
 - rpk-notification-lib-bukkit

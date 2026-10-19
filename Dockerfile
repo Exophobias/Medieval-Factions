@@ -16,6 +16,7 @@ FROM eclipse-temurin:25-jdk AS plugin-build
 COPY --from=ponder-build /root/.m2/repository /root/.m2/repository
 WORKDIR /tmp/mf-build
 COPY . .
+RUN cd libs && sha256sum -c CHECKSUMS
 RUN chmod +x gradlew
 RUN ./gradlew clean shadowJar
 
