@@ -212,8 +212,11 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     override fun armPatriamGovernanceGuard(): ApiResult = plugin.armPatriamGovernanceGuard()
 
     override fun governanceCommandRefusal(actor: UUID, canonicalVerb: String): String? =
-        if (!plugin.isEnabled) "MedievalFactions governance is temporarily unavailable"
-        else plugin.patriamCommandRefusal(actor, canonicalVerb)
+        if (!plugin.isEnabled) {
+            "MedievalFactions governance is temporarily unavailable"
+        } else {
+            plugin.patriamCommandRefusal(actor, canonicalVerb)
+        }
 
     override fun getFactionFlagCommandAliases(): List<String> =
         listOf("flag", "flags", plugin.language["CmdFactionFlag"]).distinctBy(String::lowercase)

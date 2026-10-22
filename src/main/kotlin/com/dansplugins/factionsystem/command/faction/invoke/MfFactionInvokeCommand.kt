@@ -1,8 +1,8 @@
 package com.dansplugins.factionsystem.command.faction.invoke
 
 import com.dansplugins.factionsystem.MedievalFactions
-import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.command.unquote
+import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.ALLY
