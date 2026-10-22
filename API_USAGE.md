@@ -846,3 +846,26 @@ public class FactionClaimRenderer {
 For issues or questions:
 - GitHub Issues: https://github.com/Dans-Plugins/Medieval-Factions/issues
 - Discord: https://discord.gg/xXtuAQ2
+
+## Patriam governance authority
+
+`armPatriamGovernanceGuard()` permanently latches the Patriam policy boundary. MF also arms the
+marker before enabling a discovered PatriamMFAddon, so a first-start config failure cannot open
+founding or wars. A registered `PatriamGovernanceAuthority` must belong to the enabled, ready
+PatriamMFAddon. Missing, disabled, stopping or failing authority refuses protected actions and logs
+the outage without stopping the server. Standalone servers without an armed marker are unaffected.
+
+The native save boundary checks current Member eligibility before every changed primary owner.
+Existing owners remain in place. War creation and player-attributed faction creation require ready
+authority even when Bukkit skips addon event listeners. Native faction dispatch passes canonical
+transfer/heir/kick/role/disband verbs to the authority after resolving language/command aliases.
+Fiefs uses `governanceCommandRefusal(actor, "fief.<verb>")` for its existing rally command freeze.
+Operator setleader remains an interregnum escape, while its newly appointed owner must still be
+eligible. Runtime state is `patriam-governance-required.marker`; no configuration key or backup is
+created.
+
+`validateFactionName` performs naming checks before a founding workflow moves a player.
+`leaveFactionIfMember` conditionally runs ordinary departure while retaining membership version
+checks, events and succession. `canDeclareOrdinaryWar` exposes native alliance, own-vassal and
+neutral-target restrictions for automatic declarations; the addon independently checks war causes,
+existing war state and shields.

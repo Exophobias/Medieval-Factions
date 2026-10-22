@@ -399,6 +399,12 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
 
     /** Fire cancellable precommit gates only; irreversible cleanup happens after the batch commits. */
     private fun fireSaveGates(previous: MfFaction?, requested: MfFaction): MfFaction {
+        if (previous == null && requested.members.isNotEmpty()) plugin.requirePatriamAuthority()
+        if (requested.primaryOwnerId != null && requested.primaryOwnerId != previous?.primaryOwnerId) {
+            val owner = requested.primaryOwnerId.toUuidOrNull()
+                ?: throw EventCancelledException("New ruler has an invalid player identity")
+            plugin.requirePatriamRuler(owner)
+        }
         if (previous == null) {
             val event = FactionCreateEvent(requested.id, requested, !plugin.server.isPrimaryThread)
             plugin.server.pluginManager.callEvent(event)
@@ -483,6 +489,15 @@ class MfFactionService(private val plugin: MedievalFactions, private val reposit
             val id = mutation.proposed.id
             val live = getFaction(id)
             val previous = mutation.previous
+            if (previous == null && mutation.proposed.members.isNotEmpty()) plugin.requirePatriamAuthority()
+            if (mutation.proposed.primaryOwnerId != null &&
+                mutation.proposed.primaryOwnerId != previous?.primaryOwnerId
+            ) {
+                plugin.requirePatriamRuler(
+                mutation.proposed.primaryOwnerId.toUuidOrNull()
+                    ?: throw EventCancelledException("New ruler has an invalid player identity")
+            )
+            }
             if (previous == null) {
                 if (mutation.proposed.version != 0) {
                     throw OptimisticLockingFailureException(

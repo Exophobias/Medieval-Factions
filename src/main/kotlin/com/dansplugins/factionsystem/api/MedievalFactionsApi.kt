@@ -299,6 +299,32 @@ interface MedievalFactionsApi {
     fun armNomadPersistenceGuard(): ApiResult =
         ApiResult.failure("This MedievalFactions provider has no Nomad persistence guard")
 
+    /** Latch faction founding, new rulers, wars and protected commands to the live Patriam authority. */
+    fun armPatriamGovernanceGuard(): ApiResult =
+        ApiResult.failure("This MedievalFactions provider has no Patriam governance guard")
+
+    /**
+     * Resolve a canonical protected command, including `fief.revoke/kick/disband/transfer`.
+     * Null permits it. The native armed guard refuses while its addon owner is unavailable;
+     * an unarmed standalone server retains its normal command behavior. No mutation is performed.
+     */
+    fun governanceCommandRefusal(actor: UUID, canonicalVerb: String): String? =
+        "This MedievalFactions provider cannot verify faction governance"
+
+    /** Native ordinary-war rules, excluding the casus-belli policy supplied by the addon. */
+    fun canDeclareOrdinaryWar(attacker: FactionId, target: FactionId): Boolean = false
+
+    /** Actual native labels for /f flag, including the configured language alias. */
+    fun getFactionFlagCommandAliases(): List<String> = listOf("flag", "flags")
+
+    /** Validate current faction naming rules without relocating a founder or writing data. */
+    fun validateFactionName(name: String): ApiResult =
+        ApiResult.failure("This MedievalFactions provider cannot validate faction names")
+
+    /** Ordinary departure, conditional on the player still belonging to the expected faction. */
+    fun leaveFactionIfMember(expectedFaction: FactionId, playerId: UUID): ApiResult =
+        ApiResult.failure("This MedievalFactions provider has no conditional departure API")
+
     /**
      * The power level of the given player, or `0.0` if MedievalFactions has no record of them.
      *

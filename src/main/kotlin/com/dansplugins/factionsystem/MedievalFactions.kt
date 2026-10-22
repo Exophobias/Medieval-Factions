@@ -178,6 +178,13 @@ class MedievalFactions : JavaPlugin() {
     private lateinit var bundledConfigYaml: String
 
     private val nomadAddonFence by lazy { NomadAddonFence(dataFolder.toPath()) }
+    private val patriamGovernanceGuard by lazy {
+        com.dansplugins.factionsystem.safety.PatriamGovernanceGuard(
+            com.dansplugins.factionsystem.safety.PatriamAddonFence(dataFolder.toPath()),
+            { server.servicesManager.getRegistration(com.dansplugins.factionsystem.api.PatriamGovernanceAuthority::class.java) },
+            logger
+        )
+    }
     private val nomadShutdownRequested = AtomicBoolean()
 
     lateinit var flags: MfFlags
@@ -209,6 +216,22 @@ class MedievalFactions : JavaPlugin() {
     private var welcomeFeature: AutoCloseable = AutoCloseable { }
 
     override fun onEnable() {
+        server.pluginManager.registerEvents(
+            object : org.bukkit.event.Listener {
+            @org.bukkit.event.EventHandler(priority = org.bukkit.event.EventPriority.LOWEST)
+            fun onDisable(event: org.bukkit.event.server.PluginDisableEvent) {
+                if (event.plugin.name == "PatriamMFAddon") patriamGovernanceGuard.providerStopping()
+            }
+
+            @org.bukkit.event.EventHandler(priority = org.bukkit.event.EventPriority.LOWEST)
+            fun onEnable(event: org.bukkit.event.server.PluginEnableEvent) {
+                if (event.plugin.name == "PatriamMFAddon") patriamGovernanceGuard.providerEnabled()
+            }
+        },
+            this
+        )
+        // Arm before the addon can attempt enable: even its first config failure must fail closed.
+        if (server.pluginManager.getPlugin("PatriamMFAddon") != null) armPatriamGovernanceGuard()
         if (!checkNomadAddon(requireEnabled = false)) return
         server.pluginManager.registerEvents(NomadAddonFenceListener(this), this)
         bundledConfigYaml = getResource("config.yml")?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }
@@ -736,6 +759,17 @@ class MedievalFactions : JavaPlugin() {
             ApiResult.failure("Could not durably arm the Nomad addon guard: ${failure.message}")
         }
     }
+
+    internal fun armPatriamGovernanceGuard(): ApiResult = patriamGovernanceGuard.arm()
+
+    internal fun requirePatriamAuthority() { patriamGovernanceGuard.requireAuthority() }
+
+    internal fun requirePatriamRuler(playerId: java.util.UUID) {
+        patriamGovernanceGuard.requireRuler(playerId)
+    }
+
+    internal fun patriamCommandRefusal(actor: java.util.UUID, verb: String): String? =
+        patriamGovernanceGuard.commandRefusal(actor, verb)
 
     fun verifyNomadAddonAfterEnable() {
         checkNomadAddon(requireEnabled = true)

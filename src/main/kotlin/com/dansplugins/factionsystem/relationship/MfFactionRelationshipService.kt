@@ -141,6 +141,7 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
                 previousState.type != relationship.type
             if (establishesRelationship) {
                 if (relationship.type == AT_WAR) {
+                    plugin.requirePatriamAuthority()
                     val warEvent = FactionWarStartEvent(
                         FactionId(relationship.factionId.value),
                         FactionId(relationship.targetId.value),
@@ -171,7 +172,10 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
                     throw EventCancelledException("Event cancelled")
                 }
             }
-            val result = plugin.commitSiegeRepository { repository.upsert(relationship) }
+            val result = plugin.commitSiegeRepository {
+                if (establishesRelationship && relationship.type == AT_WAR) plugin.requirePatriamAuthority()
+                repository.upsert(relationship)
+            }
             // Unindex the previous state first: an upsert may move a relationship to a different holder,
             // and leaving the old bucket populated would report a vassalage that no longer exists.
             previousState?.let(::unindex)

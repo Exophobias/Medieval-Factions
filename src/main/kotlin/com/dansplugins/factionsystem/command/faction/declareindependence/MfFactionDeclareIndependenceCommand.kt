@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.declareindependence
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.player.MfPlayer
 import com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.LIEGE
 import dev.forkhandles.result4k.onFailure
@@ -61,6 +62,10 @@ class MfFactionDeclareIndependenceCommand(private val plugin: MedievalFactions) 
                     !liege.flags[plugin.flags.isNeutral]
                 factionRelationshipService.breakOath(faction.id, liege.id, establishWar)
                     .onFailure {
+                        if (it.reason.cause is EventCancelledException) {
+                            sender.sendMessage("${RED}This war was refused by the current realm rules. See your realm's war notices and /f causes.")
+                            return@Runnable
+                        }
                         val key = if (establishWar) {
                             "CommandFactionDeclareIndependenceFailedToSaveRelationship"
                         } else {

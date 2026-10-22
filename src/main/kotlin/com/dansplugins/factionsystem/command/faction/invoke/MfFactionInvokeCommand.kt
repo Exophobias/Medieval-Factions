@@ -1,6 +1,7 @@
 package com.dansplugins.factionsystem.command.faction.invoke
 
 import com.dansplugins.factionsystem.MedievalFactions
+import com.dansplugins.factionsystem.exception.EventCancelledException
 import com.dansplugins.factionsystem.command.unquote
 import com.dansplugins.factionsystem.faction.MfFaction
 import com.dansplugins.factionsystem.player.MfPlayer
@@ -103,6 +104,10 @@ class MfFactionInvokeCommand(private val plugin: MedievalFactions) : CommandExec
                 }
                 factionRelationshipService.ensureWarPair(ally.id, enemy.id, faction.id)
                     .onFailure {
+                        if (it.reason.cause is EventCancelledException) {
+                            sender.sendMessage("${RED}This war was refused by the current realm rules. See your realm's war notices and /f causes.")
+                            return@Runnable
+                        }
                         sender.sendMessage("$RED${plugin.language["CommandFactionInvokeFailedToSaveRelationship"]}")
                         plugin.logger.log(Level.SEVERE, "Failed to save faction relationship: ${it.reason.message}", it.reason.cause)
                         return@Runnable

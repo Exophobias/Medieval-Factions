@@ -315,6 +315,21 @@ class MfFactionCommand(private val plugin: MedievalFactions) : CommandExecutor, 
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         if (args.isEmpty()) return factionHelpCommand.onCommand(sender, command, label, emptyArray())
+        val protectedVerb = when (args.first().lowercase()) {
+            in transferAliases -> "transfer"
+            in heirAliases -> "heir"
+            in kickAliases -> "kick"
+            in roleAliases -> "role"
+            in disbandAliases -> "disband"
+            else -> null
+        }
+        if (sender is org.bukkit.entity.Player && protectedVerb != null) {
+            val refusal = plugin.patriamCommandRefusal(sender.uniqueId, protectedVerb)
+            if (refusal != null) {
+                sender.sendMessage("${ChatColor.RED}$refusal")
+                return true
+            }
+        }
         return when (args.firstOrNull()?.lowercase()) {
             in helpAliases -> factionHelpCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())
             in createAliases -> factionCreateCommand.onCommand(sender, command, label, args.drop(1).toTypedArray())

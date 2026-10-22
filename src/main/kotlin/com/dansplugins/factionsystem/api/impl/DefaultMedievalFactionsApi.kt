@@ -115,6 +115,22 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
             relationships.getRelationships(b, a).any { it.type == AT_WAR }
     }
 
+    override fun canDeclareOrdinaryWar(attacker: FactionId, target: FactionId): Boolean {
+        if (attacker == target) return false
+        val service = plugin.services.factionService
+        if (service.getFaction(MfFactionId(attacker.value)) == null) return false
+        val defender = service.getFaction(MfFactionId(target.value)) ?: return false
+        val relationships = plugin.services.factionRelationshipService
+        val forward = relationships.getRelationships(MfFactionId(attacker.value), MfFactionId(target.value))
+        val reverse = relationships.getRelationships(MfFactionId(target.value), MfFactionId(attacker.value))
+        return !(
+            forward.any { it.type == com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.ALLY } &&
+            reverse.any { it.type == com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.ALLY }
+        ) &&
+            forward.none { it.type == com.dansplugins.factionsystem.relationship.MfFactionRelationshipType.VASSAL } &&
+            !defender.flags[plugin.flags.isNeutral]
+    }
+
     override fun getUnacknowledgedWarEnds(
         consumerId: String
     ): ApiOutcome<List<WarEndNotice>> {
@@ -192,6 +208,15 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
         plugin.services.factionService.deletionBarrier(MfFactionId(faction.value))
 
     override fun armNomadPersistenceGuard(): ApiResult = plugin.armNomadPersistenceGuard()
+
+    override fun armPatriamGovernanceGuard(): ApiResult = plugin.armPatriamGovernanceGuard()
+
+    override fun governanceCommandRefusal(actor: UUID, canonicalVerb: String): String? =
+        if (!plugin.isEnabled) "MedievalFactions governance is temporarily unavailable"
+        else plugin.patriamCommandRefusal(actor, canonicalVerb)
+
+    override fun getFactionFlagCommandAliases(): List<String> =
+        listOf("flag", "flags", plugin.language["CmdFactionFlag"]).distinctBy(String::lowercase)
 
     override fun registerClaimOverrideProvider(provider: ClaimOverrideProvider) {
         plugin.services.claimService.claimOverrides.register(provider)
@@ -426,16 +451,50 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     // chain of chat messages with a save in the middle and there is nothing extractable without
     // rewriting it. The checks below are the same checks in the same order; if one moves there, it
     // has to move here.
-    override fun createFaction(name: String, founderId: UUID): ApiOutcome<FactionId> {
-        if (name.isBlank()) return ApiOutcome.failure("Faction name is blank")
+    override fun validateFactionName(name: String): ApiResult {
+        if (name.isBlank()) return ApiResult.failure("Faction name is blank")
         val maxNameLength = plugin.config.getInt("factions.maxNameLength")
         if (name.length > maxNameLength) {
-            return ApiOutcome.failure("Faction name is longer than $maxNameLength characters")
+            return ApiResult.failure("Faction name is longer than $maxNameLength characters")
         }
+        if (plugin.services.factionService.getFaction(name) != null) {
+            return ApiResult.failure("A faction named $name already exists")
+        }
+        return ApiResult.success()
+    }
+
+    override fun leaveFactionIfMember(expectedFaction: FactionId, playerId: UUID): ApiResult {
+        val service = plugin.services.factionService
+        val faction = service.getFaction(MfFactionId(expectedFaction.value))
+            ?: return ApiResult.success()
+        val memberId = MfPlayerId(playerId.toString())
+        if (faction.members.none { it.playerId == memberId }) return ApiResult.success()
+        val remaining = faction.members.filterNot { it.playerId == memberId }
+        val result = if (remaining.isEmpty() && !faction.canRemainLeaderless) {
+            service.delete(faction.id)
+        } else {
+            val role = faction.getRole(memberId)
+            if (remaining.isNotEmpty() && role != null && remaining.none {
+                faction.getRole(it.playerId)?.hasPermission(
+                    faction,
+                    plugin.factionPermissions.setMemberRole(role.id)
+                ) == true
+            }
+            ) {
+                return ApiResult.failure("No remaining member can manage this member's role")
+            }
+            service.save(faction.copy(members = remaining))
+        }
+        return when (result) {
+            is Failure -> ApiResult.failure(result.reason.message)
+            is Success -> ApiResult.success()
+        }
+    }
+
+    override fun createFaction(name: String, founderId: UUID): ApiOutcome<FactionId> {
+        val naming = validateFactionName(name)
+        if (naming.isFailure) return ApiOutcome.failure(naming.errorMessage ?: "Invalid faction name")
         val factionService = plugin.services.factionService
-        if (factionService.getFaction(name) != null) {
-            return ApiOutcome.failure("A faction named $name already exists")
-        }
         val playerService = plugin.services.playerService
         val playerId = MfPlayerId(founderId.toString())
         // The founder is RELOCATED, not refused, and this used to be a refusal. It was wrong, and
