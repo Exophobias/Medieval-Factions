@@ -35,13 +35,16 @@ class MfFactionCaretakerDispatchTest {
             "CmdFactionRole" to "rang",
             "CmdFactionDisband" to "dissoudre"
         )
-        val language = mock(Language::class.java, Answer { invocation ->
-            if (invocation.method.returnType == String::class.java) {
-                translations[invocation.arguments.firstOrNull()?.toString()] ?: invocation.arguments.firstOrNull()?.toString().orEmpty()
-            } else {
-                Answers.RETURNS_DEFAULTS.answer(invocation)
+        val language = mock(
+            Language::class.java,
+            Answer { invocation ->
+                if (invocation.method.returnType == String::class.java) {
+                    translations[invocation.arguments.firstOrNull()?.toString()] ?: invocation.arguments.firstOrNull()?.toString().orEmpty()
+                } else {
+                    Answers.RETURNS_DEFAULTS.answer(invocation)
+                }
             }
-        })
+        )
         `when`(language.locale).thenReturn(Locale.FRENCH)
         `when`(plugin.language).thenReturn(language)
         val sender = mock(Player::class.java)
