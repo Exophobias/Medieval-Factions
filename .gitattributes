@@ -8,3 +8,6 @@
 *.bash text eol=lf
 *.py text eol=lf
 *.pl text eol=lf
+
+# Normalize Pact contract output as text, including mixed line endings
+/pacts/*.json text eol=lf
