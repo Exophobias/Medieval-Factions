@@ -8,7 +8,9 @@ import org.bukkit.event.HandlerList
 /**
  * Fired inline before a new faction relationship is written. Consumers can veto hierarchy and
  * alliance changes regardless of the command or API path. One reciprocal relationship may produce
- * two events, one for each row. New war rows also fire [FactionWarStartEvent] first.
+ * two events, one for each row. Replacing the endpoints or type of an existing row also fires
+ * this gate; saving an unchanged row does not. A newly established war relationship also fires
+ * [FactionWarStartEvent] first.
  *
  * The event can be asynchronous. Handlers must use thread-safe data and return promptly.
  */

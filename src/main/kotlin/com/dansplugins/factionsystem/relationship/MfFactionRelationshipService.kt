@@ -133,7 +133,13 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
                 "Faction ${relationship.targetId.value} is being deleted"
             }
             val previousState = getRelationship(relationship.id)
-            if (previousState == null) {
+            // Reusing a row ID must not evade creation policy when its actual relationship
+            // changes. Idempotent saves retain the existing no-event behavior.
+            val establishesRelationship = previousState == null ||
+                previousState.factionId != relationship.factionId ||
+                previousState.targetId != relationship.targetId ||
+                previousState.type != relationship.type
+            if (establishesRelationship) {
                 if (relationship.type == AT_WAR) {
                     val warEvent = FactionWarStartEvent(
                         FactionId(relationship.factionId.value),
@@ -157,6 +163,8 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
                 if (apiEvent.isCancelled) {
                     throw EventCancelledException("Relationship refused by a plugin")
                 }
+            }
+            if (previousState == null) {
                 val event = RelationshipCreateEvent(relationship.id, relationship, !plugin.server.isPrimaryThread)
                 ChildMutationCallbackGuard.callEvent(plugin, event)
                 if (event.isCancelled) {

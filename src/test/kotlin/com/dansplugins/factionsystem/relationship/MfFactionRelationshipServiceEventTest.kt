@@ -118,6 +118,61 @@ class MfFactionRelationshipServiceEventTest {
     }
 
     @Test
+    fun changingEitherEndpointOfAnExistingRowStillPassesTheRelationshipVeto() {
+        val original = MfFactionRelationship(
+            factionId = MfFactionId("source"),
+            targetId = MfFactionId("target"),
+            type = MfFactionRelationshipType.LIEGE
+        )
+        assertTrue(service.save(original) is Success)
+        cancelHierarchy = true
+
+        for (attempted in listOf(
+            original.copy(factionId = MfFactionId("converting-holder")),
+            original.copy(targetId = MfFactionId("converting-target"))
+        )) {
+            events.clear()
+            assertTrue(service.save(attempted) is Failure)
+            assertEquals(original, service.getRelationship(original.id))
+            assertEquals(listOf(original), repository.getFactionRelationships())
+            assertEquals(1, events.filterIsInstance<FactionRelationshipCreateAttemptEvent>().size)
+            assertTrue(events.none { it is RelationshipCreatedEvent })
+        }
+    }
+
+    @Test
+    fun changingAnExistingRowToWarStillPassesTheWarVeto() {
+        val original = MfFactionRelationship(
+            factionId = MfFactionId("source"),
+            targetId = MfFactionId("target"),
+            type = MfFactionRelationshipType.ALLY
+        )
+        assertTrue(service.save(original) is Success)
+        events.clear()
+        cancelWarStart = true
+
+        assertTrue(service.save(original.copy(type = MfFactionRelationshipType.AT_WAR)) is Failure)
+
+        assertEquals(original, service.getRelationship(original.id))
+        assertEquals(listOf(original), repository.getFactionRelationships())
+        assertEquals(1, events.filterIsInstance<FactionWarStartEvent>().size)
+        assertTrue(events.none { it is RelationshipCreatedEvent })
+    }
+
+    @Test
+    fun idempotentExistingRowSaveDoesNotRefireCreationGates() {
+        val original = war("source", "target")
+        assertTrue(service.save(original) is Success)
+        events.clear()
+        cancelWarStart = true
+
+        assertTrue(service.save(original) is Success)
+
+        assertEquals(original, service.getRelationship(original.id))
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
     fun factionCascadeAttachesDurableNoticeOnlyToAWarRow() {
         val doomed = MfFactionId("doomed")
         val survivor = MfFactionId("survivor")
