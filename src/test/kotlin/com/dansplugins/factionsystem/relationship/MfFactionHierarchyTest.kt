@@ -103,6 +103,52 @@ class MfFactionHierarchyTest {
     }
 
     @Test
+    fun anyRelationshipTypeCountsForEitherEndpointWithoutAMirror() {
+        for (type in MfFactionRelationshipType.entries) {
+            val row = MfFactionRelationship(factionId = emperor, targetId = northKing, type = type)
+            uut.save(row).onFailure { throw it.reason.cause }
+
+            assertTrue(uut.hasRelationships(emperor), "outgoing $type")
+            assertTrue(uut.hasRelationships(northKing), "incoming $type")
+            assertFalse(uut.hasRelationships(freeFaction))
+            uut.delete(row.id).onFailure { throw it.reason.cause }
+            assertFalse(uut.hasRelationships(emperor), "removed outgoing $type")
+            assertFalse(uut.hasRelationships(northKing), "removed incoming $type")
+        }
+    }
+
+    @Test
+    fun selfReferencingRowStillCountsAsAStoredRelationship() {
+        val row = MfFactionRelationship(factionId = emperor, targetId = emperor, type = ALLY)
+        uut.save(row).onFailure { throw it.reason.cause }
+        assertTrue(uut.hasRelationships(emperor))
+        assertFalse(uut.hasRelationships(freeFaction))
+        uut.delete(row.id).onFailure { throw it.reason.cause }
+        assertFalse(uut.hasRelationships(emperor))
+    }
+
+    @Test
+    fun relationshipPresenceIncludesLoadedRowsAndTracksChangedEndpoints() {
+        val row = MfFactionRelationship(factionId = emperor, targetId = northKing, type = ALLY)
+        repository.rows[row.id] = row
+        uut = MfFactionRelationshipService(plugin, repository)
+        assertTrue(uut.hasRelationships(emperor))
+        assertTrue(uut.hasRelationships(northKing))
+        assertFalse(uut.hasRelationships(freeFaction))
+
+        uut.save(row.copy(factionId = southKing, targetId = southCount))
+            .onFailure { throw it.reason.cause }
+        assertFalse(uut.hasRelationships(emperor))
+        assertFalse(uut.hasRelationships(northKing))
+        assertTrue(uut.hasRelationships(southKing))
+        assertTrue(uut.hasRelationships(southCount))
+
+        uut.evictForDeletedFaction(southKing)
+        assertFalse(uut.hasRelationships(southKing))
+        assertFalse(uut.hasRelationships(southCount))
+    }
+
+    @Test
     fun aFactionSwearingToNobodySitsAtTheTop() {
         buildTheEmpire()
 

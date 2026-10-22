@@ -135,6 +135,24 @@ interface MedievalFactionsApi {
     fun getFactions(): List<FactionView>
 
     /**
+     * Whether any stored relationship has [faction] as either its holder or its target.
+     *
+     * Includes every relationship type and a single unmirrored row, such as an alliance offer or
+     * an interrupted war/hierarchy write. Unlike gameplay alliance and hierarchy views, this does
+     * not require reciprocal confirmation. Self-references and rows still referring to a missing
+     * faction also count.
+     * False means no row references this ID, rather than proving the faction exists.
+     *
+     * Reads the concurrent in-memory relationship index in O(relationships), without database,
+     * Bukkit-world work or a mutation lock, and is safe from any thread. It is a current observation,
+     * not a reservation: callers changing eligibility must fence new writes, drain admitted writes
+     * with [warMutationBarrier], then read again before committing their own change.
+     * The conservative default refuses consumers that require a relationship-free faction until
+     * their provider implements this capability.
+     */
+    fun hasFactionRelationships(faction: FactionId): Boolean = true
+
+    /**
      * Whether the war between [faction] and [otherFaction] is fully established in both directions.
      *
      * MedievalFactions represents one war as two mirrored `AT_WAR` relationship rows. The broader

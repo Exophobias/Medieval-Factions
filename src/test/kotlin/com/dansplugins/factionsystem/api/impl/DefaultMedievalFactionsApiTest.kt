@@ -137,6 +137,21 @@ class DefaultMedievalFactionsApiTest {
     }
 
     @Test
+    fun relationshipPresenceMapsFactionIdentityWithoutReadingWorldOrDatabase() {
+        val related = MfFactionId("related")
+        val free = MfFactionId("free")
+        `when`(relationshipService.hasRelationships(related)).thenReturn(true)
+        `when`(relationshipService.hasRelationships(free)).thenReturn(false)
+
+        assertTrue(api.hasFactionRelationships(FactionId(related.value)))
+        assertFalse(api.hasFactionRelationships(FactionId(free.value)))
+
+        verify(relationshipService).hasRelationships(related)
+        verify(relationshipService).hasRelationships(free)
+        verifyNoMoreInteractions(relationshipService, factionService, claimService)
+    }
+
+    @Test
     fun warPairIsNotEstablishedWithNoDirectionalRows() {
         stubWarRows("a", "b", forward = false, reverse = false)
 

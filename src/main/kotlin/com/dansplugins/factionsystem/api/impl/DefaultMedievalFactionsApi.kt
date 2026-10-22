@@ -103,6 +103,9 @@ class DefaultMedievalFactionsApi(private val plugin: MedievalFactions) : Medieva
     override fun getFactions(): List<FactionView> =
         plugin.services.factionService.factions.map(::toView)
 
+    override fun hasFactionRelationships(faction: FactionId): Boolean =
+        plugin.services.factionRelationshipService.hasRelationships(MfFactionId(faction.value))
+
     override fun isWarPairEstablished(faction: FactionId, otherFaction: FactionId): Boolean {
         if (faction == otherFaction) return false
         val relationships = plugin.services.factionRelationshipService

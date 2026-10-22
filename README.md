@@ -1,6 +1,6 @@
 > Patriam integration through upstream `13fcc710` (source `7.0.1-SNAPSHOT`). The retained
 > `5.9.0-patriam.1-SNAPSHOT` Maven/API coordinate is a compatibility identity, not the upstream
-> source release. Shipping plugin is `.4`; `/f version` and update notices use separate source metadata.
+> source release. Shipping plugin is `.5`; `/f version` and update notices use separate source metadata.
 > Existing strict migrations and disabled-default trace 0.2 remain authoritative: upstream shared
 > trace tags/install IDs are excluded. Configuration advances to 7 and database auto-unclaim to V910.
 
@@ -33,6 +33,13 @@
 > to be enabled. The marker intentionally remains after the last Nomad disbands until an audited
 > retirement can prove all Nomad identities and camp records are gone. Do not delete it to bypass
 > a failed startup.
+>
+> The read-only `MedievalFactionsApi.hasFactionRelationships(FactionId)` query detects any
+> incoming or outgoing relationship row, including unmirrored offers and partial writes. Nomad
+> adoption uses this query before conversion and after draining admitted relationship mutations,
+> so existing alliances and other relationship types cannot carry into a new Nomad identity.
+> This addition changes neither configuration nor stored-data schemas; the API Maven coordinate
+> remains `5.9.0-patriam.1-SNAPSHOT`.
 >
 > Everything below this box is upstream's README.
 

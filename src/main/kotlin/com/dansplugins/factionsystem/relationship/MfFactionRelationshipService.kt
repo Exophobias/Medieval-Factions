@@ -100,6 +100,10 @@ class MfFactionRelationshipService(private val plugin: MedievalFactions, private
         return relationshipsByFactionId[factionId].orEmpty()
     }
 
+    /** Includes either endpoint and every type, even a one-sided or dangling relationship. */
+    fun hasRelationships(factionId: MfFactionId): Boolean =
+        relationshipsById.values.any { it.factionId == factionId || it.targetId == factionId }
+
     @JvmName("getRelationshipsByFactionIdAndType")
     fun getRelationships(factionId: MfFactionId, type: MfFactionRelationshipType): List<MfFactionRelationship> {
         return getRelationships(factionId).filter { it.type == type }
