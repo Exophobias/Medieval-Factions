@@ -217,17 +217,7 @@ class MedievalFactions : JavaPlugin() {
 
     override fun onEnable() {
         server.pluginManager.registerEvents(
-            object : org.bukkit.event.Listener {
-            @org.bukkit.event.EventHandler(priority = org.bukkit.event.EventPriority.LOWEST)
-            fun onDisable(event: org.bukkit.event.server.PluginDisableEvent) {
-                if (event.plugin.name == "PatriamMFAddon") patriamGovernanceGuard.providerStopping()
-            }
-
-            @org.bukkit.event.EventHandler(priority = org.bukkit.event.EventPriority.LOWEST)
-            fun onEnable(event: org.bukkit.event.server.PluginEnableEvent) {
-                if (event.plugin.name == "PatriamMFAddon") patriamGovernanceGuard.providerEnabled()
-            }
-        },
+            com.dansplugins.factionsystem.safety.PatriamGovernanceGuardListener(patriamGovernanceGuard),
             this
         )
         // Arm before the addon can attempt enable: even its first config failure must fail closed.
