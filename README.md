@@ -253,6 +253,6 @@ See [Native siege policy, fenced effects and durable gate actuator protocol](doc
 
 ### Optional Patriam feature page
 
-With PatriamWelcome 2.1.0, **Realms** shows current owner status and the same permission-filtered command help used in chat, with separate staff pages. Only your current realm is projected; role view-info and Bukkit info permissions still apply. Power and land statistics additionally require the native power permission. No member names or online presence are published.
+With PatriamWelcome 2.1.1, **Realms** shows current owner status and the same permission-filtered command help used in chat, with separate staff pages. Only your current realm is projected; role view-info and Bukkit info permissions still apply. Power and land statistics additionally require the native power permission. No member names or online presence are published.
 
 Welcome remains optional: only the guarded adapter links its API, and its service is withdrawn before owner shutdown. Each navigation and action requests current authority again. Parameterized help is documentation; fixed actions retain the owner command’s execution checks. No configuration or gameplay storage schema changes.

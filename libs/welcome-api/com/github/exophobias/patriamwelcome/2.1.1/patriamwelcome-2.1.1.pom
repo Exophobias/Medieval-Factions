@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.github.exophobias</groupId>
   <artifactId>patriamwelcome</artifactId>
-  <version>2.1.0</version>
+  <version>2.1.1</version>
   <packaging>jar</packaging>
   <name>PatriamWelcome public compile contract</name>
   <description>Only the ten public API class files. Parentless, dependency-free, never a server plugin.</description>
