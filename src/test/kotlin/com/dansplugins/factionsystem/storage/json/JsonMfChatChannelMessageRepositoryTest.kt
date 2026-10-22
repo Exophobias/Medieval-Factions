@@ -94,30 +94,37 @@ class JsonMfChatChannelMessageRepositoryTest {
         val factionId = MfFactionId(UUID.randomUUID().toString())
         val playerId = MfPlayerId(UUID.randomUUID().toString())
 
-        // Insert 1050 messages
-        for (i in 1..1050) {
-            val message = MfChatChannelMessage(
-                Instant.now().plusMillis(i.toLong()),
+        val start = Instant.parse("2026-01-01T00:00:00Z")
+        // Seed real persisted history at the cap, then exercise the repository's boundary write.
+        // Rewriting the entire JSON file 1050 times adds Windows sharing-denial exposure without
+        // adding cap coverage; JsonStorageManagerTest separately exercises file-write concurrency.
+        val history = (1..1000).map { i ->
+            MfChatChannelMessage(
+                start.plusMillis(i.toLong()),
                 playerId,
                 factionId,
                 MfFactionChatChannel.FACTION,
                 "Message $i"
             )
-            repository.insert(message)
-        }
+        }.toMutableList()
+        storageManager.writeJsonFile(
+            "chat_messages.json",
+            JsonMfChatChannelMessageRepository.ChatMessageData(history)
+        )
+        repository.insert(
+            MfChatChannelMessage(
+                start.plusMillis(1001),
+                playerId,
+                factionId,
+                MfFactionChatChannel.FACTION,
+                "Message 1001"
+            )
+        )
 
         val messages = repository.getChatChannelMessages(factionId)
-
-        // Should only keep the most recent 1000 messages
         assertEquals(1000, messages.size)
-
-        // The oldest messages (1-50) should be gone
         assertFalse(messages.any { it.message == "Message 1" })
-        assertFalse(messages.any { it.message == "Message 50" })
-
-        // The newest messages should be present
-        assertTrue(messages.any { it.message == "Message 1050" })
-        assertTrue(messages.any { it.message == "Message 1000" })
+        assertEquals((2..1001).map { "Message $it" }, messages.map { it.message })
     }
 
     @Test
@@ -125,38 +132,59 @@ class JsonMfChatChannelMessageRepositoryTest {
         val faction1 = MfFactionId(UUID.randomUUID().toString())
         val faction2 = MfFactionId(UUID.randomUUID().toString())
         val playerId = MfPlayerId(UUID.randomUUID().toString())
-
-        // Insert 600 messages for faction1
-        for (i in 1..600) {
-            repository.insert(
+        val start = Instant.parse("2026-01-01T00:00:00Z")
+        // A real file containing 1000 messages for each faction proves that the cap is per faction,
+        // including when the total already exceeds 1000, with only the relevant boundary writes.
+        val history = listOf(faction1, faction2).flatMapIndexed { factionIndex, faction ->
+            (1..1000).map { i ->
                 MfChatChannelMessage(
-                    Instant.now(),
+                    start.plusMillis(i.toLong()),
                     playerId,
-                    faction1,
+                    faction,
                     MfFactionChatChannel.FACTION,
-                    "Faction1 Message $i"
+                    "Faction${factionIndex + 1} Message $i"
                 )
+            }
+        }.toMutableList()
+        storageManager.writeJsonFile(
+            "chat_messages.json",
+            JsonMfChatChannelMessageRepository.ChatMessageData(history)
+        )
+        repository.insert(
+            MfChatChannelMessage(
+                start.plusMillis(1001),
+                playerId,
+                faction1,
+                MfFactionChatChannel.FACTION,
+                "Faction1 Message 1001"
             )
-        }
+        )
+        assertEquals(
+            (2..1001).map { "Faction1 Message $it" },
+            repository.getChatChannelMessages(faction1).map { it.message }
+        )
+        assertEquals(
+            (1..1000).map { "Faction2 Message $it" },
+            repository.getChatChannelMessages(faction2).map { it.message }
+        )
 
-        // Insert 400 messages for faction2
-        for (i in 1..400) {
-            repository.insert(
-                MfChatChannelMessage(
-                    Instant.now(),
-                    playerId,
-                    faction2,
-                    MfFactionChatChannel.FACTION,
-                    "Faction2 Message $i"
-                )
+        repository.insert(
+            MfChatChannelMessage(
+                start.plusMillis(1001),
+                playerId,
+                faction2,
+                MfFactionChatChannel.FACTION,
+                "Faction2 Message 1001"
             )
-        }
-
-        val faction1Messages = repository.getChatChannelMessages(faction1)
-        val faction2Messages = repository.getChatChannelMessages(faction2)
-
-        assertEquals(600, faction1Messages.size)
-        assertEquals(400, faction2Messages.size)
+        )
+        assertEquals(
+            (2..1001).map { "Faction1 Message $it" },
+            repository.getChatChannelMessages(faction1).map { it.message }
+        )
+        assertEquals(
+            (2..1001).map { "Faction2 Message $it" },
+            repository.getChatChannelMessages(faction2).map { it.message }
+        )
     }
 
     @Test
