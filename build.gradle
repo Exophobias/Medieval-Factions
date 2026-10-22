@@ -11,7 +11,7 @@ group = "com.dansplugins"
 // The upstream source base is 7.0.1-SNAPSHOT; a coordinated coordinate bump is a separate release.
 version = "5.9.0-patriam.1-SNAPSHOT"
 // The pinned compile/publication coordinate stays compatible; shipped gameplay has its own release.
-def pluginVersion = "5.9.0-patriam.5-SNAPSHOT"
+def pluginVersion = "5.9.0-patriam.6-SNAPSHOT"
 
 // Reject missing/changed thin contracts before any repository resolution (including Docker builds).
 ["patriamwelcome-2.1.1.jar": "2a1bd17ec7a0a017fa0821dc583fc98173faaed88f97f6b49547673cd31a34d0",

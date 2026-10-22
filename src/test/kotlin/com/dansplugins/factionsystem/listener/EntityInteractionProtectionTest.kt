@@ -30,6 +30,7 @@ import org.bukkit.Material
 import org.bukkit.Server
 import org.bukkit.World
 import org.bukkit.configuration.file.YamlConfiguration
+import org.bukkit.entity.ArmorStand
 import org.bukkit.entity.Entity
 import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
@@ -166,11 +167,12 @@ class EntityInteractionProtectionTest {
         `when`(faction.flags).thenReturn(MfFlagValues(plugin, mapOf("protectVillagerTrade" to value)))
     }
 
-    private fun entity(type: EntityType = EntityType.ARMOR_STAND, inventory: Boolean = false): Entity {
+    private fun entity(type: EntityType = EntityType.ITEM_FRAME, inventory: Boolean = false): Entity {
         val settings = if (inventory) withSettings().extraInterfaces(InventoryHolder::class.java) else withSettings()
         val location = spy(Location(world, -2.5, 64.2, 35.8))
         doReturn(chunk).`when`(location).chunk
-        return mock(Entity::class.java, settings).also {
+        val entityClass = if (type == EntityType.ARMOR_STAND) ArmorStand::class.java else Entity::class.java
+        return mock(entityClass, settings).also {
             `when`(it.type).thenReturn(type)
             `when`(it.uniqueId).thenReturn(UUID.randomUUID())
             `when`(it.world).thenReturn(world)
@@ -240,6 +242,27 @@ class EntityInteractionProtectionTest {
         providerActions.clear()
         assertTrue(dispatch(at, entity(EntityType.CHEST_MINECART, true)).isCancelled)
         assertTrue(providerActions.isEmpty(), "Inventory holders must never reach an override provider")
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun armourStandEquipmentNeverReachesAnInteractionOverride(at: Boolean) {
+        overrideResult = true
+
+        assertTrue(dispatch(at, entity(EntityType.ARMOR_STAND)).isCancelled)
+
+        verify(claims).isOverridden(actor.id, world, -3, 64, 35, ClaimAction.CONTAINER)
+        assertTrue(providerActions.isEmpty(), "Equipment must reach the hard CONTAINER exclusion")
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun ordinaryFactionAccessStillAllowsArmourStandEquipment(at: Boolean) {
+        `when`(claims.isInteractionAllowed(actor.id, claim)).thenReturn(true)
+
+        assertFalse(dispatch(at, entity(EntityType.ARMOR_STAND)).isCancelled)
+
+        assertTrue(providerActions.isEmpty())
     }
 
     @ParameterizedTest

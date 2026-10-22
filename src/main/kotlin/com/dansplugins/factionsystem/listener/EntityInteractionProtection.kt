@@ -9,6 +9,7 @@ import com.dansplugins.factionsystem.player.MfPlayerId
 import dev.forkhandles.result4k.onFailure
 import org.bukkit.ChatColor.RED
 import org.bukkit.Material
+import org.bukkit.entity.ArmorStand
 import org.bukkit.entity.Entity
 import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
@@ -68,7 +69,9 @@ class EntityInteractionProtection(
         // A charter controls even entity inventories and villagers whose ordinary trade flag is
         // open. Otherwise the host could reach private storage via a chest vehicle or bypass the
         // embassy through the villager exemption.
-        val action = if (target is InventoryHolder) ClaimAction.CONTAINER else ClaimAction.INTERACT
+        // Armour stands expose equipment through the later manipulate event, although Bukkit
+        // does not model them as InventoryHolder. Their items need the same hard storage exclusion.
+        val action = if (target is InventoryHolder || target is ArmorStand) ClaimAction.CONTAINER else ClaimAction.INTERACT
         when (plugin.services.embassyService.access(actor.id, claim, action)) {
             EmbassyAccessDecision.GRANT -> {
                 val embassies = plugin.services.embassyService
@@ -109,8 +112,8 @@ class EntityInteractionProtection(
             plugin.notifyTerritoryBypass(player, actor)
             return
         }
-        // Inventory holders must reach MF's hard CONTAINER exclusion before a provider can grant
-        // a generic INTERACT carve-out, including storage minecarts, chest boats and mounts.
+        // Storage and armour-stand equipment must reach MF's hard CONTAINER exclusion before a
+        // provider can grant a generic INTERACT carve-out.
         if (claims.isOverridden(actor.id, target.world, position.blockX, position.blockY, position.blockZ, action)) return
         event.isCancelled = true
         val message = if (villager) {
