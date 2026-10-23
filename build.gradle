@@ -166,11 +166,14 @@ jooq {
 
 import org.apache.tools.ant.filters.ReplaceTokens
 
+def resourceTokens = [
+        'version': pluginVersion,
+        'upstreamVersion': '7.0.1-SNAPSHOT'
+]
+
 processResources {
-    filter ReplaceTokens, tokens: [
-            'version': pluginVersion,
-            'upstreamVersion': '7.0.1-SNAPSHOT'
-    ]
+    inputs.properties(resourceTokens)
+    filter ReplaceTokens, tokens: resourceTokens
 }
 
 // The plain `jar` task's output MUST NOT share a path with shadowJar's.
