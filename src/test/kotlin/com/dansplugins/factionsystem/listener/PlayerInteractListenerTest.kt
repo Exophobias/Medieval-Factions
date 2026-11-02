@@ -1813,6 +1813,84 @@ class PlayerInteractListenerTest {
         verify(fixture.player, org.mockito.Mockito.times(1)).sendMessage(any(String::class.java))
     }
 
+    // #2110: gates.minHeight is a height in blocks, and MfCuboidArea.height is maxY - minY.
+
+    @Test
+    fun onPlayerInteract_SelectingGateTrigger_GateExactlyMinHeightBlocksTall_ShouldPassMinHeightCheck() {
+        // Arrange - a one-wide column of three blocks (y = 0..2) with gates.minHeight at its default of 3
+        val language = setupGateTriggerSelection(minHeight = 3, gateTopY = 2)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+        runScheduledAsyncTasks()
+        runScheduledSyncTasks()
+
+        // Assert - creation moves on to the next check (gates.maxBlocks, unset here) instead of refusing the height
+        verify(language, never()).get("GateCreateMinHeightNotMet", "3")
+        verify(language).get("GateCreateAreaLimitExceeded", "0")
+    }
+
+    @Test
+    fun onPlayerInteract_SelectingGateTrigger_GateOneBlockShorterThanMinHeight_ShouldRefuseMinHeight() {
+        // Arrange - a one-wide column of two blocks (y = 0..1) with gates.minHeight at 3
+        val language = setupGateTriggerSelection(minHeight = 3, gateTopY = 1)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+        runScheduledAsyncTasks()
+        runScheduledSyncTasks()
+
+        // Assert
+        verify(language).get("GateCreateMinHeightNotMet", "3")
+    }
+
+    // #2122: a gate must be one block thick, and MfCuboidArea.width and depth are max - min.
+
+    @Test
+    fun onPlayerInteract_SelectingGateTrigger_GateOneBlockThickWall_ShouldPassFlatPlaneCheck() {
+        // Arrange - a wall five blocks wide (x = 0..4), three tall and one block thick
+        val language = setupGateTriggerSelection(minHeight = 3, gateTopY = 2, gateFarX = 4)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+        runScheduledAsyncTasks()
+        runScheduledSyncTasks()
+
+        // Assert - creation moves past the flat-plane and height checks to gates.maxBlocks, unset here
+        verify(language, never()).get("GateCreateMustBeFlatPlane")
+        verify(language).get("GateCreateAreaLimitExceeded", "0")
+    }
+
+    @Test
+    fun onPlayerInteract_SelectingGateTrigger_GateTwoByTwoColumn_ShouldRefuseFlatPlane() {
+        // Arrange - a column two blocks wide and two deep (x = 0..1, z = 0..1), three tall
+        val language = setupGateTriggerSelection(minHeight = 3, gateTopY = 2, gateFarX = 1, gateFarZ = 1)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+        runScheduledAsyncTasks()
+        runScheduledSyncTasks()
+
+        // Assert
+        verify(language).get("GateCreateMustBeFlatPlane")
+        verify(language, never()).get("GateCreateAreaLimitExceeded", "0")
+    }
+
+    @Test
+    fun onPlayerInteract_SelectingGateTrigger_GateTwoBlocksThickSlab_ShouldRefuseFlatPlane() {
+        // Arrange - a slab five blocks wide and two deep (x = 0..4, z = 0..1), three tall
+        val language = setupGateTriggerSelection(minHeight = 3, gateTopY = 2, gateFarX = 4, gateFarZ = 1)
+
+        // Act
+        uut.onPlayerInteract(fixture.event)
+        runScheduledAsyncTasks()
+        runScheduledSyncTasks()
+
+        // Assert
+        verify(language).get("GateCreateMustBeFlatPlane")
+        verify(language, never()).get("GateCreateAreaLimitExceeded", "0")
+    }
+
     // Helper functions
 
     // ---- claim-override classification -----------------------------------
@@ -1920,6 +1998,44 @@ class PlayerInteractListenerTest {
      */
     private fun grantOverride(playerId: MfPlayerId, action: ClaimAction) {
         `when`(claimService.isOverridden(playerId, fixture.world, 0, 0, 0, action)).thenReturn(true)
+    }
+
+    /**
+     * Arranges a player who has selected both corners of a gate - from (0, 0, 0) to
+     * ([gateFarX], [gateTopY], [gateFarZ]), a one-wide column by default - and is now clicking its
+     * trigger, so that the next interaction runs gate creation.
+     * Returns the language mock, whose keys tell which creation check refused the gate.
+     */
+    private fun setupGateTriggerSelection(minHeight: Int, gateTopY: Int, gateFarX: Int = 0, gateFarZ: Int = 0): Language {
+        val (_, playerId) = setupPlayerMocks(fixture.player)
+        `when`(interactionService.getInteractionStatus(playerId))
+            .thenReturn(com.dansplugins.factionsystem.interaction.MfInteractionStatus.SELECTING_GATE_TRIGGER)
+
+        val worldId = UUID.randomUUID()
+        val ctx = com.dansplugins.factionsystem.gate.MfGateCreationContext(
+            playerId = playerId,
+            position1 = MfBlockPosition(worldId, 0, 0, 0),
+            position2 = MfBlockPosition(worldId, gateFarX, gateTopY, gateFarZ),
+            trigger = MfBlockPosition(worldId, 1, 0, 0)
+        )
+        val gateService = mock(com.dansplugins.factionsystem.gate.MfGateService::class.java)
+        `when`(medievalFactions.services.gateService).thenReturn(gateService)
+        `when`(gateService.restrictedBlockMaterials).thenReturn(emptySet())
+        `when`(gateService.getGateCreationContext(playerId)).thenReturn(Success(ctx))
+        `when`(gateService.save(anyGateCreationContext<com.dansplugins.factionsystem.gate.MfGateCreationContext>())).thenReturn(Success(ctx))
+
+        val config = mock(FileConfiguration::class.java)
+        `when`(medievalFactions.config).thenReturn(config)
+        `when`(config.getInt("gates.minHeight")).thenReturn(minHeight)
+
+        return medievalFactions.language
+    }
+
+    /** See [anyMfPlayer]: the same indirection, for [com.dansplugins.factionsystem.gate.MfGateService.save]. */
+    private fun <T> anyGateCreationContext(): T {
+        ArgumentMatchers.any<com.dansplugins.factionsystem.gate.MfGateCreationContext>()
+        @Suppress("UNCHECKED_CAST")
+        return null as T
     }
 
     /**
@@ -2283,6 +2399,13 @@ class PlayerInteractListenerTest {
     private fun runScheduledAsyncTasks() {
         val captor = ArgumentCaptor.forClass(Runnable::class.java)
         verify(scheduler, atLeast(0)).runTaskAsynchronously(eq(medievalFactions), captor.capture())
+        captor.allValues.forEach { it.run() }
+    }
+
+    /** The main-thread counterpart of [runScheduledAsyncTasks]. */
+    private fun runScheduledSyncTasks() {
+        val captor = ArgumentCaptor.forClass(Runnable::class.java)
+        verify(scheduler, atLeast(0)).runTask(eq(medievalFactions), captor.capture())
         captor.allValues.forEach { it.run() }
     }
 

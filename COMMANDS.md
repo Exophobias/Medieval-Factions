@@ -226,7 +226,7 @@ An ended active embassy enters a 14-day clearing period. Guests may break blocks
 **Description:** Toggles automatic unclaiming. When enabled, chunks claimed by your faction are automatically unclaimed as you walk through them.
 **Usage:** `/f unclaim auto`
 **Notes:**
-- Requires the `TOGGLE_AUTOUNCLAIM` faction role permission to toggle.
+- Requires the `TOGGLE_AUTOUNCLAIM` faction role permission to toggle. The Owner role is granted it; a role with no setting of its own for it follows its `TOGGLE_AUTOCLAIM` setting.
 - While enabled, a chunk is only unclaimed for a member whose role has the `UNCLAIM` faction permission and who holds `mf.unclaim`.
 
 ### `/faction unclaimall` or `/f unclaimall`
@@ -378,23 +378,32 @@ An ended active embassy enters a 14-day clearing period. Guests may break blocks
 
 ## Laws
 
-### `/faction law add [law]` or `/f law add [law]`
-**Permission:** both `mf.law.add` and `mf.addlaw` (default: true)
+Laws are numbered from 1 in the order `/f law list` shows them. Where a command takes a law, it can be given by that number or by the law's ID. Each command also needs the matching faction role permission (`ADD_LAW`, `LIST_LAWS`, `REMOVE_LAW`, `EDIT_LAW`, `MOVE_LAW`).
 
+### `/faction law add [law]` or `/f law add [law]`
+**Permission:** `mf.law.add` and `mf.addlaw` (both required; default: true)
 **Description:** Adds a new law to your faction.
 **Usage:** `/f law add "No griefing within faction territory"`
 
 ### `/faction law list` or `/f law list`
-**Permission:** both `mf.law.list` and `mf.laws` (default: true)
-
+**Permission:** `mf.law.list` and `mf.laws` (both required; default: true)
 **Description:** Lists all laws of your faction.
 **Usage:** `/f law list`
 
-### `/faction law remove [id]` or `/f law remove [id]`
-**Permission:** both `mf.law.remove` and `mf.removelaw` (default: true)
-
-**Description:** Removes a law from your faction using its ID.
+### `/faction law remove [number]` or `/f law remove [number]`
+**Permission:** `mf.law.remove` and `mf.removelaw` (both required; default: true)
+**Description:** Removes a law from your faction.
 **Usage:** `/f law remove 1`
+
+### `/faction law edit [number] [text]` or `/f law edit [number] [text]`
+**Permission:** `mf.law.edit` (default: true)
+**Description:** Replaces the text of a law. If only the law is given, the new text is asked for in chat.
+**Usage:** `/f law edit 2 No griefing anywhere`
+
+### `/faction law move [number] [new number]` or `/f law move [number] [new number]`
+**Permission:** `mf.law.move` (default: true)
+**Description:** Moves a law to a new position in the list; the laws in between shift up or down by one. The new position must be a whole number from 1 to the faction's number of laws. If only the law is given, the new position is asked for in chat.
+**Usage:** `/f law move 3 1`
 
 ## Gates
 
@@ -420,8 +429,9 @@ An ended active embassy enters a 14-day clearing period. Guests may break blocks
 **Usage:** `/gate cancel`
 
 **Gate Interactions:**
-- Right-click on a gate block to toggle it open/closed
-- Gates can be controlled with redstone (if enabled)
+- A gate opens while its trigger block is powered (for example while its lever is on) and closes when the trigger loses power; right-clicking a gate block does not toggle it
+- Anything that powers the trigger, including redstone, opens the gate
+- Using the trigger is protected like any other block in the claim (see the user guide's gate section)
 - Certain blocks are restricted from gates (see config for list)
 
 ## Locks & Access Control

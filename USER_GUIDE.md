@@ -331,7 +331,7 @@ Chest boats, storage minecarts and stocked mounts cannot cross a peaceful embass
 A new faction has three roles. New members get the Member role.
 - **Member** - only the faction permissions that are on by default for every role: going to the faction home, inviting players, listing the laws, members and roles, viewing the flags, the faction's info and stats, and the faction chat history. Everything else is refused until the role is granted it, including claiming and unclaiming land, setting the home, adding, editing or removing laws, requesting alliances, declaring war, setting flags, renaming the faction, managing roles, vassalizing, kicking members, unclaiming all land and disbanding.
 - **Officer** - the Member role's permissions, plus requesting alliances, declaring war, making peace, setting the faction home, kicking members, creating roles, approving and denying applications, and managing the Member role.
-- **Owner** - every faction permission except bypassing locks (`BYPASS_LOCKS`) and toggling autounclaim (`TOGGLE_AUTOUNCLAIM`), which must be granted explicitly.
+- **Owner** - every faction permission except bypassing locks (`BYPASS_LOCKS`), which must be granted explicitly. In a faction created before `TOGGLE_AUTOUNCLAIM` existed, a role with no setting of its own for it follows its `TOGGLE_AUTOCLAIM` setting, so the Owner can toggle autounclaim there too.
 
 Permission names are upper case and must be given exactly, for example `CLAIM`, `INVITE` or `ADD_LAW`; `/f role setpermission Member claim allow` is refused as an invalid permission.
 
@@ -605,21 +605,17 @@ If enemy faction is disbanded or surrenders, war ends automatically.
    /gate create
    ```
 
-3. **Select gate blocks:**
-   - Right-click each block you want in the gate
-   - The blocks will be highlighted/marked
-   - Select all blocks that should move together
+3. **Select the gate's corners:** right-click the block at one corner of the gate, then the block at the opposite corner. The gate is every block between the two corners, which must lie in one flat plane one block thick (a wall or a door, not a solid box or a two-block-thick slab).
 
-4. **Finish selection** when all blocks are selected.
+4. **Select the trigger:** right-click the block that will open the gate, for example a lever. It must be in your faction's territory.
 
-5. **Verify creation** - You should receive a confirmation message.
+5. **Verify creation** - You should see "Gate created."
 
 **Using a Gate:**
 
-- **Toggle the gate** by right-clicking any gate block
-- The gate will open (blocks disappear) or close (blocks reappear)
-- Only faction members can toggle gates
-- Gates can be controlled with redstone (if enabled in config)
+- A gate opens while its trigger is powered (for example while its lever is on) and closes when the trigger loses power: the blocks are removed from the bottom row up, and put back when it closes.
+- Using the trigger is protected like any other block in the claim. With the default settings, in land the faction has claimed, a member can flip a gate's lever, and so can a server operator with `/f bypass` on; allies, other factions (at war or not) and players in no faction are refused. Anything that lets a player use blocks in that land lets them use the trigger too: a flag such as `alliesCanInteractWithLand`, the trigger's block type listed in `factions.wartimeInteractableBlocks` (for a faction at war with the owner), or `pvp.enableWartimeBlockDestruction`.
+- Gates can be controlled with redstone, since anything that powers the trigger opens the gate.
 
 **Removing a Gate:**
 
@@ -750,12 +746,28 @@ If you make a mistake:
 /f law list
 ```
 
-This displays all laws with their ID numbers.
+This displays all laws with their numbers.
+
+**Editing Laws:**
+
+```
+/f law edit [number] [new text]
+/f law edit 2 No griefing anywhere
+```
+
+**Reordering Laws:**
+
+```
+/f law move [number] [new number]
+/f law move 3 1
+```
+
+The laws in between shift up or down by one. The new number must be between 1 and the number of laws the faction has.
 
 **Removing Laws:**
 
 ```
-/f law remove [ID]
+/f law remove [number]
 /f law remove 3
 ```
 
@@ -927,7 +939,7 @@ Duels are time-limited and notify nearby players.
 
 While a duel lasts:
 - The two duelists can hurt each other even where faction rules would stop them, for example when they are in the same faction or in factions that are not at war.
-- Nobody else can hit either duelist, in melee or with a projectile such as an arrow, and a duelist cannot hit anyone else; the attacker is told that one of them is in a duel. Splash and lingering potions are the exception: between a duelist and someone outside the duel they follow the normal faction rules, as if there were no duel.
+- Nobody else can hit either duelist, in melee or with a projectile such as an arrow, and a duelist cannot hit anyone else; the attacker is told that one of them is in a duel. The same applies to harmful splash and lingering potions: one thrown by a duelist does not affect anyone outside the duel, and one thrown by someone outside the duel does not affect a duelist. No message is sent for a refused potion.
 
 ### Applications System
 

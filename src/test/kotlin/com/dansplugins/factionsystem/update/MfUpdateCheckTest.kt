@@ -13,7 +13,7 @@ class MfUpdateCheckTest {
 
     @Test
     fun integratedForkUsesUpstreamSourceVersionForNotices() {
-        assertEquals("7.0.1-SNAPSHOT", MfUpstreamSourceVersion.current())
+        assertEquals("10.0.1-SNAPSHOT", MfUpstreamSourceVersion.current())
         assertNull(MfUpdateCheck.noticeFor(MfUpstreamSourceVersion.current(), latest))
     }
 
